@@ -1,0 +1,62 @@
+[package]
+name = "photovault"
+version = "0.2.0"
+description = "PurePhotoExplorer - 多格式图像浏览与编辑软件"
+authors = ["PurePhotoExplorer"]
+edition = "2021"
+rust-version = "1.77"
+
+# Tauri 桌面应用壳。业务逻辑全部在 workspace 的 pv-* crates 里。
+[lib]
+name = "photovault_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-dialog = "2"
+tauri-plugin-fs = "2"
+serde.workspace = true
+serde_json.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+pv-core.workspace = true
+pv-decode.workspace = true
+pv-index.workspace = true
+pv-meta.workspace = true
+# 离线地名库：GPS 坐标 → 最近的城市（数据随二进制走，不联网）
+pv-geo.workspace = true
+pv-edit.workspace = true
+
+# 仅 Windows：自绘窗口的最大化 / 尺寸校正 + 文件关联（写 HKCU）
+# （WS_EX_WINDOWEDGE 残留边框会让客户区比外框四面内缩，需按实测偏移外扩）
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.59", features = [
+    "Win32_Foundation",
+    "Win32_Graphics_Gdi",
+    # 打印三件套分散在三个模块里（windows-sys 的组织方式，别被名字误导）：
+    #   StartDocW / EndDoc / StartPage / EndPage / DOCINFOW → Storage::Xps
+    #   PrintDlgW / PRINTDLGW / PD_RETURNDC                → UI::Controls::Dialogs
+    #   GetDeviceCaps / StretchDIBits / HALFTONE           → Graphics::Gdi
+    "Win32_Storage_Xps",
+    "Win32_UI_Controls_Dialogs",
+    "Win32_UI_WindowsAndMessaging",
+    "Win32_UI_Shell",
+    "Win32_System_Memory",
+    # 直接打印（跳过系统对话框）用到：GetDefaultPrinterW / OpenPrinterW /
+    # DocumentPropertiesW / ClosePrinter —— 都在 Graphics::Printing
+    "Win32_Graphics_Printing",
+] }
+# 注册表读写用 winreg 而不是裸 windows-sys：文件关联要写多层子键 + 多种类型，
+# 裸 API 需要手写 RegCreateKeyExW/RegSetValueExW/RegCloseKey 且全是 unsafe，
+# 出错点太多（漏关句柄、类型传错都不会编译报错）。winreg 是纯 Rust 封装，安全且短。
+winreg = "0.52"
+
+[features]
+default = ["custom-protocol"]
+custom-protocol = ["tauri/custom-protocol"]
+
+# 注意：release profile 统一在 workspace 根 Cargo.toml 定义，
+# 子包内定义会被忽略（cargo 警告）

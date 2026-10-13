@@ -1,0 +1,13 @@
+[package]
+name = "pv-ai"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "PurePhotoExplorer AI 打标与语义检索客户端"
+
+[dependencies]
+pv-core.workspace = true
+pv-index.workspace = true
+serde.workspace = true
+tracing.workspace = true

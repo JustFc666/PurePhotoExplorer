@@ -1,0 +1,28 @@
+# Rust build artifacts
+/target
+**/target
+
+# Node
+node_modules/
+dist/
+
+# Packaged release artifacts (produced by build, not source)
+/release
+backups/
+Temp/
+
+# OS / IDE
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# WorkBuddy internal
+.workbuddy/
+
+# Windows reserved-name artifact at repo root
+/NUL
+
+# 大型二进制素材 / QA 截图：保留在本地，不入仓库（体积过大，且含个人照片）
+test-image/
+docs/verification/

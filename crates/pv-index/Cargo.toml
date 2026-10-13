@@ -1,0 +1,12 @@
+[package]
+name = "pv-index"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "PurePhotoExplorer 索引层：SQLite schema、缓存键、查询"
+
+[dependencies]
+pv-core.workspace = true
+serde.workspace = true
+blake3.workspace = true

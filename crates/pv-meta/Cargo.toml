@@ -1,0 +1,15 @@
+[package]
+name = "pv-meta"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "PurePhotoExplorer 元数据层：读取 EXIF 拍摄参数（只读，不改原图，不影响看图）"
+
+[dependencies]
+serde.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+
+# EXIF 解析（纯 Rust，无原生依赖，Windows 上不需要 MSVC 之外的任何东西）
+kamadak-exif = "0.6"

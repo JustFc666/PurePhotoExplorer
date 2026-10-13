@@ -1,0 +1,34 @@
+[package]
+name = "pv-decode"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "PurePhotoExplorer 解码抽象层：统一解码接口 + 多后端接入"
+
+[dependencies]
+pv-core.workspace = true
+pv-index.workspace = true
+# RAW 的拍摄参数复用 pv-meta 的 EXIF 解析（含非标准 TIFF 魔数的 ORF/RW2），
+# 避免在解码层重复实现一遍
+pv-meta.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tracing.workspace = true
+png.workspace = true
+gif.workspace = true
+image-webp.workspace = true
+heif-oxide.workspace = true
+tiff.workspace = true
+avif-decode.workspace = true
+rgb.workspace = true
+flate2.workspace = true
+rayon.workspace = true
+fast_image_resize.workspace = true
+
+zune-jpeg = "0.5"
+jpeg-encoder.workspace = true
+
+[dev-dependencies]
+png.workspace = true
+rayon.workspace = true

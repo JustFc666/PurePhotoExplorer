@@ -1,0 +1,10 @@
+[package]
+name = "pv-geo"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "PurePhotoExplorer 离线地名库：由 GPS 坐标反查最近的城市（数据来自 GeoNames，CC BY 4.0）"
+
+[dependencies]
+serde.workspace = true

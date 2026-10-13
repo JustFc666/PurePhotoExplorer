@@ -1,0 +1,13 @@
+[package]
+name = "pv-cache"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "PurePhotoExplorer 三级缓存：内存 LRU + 磁盘缩略图库"
+
+[dependencies]
+pv-core.workspace = true
+pv-index.workspace = true
+serde.workspace = true
+tracing.workspace = true

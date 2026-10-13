@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PurePhotoExplorer 配色方案预览</title>
+<style>
+  *{box-sizing:border-box}
+  body{
+    margin:0;padding:32px;
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Microsoft YaHei","PingFang SC",sans-serif;
+    font-size:13px;line-height:1.6;font-weight:400;
+    background:#f4f4f6;color:#5a5a6e;
+    -webkit-font-smoothing:antialiased;
+  }
+  .wrap{max-width:1180px;margin:0 auto}
+  h1{font-size:20px;font-weight:500;margin:0 0 4px;color:#3a3a47}
+  .sub{font-size:13px;color:#828296;margin:0 0 28px}
+  .tabs{display:flex;gap:6px;margin:0 0 20px}
+  .tab{
+    padding:7px 16px;border-radius:8px;border:1px solid rgba(90,90,110,.2);
+    background:#fff;color:#5a5a6e;font:inherit;font-size:13px;cursor:pointer;
+  }
+  .tab.on{background:#6e6ec4;border-color:#6e6ec4;color:#fff}
+  .card{
+    background:#fff;border:1px solid rgba(90,90,110,.14);border-radius:12px;
+    overflow:hidden;box-shadow:0 4px 12px rgba(36,36,60,.06);
+  }
+  /* 应用模拟 */
+  .app{display:flex;height:540px}
+  .side{
+    width:210px;flex-shrink:0;padding:14px 10px;
+    background:var(--surface);border-right:1px solid var(--border);
+  }
+  .side h3{font-size:11px;font-weight:500;letter-spacing:.06em;
+    color:var(--muted);margin:0 0 8px;padding:0 8px;text-transform:uppercase}
+  .nav{
+    display:flex;align-items:center;gap:8px;padding:6px 9px;border-radius:8px;
+    color:var(--text);cursor:pointer;font-size:13px;
+  }
+  .nav:hover{background:var(--hover)}
+  .nav.on{background:var(--sel);color:var(--accent)}
+  .dot{width:6px;height:6px;border-radius:50%;background:var(--muted);flex-shrink:0}
+  .nav.on .dot{background:var(--accent)}
+  .count{margin-left:auto;font-size:11px;color:var(--muted);
+    font-variant-numeric:tabular-nums}
+  .main{flex:1;display:flex;flex-direction:column;min-width:0}
+  .bar{
+    display:flex;align-items:center;gap:6px;padding:8px 12px;
+    background:var(--surface);border-bottom:1px solid var(--border);
+  }
+  .btn{
+    height:30px;padding:0 12px;border-radius:8px;border:1px solid transparent;
+    background:transparent;color:var(--text);font:inherit;font-size:13px;cursor:pointer;
+    display:inline-flex;align-items:center;gap:6px;
+  }
+  .btn:hover{background:var(--hover)}
+  .btn.on{background:var(--sel);color:var(--accent)}
+  .btn.pri{background:var(--accent);color:#fff}
+  .btn.pri:hover{background:#7d7dd4}
+  .div{width:1px;height:18px;background:var(--border);margin:0 4px}
+  .grow{flex:1}
+  .search{
+    height:30px;padding:0 10px;border-radius:8px;font:inherit;font-size:13px;
+    background:var(--input);color:var(--text);border:1px solid var(--border);
+    width:200px;outline:none;
+  }
+  .search:focus{border-color:var(--accent);box-shadow:0 0 0 3px var(--sel)}
+  .grid{
+    flex:1;padding:14px;overflow:auto;
+    display:grid;grid-template-columns:repeat(auto-fill,minmax(128px,1fr));
+    gap:12px;align-content:start;background:var(--canvas);
+  }
+  .cardimg{
+    aspect-ratio:1;border-radius:8px;overflow:hidden;position:relative;
+    background:var(--thumb);cursor:pointer;
+  }
+  .cardimg.sel{outline:2px solid var(--accent);outline-offset:2px}
+  .meta{padding:5px 2px 0;font-size:11px;color:var(--text);
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .meta span{color:var(--muted);font-size:10px}
+  .tag{
+    position:absolute;top:5px;left:5px;padding:1px 6px;border-radius:4px;
+    font-size:10px;background:rgba(0,0,0,.6);color:#fff;backdrop-filter:blur(4px);
+  }
+  .lock{position:absolute;top:5px;right:5px;width:18px;height:18px;
+    border-radius:4px;background:var(--accent);color:#fff;
+    display:flex;align-items:center;justify-content:center;font-size:10px}
+  .status{
+    padding:6px 12px;background:var(--surface);border-top:1px solid var(--border);
+    font-size:11px;color:var(--muted);display:flex;gap:16px;
+    font-variant-numeric:tabular-nums;
+  }
+  /* 令牌展示 */
+  .tok{display:grid;grid-template-columns:repeat(auto-fill,minmax(168px,1fr));
+    gap:12px;margin-top:28px}
+  .t{border-radius:10px;overflow:hidden;border:1px solid rgba(90,90,110,.14);
+    background:#fff}
+  .t .sw{height:56px}
+  .t .in{padding:8px 10px}
+  .t .n{font-size:12px;color:#3a3a47;font-weight:500}
+  .t .v{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
+    font-size:11px;color:#828296;text-transform:uppercase}
+  .t .u{font-size:11px;color:#828296;margin-top:2px}
+  h2{font-size:15px;font-weight:500;color:#3a3a47;margin:32px 0 12px}
+  .note{
+    background:#fff;border:1px solid rgba(90,90,110,.14);border-left:3px solid #6e6ec4;
+    border-radius:8px;padding:12px 14px;margin-top:24px;font-size:12px;
+    color:#5a5a6e;line-height:1.7;
+  }
+  .note b{color:#3a3a47;font-weight:500}
+  /* 深色主题 */
+  body.dark{background:#141419;color:#eaeaef}
+  body.dark h1,body.dark h2,body.dark .t .n,body.dark .note b{color:#eaeaef}
+  body.dark .sub,body.dark .t .v,body.dark .t .u,body.dark .note{color:#a4a4bf}
+  body.dark .card,body.dark .t{background:#1c1c23;border-color:rgba(234,234,239,.12)}
+  body.dark .tab{background:#26262f;border-color:rgba(234,234,239,.16);color:#a4a4bf}
+  body.dark .tab.on{background:#6e6ec4;border-color:#6e6ec4;color:#fff}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>PurePhotoExplorer 配色方案</h1>
+  <p class="sub">取自你提供的色系 · 色相 240°（蓝紫）低饱和中性色</p>
+
+  <div class="tabs">
+    <button class="tab on" onclick="setTheme(false)">深色主题（默认）</button>
+    <button class="tab" onclick="setTheme(true)">浅色主题</button>
+  </div>
+
+  <div class="card" id="preview">
+    <div class="app">
+      <div class="side">
+        <h3>位置</h3>
+        <div class="nav on"><span class="dot"></span>照片库<span class="count">12480</span></div>
+        <div class="nav"><span class="dot"></span>最近浏览<span class="count">36</span></div>
+        <div class="nav"><span class="dot"></span>收藏<span class="count">204</span></div>
+        <h3 style="margin-top:20px">分类</h3>
+        <div class="nav"><span class="dot"></span>相机 RAW<span class="count">7421</span></div>
+        <div class="nav"><span class="dot"></span>手机照片<span class="count">3892</span></div>
+        <div class="nav"><span class="dot"></span>截图<span class="count">1167</span></div>
+        <h3 style="margin-top:20px">安全</h3>
+        <div class="nav"><span class="dot"></span>加密文件夹<span class="count">3</span></div>
+      </div>
+
+      <div class="main">
+        <div class="bar">
+          <button class="btn">←</button>
+          <button class="btn">→</button>
+          <div class="div"></div>
+          <button class="btn on">▦ 缩略图</button>
+          <button class="btn">▤ 详细信息</button>
+          <div class="div"></div>
+          <button class="btn">⤢ 适应窗口</button>
+          <button class="btn">1:1</button>
+          <div class="div"></div>
+          <button class="btn">✎ 编辑</button>
+          <button class="btn">⊞ 批量</button>
+          <div class="grow"></div>
+          <input class="search" placeholder="搜索：海边的日落…">
+        </div>
+
+        <div class="grid" id="grid"></div>
+
+        <div class="status">
+          <span id="stCount">已选 0 张</span>
+          <span>共 12480 张</span>
+          <span>RAW 7421 · HEIC 312 · JPEG 4747</span>
+          <span style="margin-left:auto">缩略图库 2.1 GB / 5 GB</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <h2>设计令牌</h2>
+  <div class="tok" id="tok"></div>
+
+  <div class="note">
+    <b>画面区域为何用中性近黑 #121216</b><br>
+    看图软件的画布不能带色偏。蓝紫底色会让用户对图像色彩产生判断偏差，
+    修图调色时尤其危险。因此品牌色只用于界面框架（按钮、选中态、边框），
+    画布保持中性。这是看图与普通应用最本质的区别。
+  </div>
+</div>
+
+<script>
+const RAMP=[["50","#eaeaef","最浅"],["100","#d0d0d8","浅灰"],["200","#a4a4bf","中浅"],
+  ["300","#8e8eaa","中"],["400","#828296","强调基"],["500","#6e6e82","中深"],
+  ["600","#5a5a6e","深"],["700","#46465a","更深"],["800","#32323f","深灰"],
+  ["850","#26262f","面板"],["900","#1c1c23","表面"],["950","#141419","最深"]];
+
+const ACCENT=[["accent","#6e6ec4","强调 · 选中"],["accent-hover","#7d7dd4","悬停"],
+  ["accent-soft","rgba(110,110,196,.16)","选中底色"],["canvas","#121216","画面（中性）"]];
+
+const DARK={surface:"#1c1c23",border:"rgba(234,234,239,.12)",text:"#eaeaef",
+  muted:"#a4a4bf",hover:"rgba(234,234,239,.06)",sel:"rgba(110,110,196,.16)",
+  accent:"#6e6ec4",input:"#26262f",canvas:"#121216",thumb:"#26262f"};
+
+const LIGHT={surface:"#fff",border:"rgba(90,90,110,.16)",text:"#5a5a6e",
+  muted:"#828296",hover:"rgba(90,90,110,.07)",sel:"rgba(110,110,196,.13)",
+  accent:"#6e6ec4",input:"#fff",canvas:"#f4f4f6",thumb:"#dcdce4"};
+
+const L=(a,b)=>`rgb(${Math.round(a[0]+(b[0]-a[0])*t)},${Math.round(a[1]+(b[1]-a[1])*t)},${Math.round(a[2]+(b[2]-a[2])*t)})`;
+let t=0;
+
+const PAL=[[90,110,120],[40,50,60],[200,200,215],[25,25,35],[60,55,80],[180,175,165],
+  [30,30,40],[190,195,210],[120,110,100],[45,50,60],[15,15,20],[170,180,195]];
+const TYPE=[["RAW","#6e6ec4"],["JPEG","#828296"],["HEIC","#5e7d8a"],["RAW","#6e6ec4"],
+  ["JPEG","#828296"],["RAW","#6e6ec4"],["JPEG","#828296"],["JPEG","#828296"],
+  ["HEIC","#5e7d8a"],["RAW","#6e6ec4"],["JPEG","#828296"],["JPEG","#828296"]];
+const NAME=["DSC_4821","IMG_20261003","DSC_4822","IMG_20261004","DSC_4823","P1010567",
+  "IMG_20261005","DSC_4825","IMG_20261006","DSC_4827","IMG_20261007","IMG_20261008"];
+const EXIF=["6000×4000 · f/2.8","4032×3024 · f/1.8","6048×4024 · f/4.0",
+  "4032×3024 · f/1.8","8256×5504 · f/5.6","4032×3024 · HDR",
+  "6240×4160 · f/2.8","5472×3648 · f/2.8","4032×3024 · f/1.8",
+  "7008×4672 · f/4.0","4032×3024 · f/1.8","4032×3024 · f/1.8"];
+
+let sel=new Set([1,4]);
+
+function buildGrid(){
+  const g=document.getElementById("grid");
+  g.innerHTML="";
+  for(let i=0;i<12;i++){
+    const c=t>0.5?DARK:LIGHT;
+    const a=PAL[i],b=PAL[(i+1)%12];
+    const d=document.createElement("div");
+    d.className="cardimg"+(sel.has(i)?" sel":"");
+    d.innerHTML=`<div style="position:absolute;inset:0;background:linear-gradient(${
+      135+i*20}deg,${L(a,b)},${L(b,a)})"></div>
+      <div class="tag">${TYPE[i][0]}</div>
+      ${i===2?'<div class="lock">🔒</div>':''}`;
+    g.appendChild(d);
+    const m=document.createElement("div");
+    m.className="meta";
+    m.innerHTML=`${NAME[i]} <span>· ${EXIF[i]}</span>`;
+    m.style.color=c.text;
+    g.appendChild(m);
+  }
+  document.getElementById("stCount").textContent=`已选 ${sel.size} 张`;
+}
+
+function buildTok(){
+  const t2=document.getElementById("tok");
+  t2.innerHTML="";
+  RAMP.forEach(([n,v,u])=>{
+    const d=document.createElement("div");
+    d.className="t";
+    d.innerHTML=`<div class="sw" style="background:${v}"></div>
+      <div class="in"><div class="n">${u}</div>
+      <div class="v">${v}</div><div class="u">ramp-${n}</div></div>`;
+    t2.appendChild(d);
+  });
+  ACCENT.forEach(([n,v,u])=>{
+    const d=document.createElement("div");
+    d.className="t";
+    const sw=v.startsWith("rgba")?
+      `background:${v.replace(/[\d.]+\)$/,".5)")}`:`background:${v}`;
+    d.innerHTML=`<div class="sw" style="${sw}"></div>
+      <div class="in"><div class="n">${u}</div>
+      <div class="v">${v}</div><div class="u">${n}</div></div>`;
+    t2.appendChild(d);
+  });
+}
+
+function setTheme(dark){
+  document.body.classList.toggle("dark",dark);
+  document.querySelectorAll(".tab").forEach((b,i)=>
+    b.classList.toggle("on",(i===1)===dark));
+  const r=document.getElementById("preview").style;
+  for(const k in dark?DARK:LIGHT) r.setProperty("--"+k,dark?DARK[k]:LIGHT[k]);
+  document.getElementById("search")&&0;
+  const s=document.querySelector(".search");
+  if(s){s.style.background=dark?DARK.input:LIGHT.input;
+    s.style.color=dark?DARK.text:LIGHT.text;
+    s.style.borderColor=dark?DARK.border:LIGHT.border;}
+  buildGrid();
+}
+
+buildTok();
+setTheme(true);
+</script>
+</body>
+</html>

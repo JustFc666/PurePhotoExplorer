@@ -1,0 +1,1730 @@
+/* PurePhotoExplorer 应用布局样式
+ * 颜色令牌见 theme.css，这里只做布局与组件外观
+ */
+
+.pv-app {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  overflow: hidden;
+  background: var(--pv-bg-app);
+}
+
+/* ── 工具栏 ──
+ * 同时充当窗口标题栏（decorations: false 全自绘方案）：
+ * 系统标题栏已移除，内容从 y=0 铺满窗口，
+ * 工具栏正好占据原来标题栏那一行。
+ * 整条栏负责拖动窗口，最左放应用 logo，右端放自绘的最小化/最大化/关闭。
+ *
+ * ⚠️ 高度是 **32px**（2026-10-08 用户指定）。
+ * 改动这个值要同步两处：
+ * - `.pv-drop-overlay` 的 `inset` 上边距；
+ * - 若高度 < 12px（`RESIZE_CORNER`），最左的 logo 会落进窗口左上角的
+ *   缩放热区里 —— 所以左侧内边距必须 > 12px（现为 16px）。
+ */
+.pv-toolbar {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  height: 32px;
+  padding: 0 0 0 10px; /* 左侧 10px 由 logo 定；右侧留给窗口控制按钮 */
+  background: var(--pv-bg-surface);
+  border-bottom: 1px solid var(--pv-border-subtle);
+  user-select: none;
+}
+
+/* ── 应用 logo（工具栏最左，距左边 10px）──
+ * 图标本体是「圆角方框 + 山峰折线」，外形 **4:3**。
+ * `color: #fff` 让 SVG 用 `currentColor` 描边 → 线条**白色**（用户要求）；
+ * `background` 取标题栏底色（用户要求），所以图标直接「长」在标题栏上，
+ * 没有可见的底块。
+ *
+ * 尺寸：**40 × 30 px**（用户指定，本身即 4:3）。
+ * ⚠️ 必须与 SVG 的 `viewBox="0 0 32 24"` 比例一致，否则图标会被拉伸。
+ *
+ * ⚠️ **`position`/`z-index`/`pointer-events` 三者缺一不可**：
+ * 左边距 10px < `RESIZE_CORNER`(12px)，logo 顶部会落进窗口左上角那层
+ * `position: fixed; z-index: 50` 的缩放热区，拖 logo 会变成缩放窗口。
+ * 把 logo 抬到 z-index 100 且 `pointer-events: auto` 之后，
+ * 事件由 logo 接住并**冒泡到 `<header>`**，于是拖 logo = 拖窗口（符合标题栏直觉）。
+ */
+.pv-logo {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  position: relative;
+  z-index: 100;
+  pointer-events: auto;
+  cursor: default;
+  width: 40px;
+  height: 30px;
+  margin-right: 8px;
+  color: #fff;
+  background: var(--pv-bg-surface);
+}
+
+.pv-logo svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+/* ── 自绘窗口控制按钮（最小化 / 最大化·还原 / 关闭）──
+ * 尺寸对齐 Windows 原生：按钮宽 46 物理 px ÷ 1.25 ≈ 36.8 CSS px，
+ * 高度撑满工具栏。关闭按钮 hover 变红，沿用系统惯例 #c42b1c。
+ */
+.pv-winctl {
+  display: flex;
+  align-items: stretch;
+  align-self: stretch;
+  margin-left: 6px;
+}
+
+.pv-winctl-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 46px;
+  padding: 0;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  color: var(--pv-text-secondary);
+  cursor: default;
+  transition: background 0.12s, color 0.12s;
+}
+
+.pv-winctl-btn:hover {
+  background: var(--pv-hover);
+  color: var(--pv-text-primary);
+}
+
+.pv-winctl-btn:active {
+  background: var(--pv-active);
+}
+
+.pv-winctl-btn:focus-visible {
+  outline: 2px solid var(--pv-accent-ring);
+  outline-offset: -2px;
+}
+
+/* 关闭：hover 红底白字（Windows 惯例） */
+.pv-winctl-close:hover {
+  background: #c42b1c;
+  color: #fff;
+}
+
+.pv-winctl-close:active {
+  background: #b1291a;
+  color: #fff;
+}
+
+/* ── 窗口边缘 resize 热区 ──
+ * decorations: false 后 WS_THICKFRAME 被剥掉，系统不再响应边框拖拽，
+ * 这里铺一层透明热区，按下时把控制权交还 `startResizeDragging`。
+ * z-index 高于应用内容、低于拖拽覆盖层。
+ */
+.pv-resize-handle {
+  position: fixed;
+  z-index: 50;
+}
+
+/* 工具栏按钮：其余按钮 14px，主行动按钮「打开」**16px**（用户指定）。
+ * 高度撑满 32px 的栏。
+ *
+ * ⚠️ **文字底边对齐**（用户 2026-10-08 要求）：字号不同的按钮若各自垂直居中，
+ * 底边会差半个字号（16px 与 14px 差 1px），看起来"飘"。这里统一改成
+ * `align-items: flex-end` + 相同的下内边距，于是**所有文字底边落在同一条线上**。
+ *
+ * 数值要配合 `.pv-hint`：按钮有 1px 边框，所以它用 4px、hint 用 5px，
+ * 两者文字底边才真正齐平。
+ *
+ * ⚠️ `border-radius` 必须是**四个角**（曾写成 `5px 5px 0 0`，只有上面圆角，
+ * 用户 2026-10-08 截图指出「只有上面是圆角」—— 按钮虽然撑满栏高，
+ * 但它比栏矮 1px（栏有 border-bottom），底边仍然看得见）。
+ */
+.pv-toolbar .pv-btn {
+  height: auto;
+  align-self: stretch;
+  align-items: flex-end;
+  padding: 0 11px 4px;
+  font-size: 14px;
+  line-height: 1;
+  gap: 4px;
+  border-radius: 5px;
+}
+
+.pv-toolbar .pv-btn-primary {
+  font-size: 16px;
+  padding: 0 13px 4px;
+}
+
+/* 「打 开」：**字保持 16px，两个字之间的间隔单独定为 12px**（用户 2026-10-08）。
+ * 用 `inline-block` 占位而不是空格字符 —— 空格宽度随字号/字体变化，
+ * 拿不准；固定宽度才能精确到 12px。
+ * ⚠️ 外层 `.pv-open-label` 不可省：Flex 容器的 `gap` 会给每个**直接子项**
+ * 之间留缝，把「打」/占位/「开」放在同一层会额外多出两段 4px。 */
+.pv-open-label {
+  white-space: nowrap;
+}
+
+.pv-open-gap {
+  display: inline-block;
+  width: 12px;
+}
+
+.pv-toolbar .pv-divider {
+  height: 18px;
+  margin: 0 4px;
+  align-self: center;
+}
+
+.pv-spacer {
+  flex: 1;
+}
+
+/* 提示文字：与按钮文字**底边对齐**（同一条水平线）。
+ * 5px 而不是 4px —— 按钮有 1px 边框，这样两者才真正齐平。 */
+.pv-hint {
+  font-size: 13px;
+  color: var(--pv-text-disabled);
+  padding: 0 8px 5px;
+  align-self: flex-end;
+  line-height: 1;
+}
+
+/* 按钮里的小字（如动图的「12/48」帧号）：比正文再小一号、压暗一点，
+ * 让主体文字（播放/暂停）保持可读性 */
+.pv-btn-sub {
+  font-size: 0.78em;
+  opacity: 0.75;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── 主区域 ── */
+.pv-main {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  position: relative;
+}
+
+/* ── 画布 ──
+ * 画布背景用中性色，不用品牌色，避免影响对图像色彩的判断
+ */
+.pv-canvas {
+  flex: 1;
+  position: relative;
+  overflow: hidden;
+  background: var(--pv-bg-canvas);
+  cursor: grab;
+  /* 阻止浏览器的图片拖拽默认行为 */
+  -webkit-user-drag: none;
+}
+
+.pv-canvas[data-dragging='true'] {
+  cursor: grabbing;
+}
+
+/* 2026-10-08：`data-selecting`（十字光标）已删除 ——
+   两种模式都不再「在画面上拖出新框」，交互对象只有那个框：
+   框内部 move、四角 resize，光标由 `.pv-crop-move` / `.pv-crop-handle` 给。 */
+
+.pv-canvas-img {
+  /* 绝对定位到 (0,0)：定位完全交给 JS 的 translate/scale，
+     避免 flex 居中与 transform 叠加造成双重偏移 */
+  position: absolute;
+  top: 0;
+  left: 0;
+  /* 关键性能设置：提升为独立合成层，缩放平移走 GPU 不重绘像素 */
+  will-change: transform;
+  transform-origin: 0 0;
+  /* 防止图片被选中的蓝色高亮 */
+  user-select: none;
+  pointer-events: none;
+  /* 避免图片边缘的锯齿，缩小时更平滑 */
+  image-rendering: auto;
+  backface-visibility: hidden;
+}
+
+/* ── 缩放控件 ──
+ * 内联在底部信息栏：当前百分比 + 可拖拽滑块
+ */
+.pv-zoom {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  user-select: none;
+}
+
+.pv-zoom-slider {
+  width: 96px;
+  height: 3px;
+  margin: 0;
+  accent-color: var(--pv-accent);
+  cursor: pointer;
+}
+
+.pv-zoom-value {
+  min-width: 40px;
+  text-align: right;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: var(--pv-text-secondary);
+}
+
+/* ── 图片信息浮层（右下角）── */
+.pv-info {
+  position: absolute;
+  right: 12px;
+  bottom: 12px;
+  z-index: 5;
+  width: 250px;
+  max-width: calc(100% - 24px);
+  /* 拍摄参数行数多，窗口矮时允许面板内部滚动 */
+  max-height: calc(100% - 24px);
+  overflow-y: auto;
+  padding: 10px 12px 12px;
+  border-radius: 12px;
+  background: var(--pv-bg-surface);
+  border: 1px solid var(--pv-border);
+  box-shadow: var(--pv-shadow-lg);
+  /* 半透明：能透出后面的图片。整块（含文字）一起半透明，
+     若要"面板透、文字实"，改用 rgba 背景 + backdrop-filter */
+  opacity: 0.6;
+  font-size: 12px;
+  color: var(--pv-text-primary);
+}
+
+.pv-info-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.pv-info-title {
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.pv-info-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--pv-text-tertiary);
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.pv-info-close:hover {
+  background: var(--pv-hover);
+  color: var(--pv-text-primary);
+}
+
+.pv-info-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+}
+
+.pv-info-row {
+  display: grid;
+  grid-template-columns: 62px 1fr;
+  gap: 8px;
+  align-items: baseline;
+}
+
+.pv-info-row dt {
+  color: var(--pv-text-tertiary);
+}
+
+.pv-info-row dd {
+  margin: 0;
+  color: var(--pv-text-primary);
+  /* 值 + 可能的行内操作（「在地图中查看」）并排；
+     空间不足时操作换行而不是被挤掉 */
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+}
+
+.pv-info-row dd > span:first-child {
+  /* 长值裁剪（如镜头型号、相机全称），悬停查看完整值 */
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 放开换行的行（经纬度：截断会丢掉整个经度，宁可占两行） */
+.pv-info-row-wrap dd > span:first-child {
+  overflow: visible;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+/* 「拍摄地点」行的地图按钮：不参与收缩，免得被长坐标挤没 */
+.pv-info-map-btn {
+  flex: 0 0 auto;
+  padding: 1px 6px;
+  font: inherit;
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--pv-accent);
+  background: transparent;
+  border: 1px solid var(--pv-border-strong);
+  border-radius: 4px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.pv-info-map-btn:hover {
+  color: #fff;
+  background: var(--pv-accent);
+  border-color: var(--pv-accent);
+}
+
+/* 打不开浏览器时的原因（多半是没设默认浏览器），独占一行 */
+.pv-info-map-error {
+  flex: 1 1 100%;
+  font-size: 11px;
+  color: #f5b8b8;
+}
+
+/* ── 画布调整浮层（右上角）──
+ * 与 .pv-info 分居两角，可同时打开互不遮挡。
+ * 宽度按最长一行决定：「逆时针 90°」两个按钮并排需要 ~110px 每个。
+ */
+.pv-adjust {
+  position: absolute;
+  right: 12px;
+  top: 12px;
+  z-index: 6;
+  width: 248px;
+  max-width: calc(100% - 24px);
+  max-height: calc(100% - 24px);
+  overflow-y: auto;
+  padding: 10px 12px 12px;
+  border-radius: 12px;
+  background: var(--pv-bg-surface);
+  border: 1px solid var(--pv-border);
+  box-shadow: var(--pv-shadow-lg);
+  font-size: 12px;
+  color: var(--pv-text-primary);
+}
+
+.pv-adjust-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.pv-adjust-title {
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.pv-adjust-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--pv-text-tertiary);
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.pv-adjust-close:hover {
+  background: var(--pv-hover);
+  color: var(--pv-text-primary);
+}
+
+.pv-adjust-group + .pv-adjust-group {
+  margin-top: 14px;
+}
+
+.pv-adjust-label-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+
+.pv-adjust-label {
+  color: var(--pv-text-secondary);
+}
+
+/* 数值列用等宽数字，拖动时宽度不跳动 */
+.pv-adjust-value {
+  font-variant-numeric: tabular-nums;
+  color: var(--pv-text-primary);
+}
+
+/* 归零态弱化显示，让"已调整"一眼可辨 */
+.pv-adjust-value[data-zero='true'] {
+  color: var(--pv-text-tertiary);
+}
+
+.pv-adjust-slider {
+  width: 100%;
+  height: 3px;
+  margin: 0;
+  accent-color: var(--pv-accent);
+  cursor: pointer;
+}
+
+/* 滑块下方刻度行：-45° [归零] +45° */
+.pv-adjust-ticks {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 4px;
+  font-size: 11px;
+  color: var(--pv-text-tertiary);
+}
+
+.pv-adjust-zero {
+  padding: 1px 6px;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--pv-text-tertiary);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.pv-adjust-zero:hover:not(:disabled) {
+  background: var(--pv-hover);
+  color: var(--pv-text-primary);
+}
+
+.pv-adjust-zero:disabled {
+  color: var(--pv-text-disabled);
+  cursor: not-allowed;
+}
+
+/* 旋转 90° 按钮：两个等分并排，「逆时针」在左（符合空间直觉） */
+.pv-adjust-rotates {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+}
+
+.pv-rotate-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  height: 26px;
+  padding: 0 4px;
+  font: inherit;
+  font-size: 11px;
+  color: var(--pv-text-secondary);
+  background: transparent;
+  border: 1px solid var(--pv-border);
+  border-radius: 6px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
+}
+
+.pv-rotate-btn:hover {
+  background: var(--pv-hover);
+  color: var(--pv-text-primary);
+  border-color: var(--pv-border-strong);
+}
+
+.pv-rotate-btn:active {
+  background: var(--pv-active);
+}
+
+/* 箭头符号用更大字号，视觉上更清楚 */
+.pv-rotate-btn span[aria-hidden] {
+  font-size: 13px;
+  line-height: 1;
+}
+
+/* 比例按钮组：铺满一行，5 个选项等分 */
+.pv-adjust-ratios {
+  display: grid;
+  /* 8 个比例排成两行 4 列：自由 / 1:1 / 3:4 / 4:3
+   *                     16:9 / 9:16 / 2.35:1 / 2:3 */
+  grid-template-columns: repeat(4, 1fr);
+  gap: 4px;
+}
+
+.pv-ratio-btn {
+  height: 26px;
+  padding: 0;
+  font: inherit;
+  font-size: 11px;
+  color: var(--pv-text-secondary);
+  background: transparent;
+  border: 1px solid var(--pv-border);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
+}
+
+.pv-ratio-btn:hover {
+  background: var(--pv-hover);
+  color: var(--pv-text-primary);
+}
+
+.pv-ratio-btn[data-active='true'] {
+  background: var(--pv-selected);
+  border-color: var(--pv-accent);
+  color: var(--pv-accent);
+}
+
+/* 「自由」模式下的框选状态行：提示语 / 已框选比例 + 清除 */
+.pv-adjust-crop {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 6px;
+  min-height: 18px;
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--pv-text-tertiary);
+}
+
+.pv-adjust-crop-info {
+  color: var(--pv-accent);
+  font-variant-numeric: tabular-nums;
+}
+
+.pv-adjust-crop-hint {
+  /* 操作指引要够显眼，否则用户不知道「自由」是可以拖的 */
+  color: var(--pv-text-tertiary);
+}
+
+.pv-adjust-crop-clear {
+  flex: none;
+  padding: 1px 6px;
+  font: inherit;
+  font-size: 11px;
+  color: var(--pv-text-secondary);
+  background: transparent;
+  border: 1px solid var(--pv-border);
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+
+.pv-adjust-crop-clear:hover {
+  background: var(--pv-hover);
+  color: var(--pv-text-primary);
+}
+
+.pv-adjust-reset {
+  display: block;
+  width: 100%;
+  height: 26px;
+  margin-top: 14px;
+  font: inherit;
+  font-size: 12px;
+  color: var(--pv-text-secondary);
+  background: transparent;
+  border: 1px solid var(--pv-border);
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.pv-adjust-reset:hover:not(:disabled) {
+  background: var(--pv-hover);
+  color: var(--pv-text-primary);
+  border-color: var(--pv-border-strong);
+}
+
+.pv-adjust-reset:disabled {
+  color: var(--pv-text-disabled);
+  border-color: var(--pv-border-subtle);
+  cursor: not-allowed;
+}
+
+/* ── 覆盖原图（主操作，用强调色实心）──
+ * 这是面板里唯一的写盘动作，且会覆盖用户原文件，
+ * 所以给它最强的视觉权重，与「复位」这类可逆操作明确区分。
+ */
+.pv-adjust-save {
+  display: block;
+  width: 100%;
+  height: 28px;
+  margin-top: 6px;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  color: #fff;
+  background: var(--pv-accent);
+  border: 1px solid transparent;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.12s;
+}
+
+.pv-adjust-save:hover:not(:disabled) {
+  background: var(--pv-accent-hover);
+}
+
+.pv-adjust-save:active:not(:disabled) {
+  background: var(--pv-accent-press);
+}
+
+.pv-adjust-save:disabled {
+  color: var(--pv-text-disabled);
+  background: transparent;
+  border-color: var(--pv-border-subtle);
+  cursor: not-allowed;
+}
+
+/* ── 保存结果 / 提示文字 ── */
+.pv-adjust-status {
+  margin: 8px 0 0;
+  font-size: 11px;
+  line-height: 1.5;
+  word-break: break-all;
+}
+
+.pv-adjust-status[data-kind='ok'] {
+  color: var(--pv-accent);
+}
+
+.pv-adjust-status[data-kind='error'] {
+  /* 与「关闭」按钮的 hover 同色系，保证在深浅两套主题下都醒目 */
+  color: #d9534f;
+}
+
+.pv-adjust-note {
+  margin: 8px 0 0;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--pv-text-tertiary);
+}
+
+.pv-adjust-note[data-kind='warn'] {
+  color: #c8811f;
+}
+
+/* ── 固定比例的**预览提示框** ──
+ * 选了 1:1 / 16:9 但还没拖框时，先在画面中间摆一个「该比例最大」的框，
+ * 框外区域被"压暗"以示会裁掉的部分。
+ *
+ * ⚠️ 2026-10-07 第二次语义变更：它**又可交互了**，但交互对象是**框本身**：
+ * 拖四角改大小（比例锁死、限制在视口内）、拖框内部平移。
+ * 遮罩层仍然 `pointer-events: none`（绝不能挡住画布的拖动/滚轮），
+ * 但**框内部与四个角的热区各自 `pointer-events: auto`**。
+ */
+.pv-crop-overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 4;
+}
+
+/* 用超大外阴影当遮罩：无需额外 4 个 div，且天然跟随裁剪框尺寸 */
+.pv-crop-frame {
+  position: absolute;
+  box-shadow: 0 0 0 9999px rgba(10, 10, 14, 0.45);
+  outline: 1px solid rgba(255, 255, 255, 0.55);
+  outline-offset: -1px;
+  pointer-events: none;
+}
+
+/* 框内部的平移热区：按住拖动整体挪位置（尺寸不变） */
+.pv-crop-move {
+  position: absolute;
+  pointer-events: auto;
+  cursor: move;
+}
+.pv-crop-move[data-dragging='true'] {
+  cursor: grabbing;
+}
+
+/* ── 四角缩放热区 ──
+ * ⚠️ 遮罩层是 pointer-events: none，所以**每个热区必须单独 pointer-events: auto**，
+ * 否则拖角完全没反应（2026-10-07 踩坑）。热区做成 18×18 的透明方块、
+ * 中心压在框的顶点上（margin 抵消一半），比角上只有 1px 好点得多。
+ */
+.pv-crop-handle {
+  position: absolute;
+  width: 18px;
+  height: 18px;
+  margin: -9px 0 0 -9px;
+  pointer-events: auto;
+}
+.pv-crop-handle[data-corner='nw'] {
+  cursor: nwse-resize;
+}
+.pv-crop-handle[data-corner='se'] {
+  cursor: nwse-resize;
+}
+.pv-crop-handle[data-corner='ne'] {
+  cursor: nesw-resize;
+}
+.pv-crop-handle[data-corner='sw'] {
+  cursor: nesw-resize;
+}
+
+/* ⚠️ 2026-10-08：`.pv-select-overlay` / `.pv-select-box` 已**整体删除** ——
+ * 自由与固定比例统一走 `.pv-crop-overlay`（预置框 + 四角 / 内部热区），
+ * 不再有「拖出新框」的第二套渲染。若再加回来会与 `.pv-crop-frame` 的
+ * 遮罩叠加，把框内高亮一起吃成黑块。
+ *
+ * ⚠️ 2026-10-07：也**不要**给框加三分构图辅助线（九宫格）。
+ * 用户明确要求「任何模式下都不要出现九宫格」——
+ * 纯色遮罩 + 描边已足够表达选区范围。 */
+
+/* ── 空状态 ── */
+.pv-empty {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  background: var(--pv-bg-canvas);
+  padding: 24px;
+}
+
+.pv-empty-icon {
+  width: 72px;
+  height: 72px;
+  border-radius: 16px;
+  margin-bottom: 8px;
+  background: var(--pv-bg-elevated);
+  border: 1px solid var(--pv-border-subtle);
+  position: relative;
+}
+
+/* 简化的图片图标：山 + 太阳 */
+.pv-empty-icon::before {
+  content: '';
+  position: absolute;
+  inset: 20px 20px 24px;
+  background: var(--pv-text-disabled);
+  opacity: 0.5;
+  clip-path: polygon(0 100%, 35% 40%, 60% 70%, 78% 25%, 100% 100%);
+}
+
+.pv-empty-icon::after {
+  content: '';
+  position: absolute;
+  top: 18px;
+  right: 18px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--pv-accent);
+  opacity: 0.7;
+}
+
+.pv-icon-error {
+  background: rgba(226, 75, 74, 0.12);
+  border-color: rgba(226, 75, 74, 0.3);
+}
+
+.pv-icon-error::before {
+  background: var(--pv-text-danger, #e24b4a);
+  opacity: 0.8;
+  clip-path: none;
+  inset: 26px;
+  border-radius: 4px;
+}
+
+.pv-icon-error::after {
+  display: none;
+}
+
+.pv-empty-title {
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--pv-text-primary);
+  margin: 0;
+}
+
+.pv-empty-sub {
+  font-size: 13px;
+  color: var(--pv-text-tertiary);
+  margin: 0;
+  text-align: center;
+  max-width: 380px;
+  line-height: 1.6;
+}
+
+.pv-error-msg {
+  color: var(--pv-text-primary);
+}
+
+.pv-error-hint {
+  font-size: 12px;
+  color: var(--pv-text-tertiary);
+  padding: 6px 12px;
+  background: var(--pv-bg-elevated);
+  border-radius: 8px;
+  border: 1px solid var(--pv-border-subtle);
+}
+
+.pv-open-btn {
+  margin-top: 12px;
+  min-width: 112px;
+}
+
+/* ── 加载动画 ── */
+.pv-spinner {
+  width: 28px;
+  height: 28px;
+  border: 2px solid var(--pv-border);
+  border-top-color: var(--pv-accent);
+  border-radius: 50%;
+  animation: pv-spin 0.7s linear infinite;
+  margin-bottom: 8px;
+}
+
+@keyframes pv-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pv-spinner {
+    animation-duration: 2s;
+  }
+}
+
+/* ── 状态栏 ── */
+.pv-statusbar {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 28px;
+  padding: 0 12px;
+  font-size: 12px;
+  color: var(--pv-text-secondary);
+  background: var(--pv-bg-surface);
+  border-top: 1px solid var(--pv-border-subtle);
+  user-select: none;
+  /* 窗口很窄时宁可裁掉，也不要撑破布局（路径已会先让位） */
+  overflow: hidden;
+}
+
+.pv-status-name {
+  font-weight: 500;
+  color: var(--pv-text-primary);
+  max-width: 280px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 左侧各项默认不参与压缩，只有超长路径让位（否则会把后面的信息挤没） */
+.pv-statusbar > * {
+  flex-shrink: 0;
+}
+
+/* 完整路径：占满剩余空间，超出用省略号，悬停看全文 */
+.pv-status-path {
+  flex-shrink: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--pv-text-tertiary);
+}
+
+.pv-status-sep {
+  width: 1px;
+  height: 12px;
+  background: var(--pv-border);
+}
+
+.pv-status-muted {
+  color: var(--pv-text-tertiary);
+}
+
+.pv-status-notice {
+  color: var(--pv-accent);
+}
+
+.pv-badge {
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 500;
+  background: var(--pv-accent-soft);
+  color: var(--pv-accent);
+}
+
+/* 警告态徽标（如动图被截断）：用暖色把它与普通信息徽标区分开 */
+.pv-badge-warn {
+  background: rgba(224, 160, 48, 0.16);
+  color: #e0a030;
+}
+
+/* ── 拖拽悬停提示 ──
+ * inset 上边距 = 工具栏高度（32px），下边距 = 状态栏高度（28px）
+ */
+.pv-drop-overlay {
+  position: absolute;
+  inset: 32px 0 28px; /* 让开工具栏与状态栏 */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(20, 20, 25, 0.72);
+  backdrop-filter: blur(2px);
+  pointer-events: none;
+  z-index: 10;
+}
+
+/* 全屏时工具栏/信息栏已隐藏，覆盖层铺满整窗 */
+.pv-app[data-fullscreen='true'] .pv-drop-overlay {
+  inset: 0;
+}
+
+.pv-drop-box {
+  padding: 16px 28px;
+  font-size: 14px;
+  color: var(--pv-text-primary);
+  background: var(--pv-bg-elevated);
+  border: 2px dashed var(--pv-accent);
+  border-radius: 12px;
+  box-shadow: var(--pv-shadow-lg);
+}
+
+/* ── 错误详情（可复制诊断信息）── */
+.pv-error-detail {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  max-width: 560px;
+}
+
+.pv-error-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 2px;
+}
+
+.pv-btn-sm {
+  height: 26px;
+  padding: 0 10px;
+  font-size: 12px;
+  color: var(--pv-text-tertiary);
+  border-color: var(--pv-border);
+}
+
+.pv-btn-sm:hover {
+  color: var(--pv-text-primary);
+  border-color: var(--pv-border-strong);
+}
+
+.pv-error-panel {
+  width: 100%;
+  margin-top: 4px;
+  padding: 12px 14px;
+  text-align: left;
+  background: var(--pv-bg-surface);
+  border: 1px solid var(--pv-border);
+  border-radius: 10px;
+}
+
+.pv-error-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.pv-error-table th {
+  width: 78px;
+  padding: 4px 8px 4px 0;
+  font-weight: 500;
+  color: var(--pv-text-tertiary);
+  text-align: left;
+  vertical-align: top;
+  white-space: nowrap;
+}
+
+.pv-error-table td {
+  padding: 4px 0;
+  color: var(--pv-text-secondary);
+  word-break: break-all;
+  user-select: text;
+}
+
+.pv-error-raw {
+  max-height: 180px;
+  margin: 10px 0 0;
+  padding: 10px;
+  overflow: auto;
+  font-family: var(--font-mono, ui-monospace, Consolas, monospace);
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--pv-text-secondary);
+  background: var(--pv-bg-canvas);
+  border: 1px solid var(--pv-border-subtle);
+  border-radius: 6px;
+  white-space: pre-wrap;
+  word-break: break-all;
+  cursor: text;
+  user-select: text;
+}
+
+.pv-error-tip {
+  margin: 8px 0 0;
+  font-size: 11px;
+  color: var(--pv-text-disabled);
+  text-align: center;
+}
+
+/* ── 居中模态（帮助 / 设置共用）──
+ * 两者的外壳完全一样（遮罩 + 卡片 + 标题栏 + 内容区），只有内容不同：
+ * 帮助 = 快捷键速查；设置 = 默认打开方式 + 关于。
+ * 所以样式用中性的 `pv-modal-*`，**不要**各写一套 —— 改一处漏一处的话，
+ * 两个面板外观会慢慢分叉。
+ *
+ * 遮罩压暗画面、把注意力集中到卡片上；点遮罩关闭、点卡片本身不关
+ * （stopPropagation 在组件里做）。z-index 20 —— 高于信息/调整浮层（5），
+ * 低于窗口边缘 resize 热区（50），这样贴边拖拽缩放仍然可用。
+ */
+.pv-modal-backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(10, 10, 14, 0.55);
+  backdrop-filter: blur(2px);
+}
+
+.pv-modal {
+  width: 600px;
+  max-width: calc(100% - 32px);
+  max-height: calc(100% - 32px);
+  overflow-y: auto;
+  padding: 14px 18px 18px;
+  border-radius: 14px;
+  background: var(--pv-bg-elevated);
+  border: 1px solid var(--pv-border);
+  box-shadow: var(--pv-shadow-lg);
+  color: var(--pv-text-primary);
+  font-size: 13px;
+  /* 邮箱要能选中复制（应用全局多数区域是 user-select: none） */
+  user-select: text;
+}
+
+.pv-modal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.pv-modal-title {
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.pv-modal-body {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.pv-modal-group {
+  margin: 0 0 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--pv-text-tertiary);
+  letter-spacing: 0.04em;
+}
+
+/* 分节容器 `.pv-modal-section` **刻意不写规则**：它就是普通块级元素，
+ * 靠父级 `.pv-modal-body` 的 `gap` 获得分节间距。
+ * ⛔ 别给它加 `display: contents` —— 那会让它脱离 flex 布局，
+ * 分节间距（16px）直接消失，所有小节挤成一堆。 */
+
+.pv-modal-list {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin: 0;
+}
+
+/* 第一列固定 200px —— 用 `auto` 的话每行各算各的，按键列会参差不齐 */
+.pv-modal-row {
+  display: grid;
+  grid-template-columns: 200px 1fr;
+  gap: 12px;
+  align-items: baseline;
+}
+
+.pv-modal-row dt,
+.pv-modal-row dd {
+  margin: 0;
+}
+
+.pv-modal-row dd {
+  color: var(--pv-text-secondary);
+}
+
+/* 按键胶囊。底色用 `--pv-bg-app` 而不是 `--pv-bg-input`：后者在深色主题下
+ * 与卡片底色（`--pv-bg-elevated`）是同一个值，胶囊会"消失"只剩边框。 */
+.pv-kbd {
+  display: inline-block;
+  padding: 1px 6px;
+  border-radius: 5px;
+  background: var(--pv-bg-app);
+  border: 1px solid var(--pv-border);
+  /* kbd 默认是等宽字体，与界面其余部分不搭，改回继承 */
+  font-family: inherit;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--pv-text-primary);
+  white-space: nowrap;
+}
+
+/* 「关于」段：左列用文字标签，不用按键胶囊 */
+.pv-about-label {
+  color: var(--pv-text-tertiary);
+}
+
+.pv-about-version {
+  margin-left: 6px;
+  color: var(--pv-text-tertiary);
+  font-variant-numeric: tabular-nums;
+}
+
+.pv-about-mail {
+  color: var(--pv-accent);
+}
+
+/* 数据来源署名（GeoNames，CC BY 4.0） */
+.pv-about-credit {
+  color: var(--pv-text-primary);
+}
+
+.pv-about-license {
+  margin-left: 4px;
+  font-size: 11px;
+  color: var(--pv-text-tertiary);
+}
+
+/* ── 设置浮层 · 默认打开方式区 ── */
+
+.pv-setting-note {
+  margin: 0 0 10px;
+  font-size: 12px;
+  line-height: 1.7;
+  color: var(--pv-text-tertiary);
+}
+
+.pv-setting-checks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 18px;
+}
+
+/* ── 「全选」行 ──
+ * 与下方逐项复选框之间加一条分隔线：全选作用于整组，视觉上要与被操作的
+ * 那一组**同属一个区块、但层级更高**，否则容易被当成第 8 个格式项。
+ * 右侧的「已选 n / N」解决「部分选中时得自己数格子」的问题。
+ */
+.pv-setting-all {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding-bottom: 8px;
+  margin-bottom: 10px;
+  border-bottom: 1px solid var(--pv-border-subtle);
+}
+
+.pv-check-all .pv-check-label {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--pv-text-primary);
+}
+
+.pv-setting-all-count {
+  font-size: 12px;
+  color: var(--pv-text-tertiary);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.pv-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+}
+
+/* 只读 / 禁用时别让光标还摆出「可点」的样子 */
+.pv-check:has(input:disabled) {
+  cursor: default;
+  opacity: 0.6;
+}
+
+.pv-check input {
+  width: 14px;
+  height: 14px;
+  margin: 0;
+  accent-color: var(--pv-accent);
+  cursor: inherit;
+}
+
+.pv-check-label {
+  font-size: 13px;
+  color: var(--pv-text-secondary);
+}
+
+.pv-check-ext {
+  margin-left: 4px;
+  font-size: 11px;
+  color: var(--pv-text-tertiary);
+  font-variant-numeric: tabular-nums;
+}
+
+.pv-setting-error {
+  margin: 8px 0 0;
+  font-size: 12px;
+  color: #e0a030;
+}
+
+/* ════════════════════════════════════════════════════════════════
+   打印预览浮层（2026-10-10）
+   模态居中，与 .pv-modal 同风格。纸张用「白纸 + 可打印区虚线框 + 图像块」
+   三层叠加表达：白纸是整纸，虚线框是扣掉页边距后的可打印区，
+   图像块按 PrintPreview.computePrintLayout 给的归一化位置摆放。
+   ════════════════════════════════════════════════════════════════ */
+
+.pv-print-backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 22; /* 比帮助浮层(20)高一层：打印时不该同时露出帮助面板 */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(10, 10, 14, 0.55);
+  backdrop-filter: blur(2px);
+}
+
+.pv-print {
+  width: 520px;
+  max-width: calc(100% - 32px);
+  max-height: calc(100% - 32px);
+  overflow-y: auto;
+  padding: 14px 18px 16px;
+  border-radius: 14px;
+  background: var(--pv-bg-elevated);
+  border: 1px solid var(--pv-border);
+  box-shadow: var(--pv-shadow-lg);
+  color: var(--pv-text-primary);
+  font-size: 13px;
+}
+
+.pv-print-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.pv-print-title {
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.pv-print-close {
+  width: 22px;
+  height: 22px;
+  display: grid;
+  place-items: center;
+  font: inherit;
+  font-size: 16px;
+  line-height: 1;
+  color: var(--pv-text-secondary);
+  background: transparent;
+  border: none;
+  border-radius: 5px;
+  cursor: pointer;
+}
+
+.pv-print-close:hover {
+  color: var(--pv-text-primary);
+  background: var(--pv-hover);
+}
+
+/* ── 纸张示意 ── */
+.pv-print-stage {
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  margin-bottom: 12px;
+  background: var(--pv-bg-surface);
+  border: 1px solid var(--pv-border-subtle);
+  border-radius: 10px;
+}
+
+/*
+ * 纸张。
+ *
+ * ⛔ **不要给 `border`，也不要用 `box-shadow` 描边**：
+ * 子元素（图像块 / 可打印区虚线框）都用 `position: absolute` + 百分比定位，
+ * 基准是 **padding box**。而 `border` 与 `box-shadow` 都会画到 border box 上，
+ * 于是「看起来的纸边界」比「百分比基准」大出去一圈。
+ * 实测 132px 宽的 A4：带 border 时 left 偏 1.3%（6.06% vs 应有的 4.76%），
+ * 改成 box-shadow 描边后仍偏 0.54%（5.30%）—— **两个都不可取**。
+ *
+ * 正解：`outline` 不参与任何布局计算，画在 border box 边缘但**不改变基准**。
+ */
+.pv-print-paper {
+  position: relative;
+  /* 高度按可用空间封顶，避免 A3 这类大纸把浮层撑破 */
+  height: 300px;
+  max-height: 44vh;
+  /* 宽度由 aspect-ratio 推出来；max-width 保证横向纸张也不会超宽 */
+  max-width: 100%;
+  background: #fff;
+  border: 0;
+  outline: 1px solid var(--pv-border-strong);
+  outline-offset: 0;
+  border-radius: 2px;
+  /* 纸张投影：只做阴影，不参与边界描绘 */
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.35);
+}
+
+/*
+ * 可打印区（扣掉页边距）—— 虚线框，语义是「能印到的范围」。
+ * ⚠️ inset 由组件用**百分比**内联给出，不用 CSS 的 mm：
+ * 纸元素是 height:300px 的显示盒，与预览用的毫米坐标系不是倍率关系，
+ * 写成 `inset: 10mm` 会与图像块错位（实测图块跑到虚线框外）。
+ */
+.pv-print-margin {
+  position: absolute;
+  border: 1px dashed rgba(0, 0, 0, 0.28);
+  pointer-events: none;
+}
+
+/* 图像在纸上的位置（百分比定位，由 computePrintLayout 给出） */
+.pv-print-image {
+  position: absolute;
+  /* 渐变只是 img 没生成出来时的兜底底色（解码异常 / 尚未就绪），
+     正常情况会被里面的 <img> 完全盖住 */
+  background: linear-gradient(135deg, #6b7f9e 0%, #8fa4bf 48%, #55647d 100%);
+  border: 1px solid rgba(0, 0, 0, 0.35);
+  pointer-events: none;
+  overflow: hidden;
+}
+
+/* 预览里画出的真实照片：铺满图块。
+ * 位图已按 90° 旋转烘焙、尺寸恰好等于盒子，所以 object-fit: fill 不会变形；
+ * 用 fill 而非 contain，是因为盒子比例 = 旋转后图像比例，无需留白。 */
+.pv-print-img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: fill;
+  display: block;
+  -webkit-user-drag: none;
+}
+
+/* ── 打印设置（两列网格：打印机独占一行） ── */
+.pv-print-options {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px 10px;
+  margin-bottom: 10px;
+}
+
+.pv-print-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.pv-print-group-label {
+  flex: 0 0 40px;
+  color: var(--pv-text-secondary);
+}
+
+/* 纸张 / 方向 / 质量 / 打印机 下拉框 */
+.pv-print-field {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+/* 打印机一行放不下常用名，独占两列 */
+.pv-print-field-wide {
+  grid-column: 1 / -1;
+}
+
+.pv-print-unit {
+  color: var(--pv-text-secondary);
+  font-size: 12px;
+}
+
+/* 页边距数字输入框 */
+.pv-print-margin-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  width: 0;
+  padding: 4px 8px;
+  font: inherit;
+  font-size: 12px;
+  color: var(--pv-text-primary);
+  background: var(--pv-surface);
+  border: 1px solid var(--pv-border-strong);
+  border-radius: 6px;
+}
+
+.pv-print-margin-input:hover {
+  border-color: var(--pv-accent);
+}
+
+.pv-print-margin-input:focus {
+  outline: none;
+  border-color: var(--pv-accent);
+}
+
+.pv-print-select {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 4px 24px 4px 8px;
+  font: inherit;
+  font-size: 12px;
+  color: var(--pv-text-primary);
+  background: var(--pv-surface)
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23b0b8c7' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E")
+    right 6px center / 12px no-repeat;
+  border: 1px solid var(--pv-border-strong);
+  border-radius: 6px;
+  cursor: pointer;
+  appearance: none;
+  -webkit-appearance: none;
+}
+
+.pv-print-select:hover {
+  border-color: var(--pv-accent);
+}
+
+/* 原生下拉列表在 Windows 上经常继承浅色文字，导致看不清。
+   强制 option 用深字白底，hover/selected 也高对比。 */
+.pv-print-select option,
+.pv-print-select optgroup {
+  color: #1a1a1a;
+  background: #ffffff;
+}
+
+.pv-print-select option:hover,
+.pv-print-select option:focus,
+.pv-print-select option:checked {
+  color: #ffffff;
+  background: #4b6cb7;
+}
+
+.pv-print-chip {
+  padding: 3px 10px;
+  font: inherit;
+  font-size: 12px;
+  color: var(--pv-text-primary);
+  background: transparent;
+  border: 1px solid var(--pv-border-strong);
+  border-radius: 999px;
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s;
+}
+
+.pv-print-chip:hover {
+  background: var(--pv-hover);
+}
+
+.pv-print-chip[data-active='true'] {
+  color: var(--pv-text-inverse);
+  background: var(--pv-accent);
+  border-color: var(--pv-accent);
+}
+
+/* ── 错误 ── */
+.pv-print-error {
+  margin: 0 0 10px;
+  padding: 6px 8px;
+  font-size: 12px;
+  color: #f5b8b8;
+  background: rgba(200, 70, 70, 0.12);
+  border: 1px solid rgba(200, 70, 70, 0.4);
+  border-radius: 6px;
+}
+
+/* ── 快速打印勾选 ── */
+.pv-print-quick {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 4px 0 6px;
+  padding: 6px 8px;
+  font-size: 12px;
+  color: var(--pv-text-secondary);
+  background: var(--pv-surface);
+  border: 1px solid var(--pv-border-strong);
+  border-radius: 6px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.pv-print-quick input {
+  width: 14px;
+  height: 14px;
+  accent-color: var(--pv-accent);
+  cursor: pointer;
+}
+
+.pv-print-quick:hover {
+  border-color: var(--pv-accent);
+}
+
+/* ── 底部按钮 ── */
+.pv-print-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.pv-print-btn {
+  min-width: 84px;
+  height: 28px;
+  padding: 0 14px;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--pv-text-primary);
+  background: transparent;
+  border: 1px solid var(--pv-border-strong);
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.pv-print-btn:hover:not(:disabled) {
+  background: var(--pv-hover);
+}
+
+.pv-print-btn:disabled {
+  color: var(--pv-text-disabled);
+  cursor: not-allowed;
+}
+
+/* 实心紫 = 主行动（与 .pv-adjust-save 同层级：紫色即「点下去会发生事」） */
+.pv-print-btn-primary {
+  color: #fff;
+  background: var(--pv-accent);
+  border-color: transparent;
+}
+
+.pv-print-btn-primary:hover:not(:disabled) {
+  background: var(--pv-accent-hover);
+}
+
+/* ════════════════════════════════════════════════════════════════
+   右键菜单（2026-10-10）
+   z-index 高于所有浮层：菜单是「压在最上面」的临时层，
+   它开着的时候任何浮层都不该抢它的点击。
+   ════════════════════════════════════════════════════════════════ */
+
+.pv-ctx {
+  position: fixed;
+  z-index: 40;
+  padding: 4px;
+  border-radius: 8px;
+  background: var(--pv-bg-elevated);
+  border: 1px solid var(--pv-border-strong);
+  box-shadow: var(--pv-shadow-lg);
+  /* 菜单是明确要点的，不要继承全局的 user-select: none 之外的选中行为 */
+  user-select: none;
+}
+
+.pv-ctx-row {
+  position: relative;
+}
+
+.pv-ctx-sep {
+  height: 1px;
+  margin: 4px 6px;
+  background: var(--pv-border);
+}
+
+.pv-ctx-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  height: 28px;
+  padding: 0 8px;
+  font: inherit;
+  font-size: 13px;
+  color: var(--pv-text-primary);
+  background: transparent;
+  border: none;
+  border-radius: 5px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.pv-ctx-item:hover:not(:disabled) {
+  background: var(--pv-accent);
+  color: var(--pv-text-inverse);
+}
+
+/* 悬停时快捷键提示也要跟着反色，否则灰字压在紫底上读不清 */
+.pv-ctx-item:hover:not(:disabled) .pv-ctx-hint {
+  color: var(--pv-text-inverse);
+  opacity: 0.8;
+}
+
+.pv-ctx-item:disabled {
+  color: var(--pv-text-disabled);
+  cursor: not-allowed;
+}
+
+.pv-ctx-label {
+  white-space: nowrap;
+}
+
+.pv-ctx-hint {
+  flex: 0 0 auto;
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--pv-text-tertiary);
+  font-variant-numeric: tabular-nums;
+}

@@ -1,0 +1,259 @@
+/**
+ * PurePhotoExplorer 设计令牌 —— 基于用户提供的蓝紫灰色系
+ *
+ * 取色（从参考图实测值）：
+ *   #EAEAEF  最浅  表面高亮 / 深色模式主文字
+ *   #D0D0D8  浅    次级表面
+ *   #A4A4BF  中浅  边框 / 次要文字
+ *   #828296  中    强调色基 / 三级文字
+ *   #5A5A6E  深    浅色模式主文字
+ *
+ * 色相分析：R=G，B 略高 → 色相约 240°（蓝紫），低饱和中性色。
+ * 关键设计约束：**画面区域（canvas）保持近中性**，
+ * 因为带色偏的底色会影响对图像色彩的判断 —— 品牌色只用在界面框架上。
+ */
+
+:root {
+  /* ── 品牌灰阶（沿用参考图色相，向两端延伸）── */
+  --pv-ramp-50:  #eaeaef;
+  --pv-ramp-100: #d0d0d8;
+  --pv-ramp-200: #a4a4bf;
+  --pv-ramp-300: #8e8eaa;
+  --pv-ramp-400: #828296;
+  --pv-ramp-500: #6e6e82;
+  --pv-ramp-600: #5a5a6e;
+  --pv-ramp-700: #46465a;
+  --pv-ramp-800: #32323f;
+  --pv-ramp-850: #26262f;
+  --pv-ramp-900: #1c1c23;
+  --pv-ramp-950: #141419;
+
+  /* ── 强调色：同色相提高饱和度，用于选中/焦点 ──
+     刻意不用高饱和蓝紫，避免在长时间看图时产生视觉疲劳 */
+  --pv-accent:        #6e6ec4;
+  --pv-accent-hover:  #7d7dd4;
+  --pv-accent-press:  #5f5fb0;
+  --pv-accent-soft:   rgba(110, 110, 196, 0.16);
+  --pv-accent-ring:   rgba(110, 110, 196, 0.42);
+}
+
+/* ═══════════════════════════════════════════════════════════
+   浅色主题 —— 用于设置页、文件选择对话框等系统级场景
+   ═══════════════════════════════════════════════════════════ */
+:root,
+[data-theme="light"] {
+  color-scheme: light;
+
+  --pv-bg-app:        var(--pv-ramp-50);
+  --pv-bg-surface:    #ffffff;
+  --pv-bg-elevated:   var(--pv-ramp-100);
+  --pv-bg-input:      #ffffff;
+
+  /* 看图画布用中性浅灰，不带蓝紫倾向 */
+  --pv-bg-canvas:     #f4f4f6;
+
+  --pv-border-subtle: rgba(90, 90, 110, 0.14);
+  --pv-border:        rgba(90, 90, 110, 0.24);
+  --pv-border-strong: rgba(90, 90, 110, 0.42);
+
+  --pv-text-primary:   var(--pv-ramp-600);
+  --pv-text-secondary: var(--pv-ramp-500);
+  --pv-text-tertiary:  var(--pv-ramp-400);
+  --pv-text-disabled:  #a8a8b8;
+  --pv-text-inverse:   var(--pv-ramp-50);
+
+  --pv-hover:     rgba(90, 90, 110, 0.07);
+  --pv-active:    rgba(90, 90, 110, 0.12);
+  --pv-selected:  var(--pv-accent-soft);
+
+  --pv-shadow-sm: 0 1px 2px rgba(36, 36, 60, 0.08);
+  --pv-shadow-md: 0 4px 12px rgba(36, 36, 60, 0.12);
+  --pv-shadow-lg: 0 12px 32px rgba(36, 36, 60, 0.16);
+}
+
+/* ═══════════════════════════════════════════════════════════
+   深色主题 —— 默认。看图软件深色更护眼，长时间浏览不刺眼
+   ═══════════════════════════════════════════════════════════ */
+[data-theme="dark"] {
+  color-scheme: dark;
+
+  --pv-bg-app:        var(--pv-ramp-950);
+  --pv-bg-surface:    var(--pv-ramp-900);
+  --pv-bg-elevated:   var(--pv-ramp-850);
+  --pv-bg-input:      var(--pv-ramp-850);
+
+  /* 画面画布：接近中性黑，避免色偏影响对图像的判断 */
+  --pv-bg-canvas:     #121216;
+
+  --pv-border-subtle: rgba(234, 234, 239, 0.08);
+  --pv-border:        rgba(234, 234, 239, 0.14);
+  --pv-border-strong: rgba(234, 234, 239, 0.26);
+
+  --pv-text-primary:   var(--pv-ramp-50);
+  --pv-text-secondary: var(--pv-ramp-200);
+  --pv-text-tertiary:  var(--pv-ramp-300);
+  --pv-text-disabled:  var(--pv-ramp-600);
+  --pv-text-inverse:   var(--pv-ramp-900);
+
+  --pv-hover:     rgba(234, 234, 239, 0.06);
+  --pv-active:    rgba(234, 234, 239, 0.11);
+  --pv-selected:  var(--pv-accent-soft);
+
+  --pv-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --pv-shadow-md: 0 4px 14px rgba(0, 0, 0, 0.5);
+  --pv-shadow-lg: 0 16px 40px rgba(0, 0, 0, 0.6);
+}
+
+/* ═══════════════════════════════════════════════════════════
+   基础样式
+   ═══════════════════════════════════════════════════════════ */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI",
+    "Microsoft YaHei", "PingFang SC", "Hiragino Sans GB", sans-serif;
+  font-size: 13px;
+  line-height: 1.6;
+  font-weight: 400;
+  color: var(--pv-text-primary);
+  background: var(--pv-bg-app);
+  -webkit-font-smoothing: antialiased;
+  /* 界面文字可选中，但画布内不选 */
+  user-select: none;
+}
+
+/* 滚动条 —— 细窄样式，避免抢视觉焦点 */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--pv-border-strong);
+  border: 2px solid transparent;
+  background-clip: content-box;
+  border-radius: 5px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--pv-text-disabled);
+  background-clip: content-box;
+}
+
+/* ═══════════════════════════════════════════════════════════
+   组件基类
+   ═══════════════════════════════════════════════════════════ */
+
+/* 面板 */
+.pv-panel {
+  background: var(--pv-bg-surface);
+  border: 1px solid var(--pv-border-subtle);
+  border-radius: 12px;
+}
+
+/* 工具栏（尺寸/内边距在 app.css 里定义，此处不重复声明，避免"改了没效果"） */
+
+/* 按钮 */
+.pv-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 30px;
+  padding: 0 12px;
+  font: inherit;
+  font-size: 13px;
+  color: var(--pv-text-secondary);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
+  white-space: nowrap;
+}
+.pv-btn:hover:not(:disabled) {
+  background: var(--pv-hover);
+  color: var(--pv-text-primary);
+}
+.pv-btn:active:not(:disabled) {
+  background: var(--pv-active);
+}
+.pv-btn:focus-visible {
+  outline: 2px solid var(--pv-accent-ring);
+  outline-offset: 1px;
+}
+.pv-btn:disabled {
+  color: var(--pv-text-disabled);
+  cursor: not-allowed;
+}
+.pv-btn[aria-pressed="true"] {
+  background: var(--pv-selected);
+  color: var(--pv-accent);
+}
+.pv-btn-primary {
+  color: #fff;
+  background: var(--pv-accent);
+}
+.pv-btn-primary:hover:not(:disabled) {
+  background: var(--pv-accent-hover);
+  color: #fff;
+}
+.pv-btn-primary:active:not(:disabled) {
+  background: var(--pv-accent-press);
+  color: #fff;
+}
+
+/* 输入框 */
+.pv-input {
+  height: 30px;
+  padding: 0 10px;
+  font: inherit;
+  font-size: 13px;
+  color: var(--pv-text-primary);
+  background: var(--pv-bg-input);
+  border: 1px solid var(--pv-border);
+  border-radius: 8px;
+  outline: none;
+  user-select: text;
+}
+.pv-input:focus {
+  border-color: var(--pv-accent);
+  box-shadow: 0 0 0 3px var(--pv-accent-soft);
+}
+.pv-input::placeholder {
+  color: var(--pv-text-disabled);
+}
+
+/* 分隔线 */
+.pv-divider {
+  width: 1px;
+  height: 18px;
+  background: var(--pv-border);
+  margin: 0 4px;
+}
+
+/* 焦点环统一处理 */
+:focus-visible {
+  outline: 2px solid var(--pv-accent-ring);
+  outline-offset: 1px;
+}
+
+/* 尊重系统的减少动效设置 */
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}

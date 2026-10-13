@@ -1,0 +1,13 @@
+[package]
+name = "pv-vault"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "PurePhotoExplorer 加密容器：Argon2id + AES-256-GCM"
+
+[dependencies]
+pv-core.workspace = true
+pv-index.workspace = true
+serde.workspace = true
+tracing.workspace = true

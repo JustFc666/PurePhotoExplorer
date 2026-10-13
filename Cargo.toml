@@ -1,0 +1,85 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/pv-core",
+    "crates/pv-decode",
+    "crates/pv-cache",
+    "crates/pv-index",
+    "crates/pv-meta",
+    "crates/pv-geo",
+    "crates/pv-vault",
+    "crates/pv-edit",
+    "crates/pv-ai",
+    "apps/desktop/src-tauri",
+]
+
+[workspace.package]
+version = "0.2.0"
+edition = "2021"
+rust-version = "1.77"
+license = "MIT"
+
+[workspace.dependencies]
+pv-core = { path = "crates/pv-core" }
+pv-decode = { path = "crates/pv-decode" }
+pv-cache = { path = "crates/pv-cache" }
+pv-index = { path = "crates/pv-index" }
+pv-meta = { path = "crates/pv-meta" }
+pv-geo = { path = "crates/pv-geo" }
+pv-vault = { path = "crates/pv-vault" }
+pv-edit = { path = "crates/pv-edit" }
+pv-ai = { path = "crates/pv-ai" }
+
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "1"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+rayon = "1.10"
+blake3 = "1.5"
+memmap2 = "0.9"
+lru = "0.12"
+
+# 纯 Rust 图像后端（一期不依赖 MSVC）
+jpeg-decoder = "0.3"
+png = "0.17"
+# GIF（含动图多帧）。选 `gif` 而不是 `image`：只需调色板展开这一件事，
+# 不必把整个 image 生态拖进来。
+gif = "0.13"
+# WebP（有损 VP8 / 无损 VP8L / **动画**）。
+# 选 image-rs 官方的 `image-webp` 而不是 libwebp 绑定：
+# 零依赖、纯 Rust、无 C 构建，且**已内置动画帧的 alpha 混合与 dispose 合成**
+# （与我们的 GIF 合成语义一致，可直接复用动图管线）。
+image-webp = "0.2"
+# TIFF（基线 + LZW / Deflate / PackBits / 调色板 / 16-bit，纯 Rust，image-rs 官方）。
+# 与本项目已用的 png / gif / image-webp 同门，无 C 依赖；免得手写 LZW 出 bug。
+tiff = "0.9"
+# AVIF（AV1-in-ISOBMFF）。纯 Rust 解码（`avif-decode` → `rav1d`，dav1d 的纯 Rust 移植，
+# 无 C 库）。**注意**：`rav1d` 在 x86_64 上默认开 `asm` 特性，构建时需要 `nasm`
+# （本项目已下载放到 PATH；无需 cmake / MSVC C 构建，区别于 libheif/libde265 那条路）。
+avif-decode = "3"
+# HEIF/HEIC（苹果/小米等手机的默认拍照格式）。
+# **纯 Rust**（容器解析 + HEVC 解码走 `rust_h265`），无 C 依赖、无 unsafe，
+# MIT OR Apache-2.0 —— 这是本机能用上 HEIC 的关键：
+# 系统的 WIC 虽有 HEIC 容器解析器，但解不出帧（缺 HEVC 解码器，
+# 实测 GetFrame 返回 WINCODEC_ERR_FRAMEMISSING），而 libheif/libde265
+# 需要 cmake + nasm 编译 C 库（本机都没有）。详见 bitmap/heif.rs 模块注释。
+heif-oxide = "0.1"
+# PSD 的 ZIP 压缩分支（compression = 2/3）要解 zlib。
+# 默认后端是纯 Rust 的 miniz_oxide，不引入 C。
+flate2 = { version = "1", default-features = false, features = ["rust_backend"] }
+# `rayon` 特性别关：缩放的多线程路径靠它（22 MB JPEG 预览档缩放 24→13 ms）。
+# 默认 `default-features = false` 时它是关的 —— 2026-10-11 实测后显式打开。
+fast_image_resize = { version = "5", default-features = false, features = ["image", "rayon"] }
+# JPEG 编码（写回原图用）。注意 0.7 需要 rustc 1.87，本工作区锁 1.77 → 用 0.6
+jpeg-encoder = "0.6"
+# AVIF 解码借用的像素类型（avif-decode 输出 `rgb::Rgb` / `rgb::Rgba` / `rgb::Gray`）。
+# 作为直接依赖引入，让解码层能稳定映射到我们的 RGBA（版本与 avif-decode 统一为 0.8）。
+rgb = "0.8"
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+panic = "unwind"
+strip = true

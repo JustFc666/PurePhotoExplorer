@@ -1,0 +1,12 @@
+[package]
+name = "pv-core"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "PurePhotoExplorer 核心领域模型：格式探测、元数据、色彩、错误类型（纯逻辑，无 IO）"
+
+[dependencies]
+serde.workspace = true
+thiserror.workspace = true
+tracing.workspace = true

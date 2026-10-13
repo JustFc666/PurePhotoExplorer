@@ -1,0 +1,78 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "PurePhotoExplorer 主窗口权限（Tauri 2 默认拒绝所有插件调用，必须显式授权）",
+  "windows": ["main"],
+  "permissions": [
+    "core:default",
+    "dialog:default",
+    {
+      "identifier": "core:window:allow-start-dragging",
+      "description": "允许拖动窗口标题栏（拖入文件的前置行为）"
+    },
+    {
+      "identifier": "core:window:allow-is-fullscreen",
+      "description": "查询窗口是否全屏（全屏切换按钮/F 键）"
+    },
+    {
+      "identifier": "core:window:allow-set-fullscreen",
+      "description": "切换窗口全屏（全屏切换按钮/F 键）"
+    },
+    {
+      "identifier": "core:window:allow-is-maximized",
+      "description": "查询窗口是否最大化（标题栏双击切换需要）"
+    },
+    {
+      "identifier": "core:window:allow-toggle-maximize",
+      "description": "切换窗口最大化（自绘按钮 / 双击标题栏 / M 键）"
+    },
+    {
+      "identifier": "core:window:allow-maximize",
+      "description": "最大化窗口（自绘最大化流程第一步：交给系统避开任务栏）"
+    },
+    {
+      "identifier": "core:window:allow-unmaximize",
+      "description": "取消最大化（自绘最大化流程：卸掉系统态后再校正外框）"
+    },
+    {
+      "identifier": "core:window:allow-scale-factor",
+      "description": "取窗口缩放因子（物理↔逻辑像素换算，校正最大化偏移）"
+    },
+    {
+      "identifier": "core:window:allow-outer-size",
+      "description": "取窗口外框尺寸（记录还原态 / 计算最大化目标尺寸）"
+    },
+    {
+      "identifier": "core:window:allow-outer-position",
+      "description": "取窗口外框位置（记录还原态 / 校正最大化偏移）"
+    },
+    {
+      "identifier": "core:window:allow-minimize",
+      "description": "最小化窗口（overlay 模式自绘按钮备用）"
+    },
+    {
+      "identifier": "core:window:allow-close",
+      "description": "关闭窗口（overlay 模式自绘按钮备用）"
+    },
+    {
+      "identifier": "core:window:allow-start-resize-dragging",
+      "description": "自绘边缘热区 → 拖拽调整窗口大小（decorations:false 后系统边框失效）"
+    },
+    {
+      "identifier": "core:window:allow-current-monitor",
+      "description": "取当前显示器（校正最大化外框偏移）"
+    },
+    {
+      "identifier": "core:window:allow-set-size",
+      "description": "设置窗口尺寸（校正最大化时 9px 外框偏移）"
+    },
+    {
+      "identifier": "core:window:allow-set-position",
+      "description": "设置窗口位置（校正最大化时 9px 外框偏移）"
+    },
+    {
+      "identifier": "core:webview:allow-internal-toggle-devtools",
+      "description": "开发者工具（发布版无效果）"
+    }
+  ]
+}
