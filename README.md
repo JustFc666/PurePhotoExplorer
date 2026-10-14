@@ -4,6 +4,8 @@
 
 PurePhotoExplorer 是一个轻量、快速的本地图片浏览器与编辑器。**解码链全部用纯 Rust 实现，无 C 依赖**，绿色免安装。
 
+![PurePhotoExplorer 界面截图](docs/screenshot.png)
+
 ## 特性
 
 - **多格式支持**：JPEG / PNG / GIF（动图）/ WebP（动图）/ HEIC / HEIF / BMP / TIFF / AVIF / PSD
@@ -51,4 +53,4 @@ cd ../.. && cargo build --release
 
 ## 许可
 
-本项目采用 MIT 许可。
+本项目采用 [MIT](LICENSE) 许可。

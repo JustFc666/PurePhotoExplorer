@@ -31,7 +31,7 @@ def find_hwnd():
     def _cb(h, _lp):
         buf = ctypes.create_unicode_buffer(512)
         u.GetWindowTextW(h, buf, 512)
-        if 'photovault' in buf.value.lower() and u.IsWindowVisible(h):
+        if 'purephotoexplorer' in buf.value.lower() and u.IsWindowVisible(h):
             found.append(h)
         return True
     u.EnumWindows(_cb, 0)
