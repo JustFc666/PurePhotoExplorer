@@ -1,4 +1,4 @@
-import { defineConfig } from 'vite'
+import { defineConfig } from 'vitest/config'
 import react from '@vitejs/plugin-react'
 import { readFileSync } from 'node:fs'
 
@@ -44,5 +44,10 @@ export default defineConfig({
     // 代价是产物多约 1.5 MB（不进安装包的可执行主体）。
     sourcemap: true,
     chunkSizeWarningLimit: 800,
+  },
+
+  // 让测试能用 `?raw` 读到 CSS 源码（护栏测试要断言样式表内容）
+  test: {
+    css: true,
   },
 })

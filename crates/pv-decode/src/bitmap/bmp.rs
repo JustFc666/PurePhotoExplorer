@@ -128,7 +128,7 @@ fn parse_bmp(bytes: &[u8]) -> Result<BmpHeader> {
     }
     // 文件头魔数
     let magic = &bytes[0..2];
-    if !BMP_MAGICS.iter().any(|m| *m == magic) {
+    if !BMP_MAGICS.contains(&magic) {
         return Err(PvError::Decode(format!(
             "不是 BMP 文件（魔数 {:?}）",
             &bytes[0..2.min(bytes.len())]
@@ -189,7 +189,7 @@ fn parse_bmp(bytes: &[u8]) -> Result<BmpHeader> {
     // 16/32 位掩码
     let (r_mask, g_mask, b_mask, a_mask) = compute_masks(bytes, dib_size, bpp, compression);
 
-    let stride = ((width as usize * bpp as usize + 31) / 32) * 4;
+    let stride = (width as usize * bpp as usize).div_ceil(32) * 4;
 
     Ok(BmpHeader {
         width,
@@ -526,7 +526,7 @@ mod tests {
         out.extend_from_slice(b"BM");
         out.extend_from_slice(&file_size.to_le_bytes());
         out.extend_from_slice(&[0u8; 4]); // reserved
-        out.extend_from_slice(&(pixel_offset as u32).to_le_bytes());
+        out.extend_from_slice(&pixel_offset.to_le_bytes());
         out.extend_from_slice(&dib_size.to_le_bytes());
         out.extend_from_slice(&(4i32).to_le_bytes()); // width
         out.extend_from_slice(&(4i32).to_le_bytes()); // height (正=自下而上)
@@ -572,7 +572,7 @@ mod tests {
         out.extend_from_slice(b"BM");
         out.extend_from_slice(&file_size.to_le_bytes());
         out.extend_from_slice(&[0u8; 4]);
-        out.extend_from_slice(&(pixel_offset as u32).to_le_bytes());
+        out.extend_from_slice(&pixel_offset.to_le_bytes());
         out.extend_from_slice(&dib_size.to_le_bytes());
         out.extend_from_slice(&(4i32).to_le_bytes());
         out.extend_from_slice(&(4i32).to_le_bytes());
@@ -606,7 +606,7 @@ mod tests {
         palette[4] = [255, 255, 255, 255];
         palette[5] = [128, 128, 128, 255];
         // 索引图（4x4）：左上1 右上2 左下3 右下4 其余5
-        let mut indices = vec![5u8; 16];
+        let mut indices = [5u8; 16];
         indices[0] = 1;
         indices[3] = 2;
         indices[12] = 3;
@@ -626,7 +626,7 @@ mod tests {
         out.extend_from_slice(b"BM");
         out.extend_from_slice(&file_size.to_le_bytes());
         out.extend_from_slice(&[0u8; 4]);
-        out.extend_from_slice(&(pixel_offset as u32).to_le_bytes());
+        out.extend_from_slice(&pixel_offset.to_le_bytes());
         out.extend_from_slice(&dib_size.to_le_bytes());
         out.extend_from_slice(&(4i32).to_le_bytes());
         out.extend_from_slice(&(4i32).to_le_bytes());
@@ -671,8 +671,8 @@ mod tests {
         ];
         let _stride = 4usize; // ceil(4/8)=1 字节，补齐到 4
         let mut pixel_bytes = Vec::new();
-        for r in 0..4 {
-            pixel_bytes.push(file_rows[r]);
+        for &row in &file_rows {
+            pixel_bytes.push(row);
             pixel_bytes.extend_from_slice(&[0u8; 3]); // 行尾填充
         }
         let dib_size = 40u32;
@@ -683,7 +683,7 @@ mod tests {
         out.extend_from_slice(b"BM");
         out.extend_from_slice(&file_size.to_le_bytes());
         out.extend_from_slice(&[0u8; 4]);
-        out.extend_from_slice(&(pixel_offset as u32).to_le_bytes());
+        out.extend_from_slice(&pixel_offset.to_le_bytes());
         out.extend_from_slice(&dib_size.to_le_bytes());
         out.extend_from_slice(&(4i32).to_le_bytes());
         out.extend_from_slice(&(4i32).to_le_bytes());
@@ -752,7 +752,7 @@ mod tests {
         out.extend_from_slice(b"BM");
         out.extend_from_slice(&file_size.to_le_bytes());
         out.extend_from_slice(&[0u8; 4]);
-        out.extend_from_slice(&(pixel_offset as u32).to_le_bytes());
+        out.extend_from_slice(&pixel_offset.to_le_bytes());
         out.extend_from_slice(&dib_size.to_le_bytes());
         out.extend_from_slice(&(4i32).to_le_bytes());
         out.extend_from_slice(&(4i32).to_le_bytes());
@@ -803,7 +803,7 @@ mod tests {
         out.extend_from_slice(b"BM");
         out.extend_from_slice(&file_size.to_le_bytes());
         out.extend_from_slice(&[0u8; 4]);
-        out.extend_from_slice(&(pixel_offset as u32).to_le_bytes());
+        out.extend_from_slice(&pixel_offset.to_le_bytes());
         out.extend_from_slice(&dib_size.to_le_bytes());
         out.extend_from_slice(&(4i32).to_le_bytes());
         out.extend_from_slice(&(-4i32).to_le_bytes()); // 负高=自上而下
@@ -859,7 +859,7 @@ mod tests {
         out.extend_from_slice(b"BM");
         out.extend_from_slice(&file_size.to_le_bytes());
         out.extend_from_slice(&[0u8; 4]);
-        out.extend_from_slice(&(pixel_offset as u32).to_le_bytes());
+        out.extend_from_slice(&pixel_offset.to_le_bytes());
         out.extend_from_slice(&dib_size.to_le_bytes());
         out.extend_from_slice(&(4i32).to_le_bytes());
         out.extend_from_slice(&(4i32).to_le_bytes());

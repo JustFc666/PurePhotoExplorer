@@ -69,6 +69,7 @@ const DMQUALITY_HIGH: i16 = -1; // DMQUALITY_HIGH
 ///   因为小图铺满纸面才正常）；
 /// - `fit = false`：按 [`ASSUMED_IMAGE_DPI`] 换算成"屏幕大小"，
 ///   超出页面时才等比缩小（否则会印到纸外面）。
+#[allow(clippy::too_many_arguments)] // 版式计算参数多，保持显式更清晰
 fn layout(
     page_w: i32,
     page_h: i32,
@@ -128,6 +129,7 @@ fn rgba_to_bgra(data: &mut [u8]) {
 ///
 /// `margin_mm`：页边距（毫米，四边同值）——预览浮层可调，必须与预览用同值。
 #[cfg(windows)]
+#[allow(clippy::too_many_arguments)] // 直接镜像 Win32 打印参数
 pub fn print_rgba_gdi(
     img: &RgbaImage,
     fit: bool,
@@ -194,6 +196,7 @@ pub fn print_rgba_gdi(
 /// 代价：没有份数选择（固定 1 份）、没有「取消」机会
 /// （点了就送进打印队列），故返回 `Ok(false)`（永不 `cancelled`）。
 #[cfg(windows)]
+#[allow(clippy::too_many_arguments)] // 直接镜像 Win32 打印参数
 pub fn print_rgba_gdi_direct(
     img: &RgbaImage,
     fit: bool,

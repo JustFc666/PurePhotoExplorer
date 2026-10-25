@@ -147,9 +147,29 @@ fn rational(exif: &Exif, tag: Tag) -> Option<(u32, u32)> {
 }
 
 /// 取**全部**无符号有理数（GPS 的度分秒是连续 3 个 RATIONAL）。
+///
+/// ⚠️ **必须同时接受 SRATIONAL**：GPSLatitude/GPSLongitude 规范上是 RATIONAL，
+/// 但部分机型（实测 ASUS_I001DA 拍的 P_20210729_111300.jpg）写成 SRATIONAL。
+/// 只认 RATIONAL 时 `get_field` 明明取到了值，我们却返回 `None` ——
+/// 现象是「系统属性里能看到经纬度，软件里没有 GPS」，极难从表现反推。
+///
+/// 负分子属于脏数据（方位由 `GPSLatitudeRef` 负责，不该再带符号），
+/// 这里把它降级成「该项缺失」（分母 0），由 `gps_decimal` 的校验兜底，
+/// 而不是整条坐标作废或悄悄翻符号。
 fn rationals(exif: &Exif, tag: Tag) -> Option<Vec<(u32, u32)>> {
     match &exif.get_field(tag, In::PRIMARY)?.value {
         Value::Rational(v) => Some(v.iter().map(|r| (r.num, r.denom)).collect()),
+        Value::SRational(v) => Some(
+            v.iter()
+                .map(|r| {
+                    if r.num < 0 || r.denom <= 0 {
+                        (0, 0)
+                    } else {
+                        (r.num as u32, r.denom as u32)
+                    }
+                })
+                .collect(),
+        ),
         _ => None,
     }
 }

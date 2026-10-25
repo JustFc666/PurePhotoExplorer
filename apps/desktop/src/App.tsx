@@ -11,6 +11,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { open as openDialog, save as saveDialog } from '@tauri-apps/plugin-dialog'
+import { ManagerView } from './components/manager/ManagerView'
 import { getCurrentWindow } from '@tauri-apps/api/window'
 import {
   decodeError,
@@ -31,6 +32,19 @@ import {
   type DecodedImage,
 } from './ipc'
 import { useDragDrop } from './hooks/useDragDrop'
+import { getLibDropHover } from './hooks/libDrop'
+import {
+  clampFxMs,
+  clampSlideSeconds,
+  EVENT_SET_SLIDE_FX,
+  EVENT_SET_SLIDE_FX_MS,
+  EVENT_SET_SLIDE_SECONDS,
+  readFxMs,
+  readSlideFx,
+  readSlideSeconds,
+  useSlideshow,
+  type SlideFx,
+} from './hooks/useSlideshow'
 import { useImageLoader } from './hooks/useImageLoader'
 import { useAnimationPlayer } from './hooks/useAnimationPlayer'
 import { useImageView } from './hooks/useImageView'
@@ -38,10 +52,11 @@ import { useWheelNavigation } from './hooks/useWheelNavigation'
 import { useShortcuts } from './hooks/useShortcuts'
 import { useWindowDrag } from './hooks/useWindowDrag'
 import { ImageCanvas } from './components/viewer/ImageCanvas'
+import { ThumbRail } from './components/viewer/ThumbRail'
 import { EmptyState } from './components/viewer/EmptyState'
 import { InfoPanel } from './components/viewer/InfoPanel'
 import { HelpPanel } from './components/viewer/HelpPanel'
-import { SettingsPanel } from './components/viewer/SettingsPanel'
+import { SettingsWindow, type SettingsPage } from './components/settings/SettingsWindow'
 import { PrintPreview, type PaperSize, type PrintOrientation, type PrintQuality } from './components/viewer/PrintPreview'
 import { ContextMenu, useContextMenu } from './components/chrome/ContextMenu'
 import type { ContextMenuItem } from './components/chrome/ContextMenu'
@@ -56,6 +71,27 @@ import {
   VERIFIED_RAW_EXTS,
 } from './constants/formats'
 import { ResizeHandles } from './components/chrome/ResizeHandles'
+
+/** 左侧胶片条的开/关偏好（localStorage） */
+const RAIL_PREF_KEY = 'pv.viewer.rail'
+/**
+ * 放映开始前的「预热」时长（毫秒）。
+ *
+ * 进全屏那一刻视口尺寸会变，画布得按新尺寸重新适应；用户要求「先刷新图片、
+ * 停 1 秒再开始播放」，这样第一张不会以没摆正的样子一闪而过。
+ */
+const SLIDE_WARMUP_MS = 1000
+/**
+ * 读偏好。默认**开** —— 只有明确存过 `'0'` 才算关。
+ * localStorage 不可用（隐私模式）时按默认值处理，不该因此崩掉整个 App。
+ */
+function readRailPref(): boolean {
+  try {
+    return localStorage.getItem(RAIL_PREF_KEY) !== '0'
+  } catch {
+    return true
+  }
+}
 
 /** 「打开」对话框的文件类型过滤器 */
 const DIALOG_FILTERS = [
@@ -79,10 +115,12 @@ export function App() {
     load,
     reload,
     refreshSiblings,
+    setPlaylist,
     path: imagePath,
     fail,
     index,
     total,
+    siblings,
     canPrev,
     canNext,
     prev,
@@ -103,6 +141,16 @@ export function App() {
   const displayImage = player.frame ?? image
   const [appInfo, setAppInfo] = useState<AppInfo | null>(null)
   const [isFullscreen, setIsFullscreen] = useState(false)
+  /**
+   * 视图模式：`viewer` = 单图浏览（S1），`manager` = 图库模式（S2）。
+   *
+   * 两者**共用同一窗口**（手册 §2.1 D1），所以 manager 只是在最上层盖一个
+   * 全屏视图；切回 viewer 时单图浏览的状态（当前图/缩放/位置）都还在。
+   *
+   * ⚠️ 默认值是 **`manager`**（用户 2026-10-15 明确要求「打开默认进图库」）：
+   * 这个应用的主要用途是**管理**照片，看图是从图库里双击进去的动作。
+   */
+  const [mode, setMode] = useState<'viewer' | 'manager'>('manager')
   /** 图片信息浮层是否展开 */
   const [showInfo, setShowInfo] = useState(false)
   /** 画布调整浮层是否展开 */
@@ -111,6 +159,8 @@ export function App() {
   const [showHelp, setShowHelp] = useState(false)
   /** 设置浮层（默认打开方式 + 关于）是否展开 */
   const [showSettings, setShowSettings] = useState(false)
+  /** 从齿轮进来时要直接落到哪一页（默认「数据位置」） */
+  const [settingsPage, setSettingsPage] = useState<SettingsPage>('data')
 
   /** 文件关联状态（设置浮层的「默认打开方式」区回显） */
   const [associations, setAssociations] = useState<AssociationState | null>(null)
@@ -211,7 +261,13 @@ export function App() {
   useEffect(() => {
     getStartupFile()
       .then((path) => {
-        if (path) void load(path)
+        if (path) {
+          void load(path)
+          // ⚠️ 必须切到单图查看：默认模式是**图库**，不切的话用户从资源管理器
+          // 双击一张图片，看到的是一个图库界面，图片只在背后装着 ——
+          // 显式要求「打开这个文件」就应该显示这个文件。
+          setMode('viewer')
+        }
       })
       .catch(() => {})
     // 只在挂载时执行一次：`load` 是稳定引用，但刻意不放进依赖，
@@ -229,7 +285,15 @@ export function App() {
 
   /** 拖放接入（原生通道 + HTML5 降级） */
   const { dragging, html5DropProps } = useDragDrop({
-    onDropFile: (path) => void load(path),
+    onDropFile: (path) => {
+      /*
+       * 落在侧栏**图库行**上的拖放是「把文件夹加进这个图库」，由 `useLibDrop`
+       * 接手 —— 这里不能再 `load(path)`（会拿一个目录去当图片打开，弹「解码失败」）。
+       * 悬停标记在 `over` 阶段就置好了，所以先于这个回调可读。
+       */
+      if (getLibDropHover() !== null) return
+      void load(path)
+    },
     onError: (message) => fail(message),
   })
 
@@ -286,6 +350,190 @@ export function App() {
   // 视图控制器（状态 + 事件处理器），供画布与信息栏共用
   const viewController = useImageView(image)
 
+  // ── 幻灯片放映 ──────────────────────────────────────────────────
+  /** 是否正在放映 */
+  const [slideshow, setSlideshow] = useState(false)
+  /**
+   * 是否已经「预热」完毕、可以让计时器跑起来。
+   *
+   * 进全屏 → 刷新当前图 → 停 1 秒，这 1 秒里 `slideshow` 已经是 true
+   * （快捷键/胶片条都已经按放映处理），但计时器还没开。
+   */
+  const [slideReady, setSlideReady] = useState(false)
+  /** 预热的定时器（退出放映时要清掉，否则 1 秒后自己又"开始"了） */
+  const slideWarmupTimer = useRef<number | null>(null)
+  /** 每张停留秒数（设置面板可改，持久化在 localStorage） */
+  const [slideSeconds, setSlideSeconds] = useState(readSlideSeconds)
+
+  /** 设置面板改了间隔 → 立刻生效（不用重启） */
+  useEffect(() => {
+    const onSet = (e: Event) => {
+      const v = Number((e as CustomEvent<number>).detail)
+      if (Number.isFinite(v)) setSlideSeconds(clampSlideSeconds(v))
+    }
+    window.addEventListener(EVENT_SET_SLIDE_SECONDS, onSet)
+    return () => window.removeEventListener(EVENT_SET_SLIDE_SECONDS, onSet)
+  }, [])
+
+  /** 放映切换特效（设置里可改） */
+  const [slideFx, setSlideFx] = useState<SlideFx>(readSlideFx)
+  useEffect(() => {
+    const onSet = (e: Event) => setSlideFx((e as CustomEvent<SlideFx>).detail)
+    window.addEventListener(EVENT_SET_SLIDE_FX, onSet)
+    return () => window.removeEventListener(EVENT_SET_SLIDE_FX, onSet)
+  }, [])
+
+  /** 特效时长（毫秒，两种特效共用） */
+  const [fxMs, setFxMs] = useState<number>(readFxMs)
+  useEffect(() => {
+    const onSet = (e: Event) => {
+      const v = Number((e as CustomEvent<number>).detail)
+      if (Number.isFinite(v)) setFxMs(clampFxMs(v))
+    }
+    window.addEventListener(EVENT_SET_SLIDE_FX_MS, onSet)
+    return () => window.removeEventListener(EVENT_SET_SLIDE_FX_MS, onSet)
+  }, [])
+
+  /**
+   * 动图的**完整循环时长**（毫秒）—— 放映时用它当停留时间。
+   *
+   * 为什么不是「帧数 × 固定值」：GIF 每帧的 `delayMs` 是逐帧独立的
+   * （常见 40ms / 100ms / 500ms 混用），只能累加。
+   * 逐帧追加的渐进加载会让这个值变大，`useSlideshow` 的计时器会跟着重排，
+   * 所以不用怕「按首批帧算短了」。
+   */
+  const animDurationMs = useMemo(() => {
+    const frames = animation?.frames ?? []
+    if (frames.length <= 1) return null
+    const total = frames.reduce((sum, f) => sum + Math.max(20, f.delayMs || 0), 0)
+    return total > 0 ? total : null
+  }, [animation])
+  /**
+   * 放映开始时是不是**本来就在全屏**。
+   *
+   * 是的话退出放映不该动全屏状态（用户自己按 F 进的）；
+   * 不是的话说明全屏是我们为了放映打开的，退出时顺手关掉，
+   * 别把用户晾在一个黑边全屏里不知道怎么办。
+   */
+  const fsBeforeSlide = useRef(false)
+
+  /**
+   * 开始放映（**不检查有没有图**）：图库右键放映时，图还在解码就先进入状态，
+   * 解码完自动开始计时（`useSlideshow` 的 `hasImage` 守卫会等到有图）。
+   *
+   * ## 「先刷新、停 1 秒再开演」（2026-10-19 用户要求）
+   * 进全屏那一刻窗口尺寸变了，画布还是按旧尺寸适应的；直接开播的话第一张
+   * 会以"没摆正"的样子出现，紧接着就被切走。
+   * 所以顺序是：进入放映态（锁快捷键/隐藏胶片） → 全屏 → **重读一次当前图**
+   * → 停 1 秒 → 才让计时器开始（`slideReady`）。
+   */
+  const beginSlideshow = useCallback(
+    async (skipReload = false) => {
+      fsBeforeSlide.current = isFullscreen
+      setSlideshow(true)
+      setSlideReady(false)
+      if (!isFullscreen) await toggleFullscreen()
+      // 全屏后按新视口重新适应一次（reload 会重新解码 + 重新 fit）
+      // ⚠️ 从图库右键进来时刚 `load()` 过新图，别再来一次（大图会重复解码）
+      if (!skipReload) void reload()
+      if (slideWarmupTimer.current !== null) window.clearTimeout(slideWarmupTimer.current)
+      slideWarmupTimer.current = window.setTimeout(() => {
+        slideWarmupTimer.current = null
+        setSlideReady(true)
+        setNotice(`幻灯片放映中 · 每 ${slideSeconds} 秒 · 空格暂停 · Esc 退出`)
+      }, SLIDE_WARMUP_MS)
+    },
+    [isFullscreen, toggleFullscreen, reload, slideSeconds],
+  )
+
+  /**
+   * 放映推进：到末尾**回到第一张**。
+   *
+   * `useImageLoader` 的 `next()` 在边界是静默返回（不循环）—— 那是看图的正确语义，
+   * 但放映卡在最后一张就等于坏了，所以这里自己绕回列表头部。
+   */
+  const slideshowAdvance = useCallback(() => {
+    if (index < 0 || total < 2) return
+    if (index + 1 < total) {
+      next()
+      return
+    }
+    const first = siblings[0]
+    if (first !== undefined) void load(first)
+  }, [index, total, siblings, next, load])
+
+  const toggleSlideshow = useCallback(() => {
+    if (slideshow) {
+      setSlideshow(false)
+      setSlideReady(false)
+      // ⚠️ 必须清掉预热定时器：否则退出放映 1 秒后它会 setSlideReady(true)，
+      // 而 slideshow 已经 false —— 状态错位，下次进来会跳过预热
+      if (slideWarmupTimer.current !== null) {
+        window.clearTimeout(slideWarmupTimer.current)
+        slideWarmupTimer.current = null
+      }
+      if (!fsBeforeSlide.current && isFullscreen) void toggleFullscreen()
+      return
+    }
+    if (!image) return
+    void beginSlideshow()
+  }, [slideshow, image, isFullscreen, toggleFullscreen, beginSlideshow])
+
+  /**
+   * 从一份**外部列表**放幻灯片（图库 / 文件夹右键「幻灯片放映」）。
+   *
+   * 为什么要把列表交给 `useImageLoader`：图库里的照片散落在几十个目录，
+   * 单图模式的「下一张」原本只在**当前文件所在目录**里翻 —— 放到第 2 张就跳出图库了。
+   */
+  const playPlaylist = useCallback(
+    (paths: string[], startPath?: string) => {
+      const list = paths.filter((p) => !!p)
+      if (list.length === 0) return
+      setPlaylist(list)
+      setMode('viewer')
+      const start = startPath && list.includes(startPath) ? startPath : list[0]!
+      void load(start)
+      // 刚 load 过新图，跳过 beginSlideshow 里的重复 reload
+      if (!slideshow) void beginSlideshow(true)
+    },
+    [setPlaylist, load, slideshow, beginSlideshow],
+  )
+
+  const { paused: slidePaused } = useSlideshow({
+    // ⚠️ 预热期（只刷新、不计时）不算 active：否则第一张会在 1 秒里被切走
+    active: slideshow && slideReady,
+    /*
+     * 计时 = **纯停留时间 + 特效时间**（用户 2026-10-19 明确：间隔是"去掉特效"的时长）。
+     * 特效与计时同时开始，所以要把特效那段补回来，屏幕上静止的时长才真等于设置值。
+     * 动图按自身循环时长停留，同样加上特效时间。
+     */
+    intervalMs: (animDurationMs ?? slideSeconds * 1000) + (slideFx === 'none' ? 0 : fxMs),
+    imageKey: imagePath,
+    hasImage: !!image,
+    onAdvance: slideshowAdvance,
+    onBack: prev,
+    onExit: toggleSlideshow,
+  })
+
+  /** 切回图库模式就停掉放映（否则回到网格后还会偷偷翻图） */
+  useEffect(() => {
+    if (mode !== 'viewer') setSlideshow(false)
+  }, [mode])
+
+  /**
+   * 放映暂停时**动图也一起停**。
+   *
+   * 不然按了空格「暂停」，GIF 还在那儿自顾自地循环 —— 用户看不出暂停了什么。
+   * 恢复播放时同步恢复，节奏也就对上了。
+   */
+  useEffect(() => {
+    if (!slideshow) return
+    if (slidePaused) player.pause()
+    else player.play()
+    // player 的 pause/play 是稳定的 useCallback，不必进依赖
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [slideshow, slidePaused])
+
   /** 打印进行中（禁用按钮，避免连点弹出多个系统对话框） */
   const [printing, setPrinting] = useState(false)
 
@@ -305,7 +553,7 @@ export function App() {
    */
   useWheelNavigation({
     onNavigate: handleNavigate,
-    enabled: total > 1 && !showPrintPreview && !printing,
+    enabled: mode === 'viewer' && total > 1 && !showPrintPreview && !printing,
   })
 
   /** 切换图片信息浮层 */
@@ -325,6 +573,13 @@ export function App() {
       return !v
     })
   }, [])
+  /** 打开设置窗口并指定页（图库标签条的齿轮 → 'ai'） */
+  const openSettings = useCallback((page: SettingsPage = 'data') => {
+    setSettingsPage(page)
+    setShowHelp(false)
+    setShowSettings(true)
+  }, [])
+
   const toggleSettings = useCallback(() => {
     setShowSettings((v) => {
       if (!v) setShowHelp(false)
@@ -403,6 +658,46 @@ export function App() {
 
   /** 右键菜单（2026-10-10 新增） */
   const contextMenu = useContextMenu()
+
+  /**
+   * 左侧胶片条（同目录缩略图列）。
+   *
+   * 默认**开**：用户要的就是「看着一张图时能顺手跳到同目录的其它张」。
+   * 存在 localStorage 里，关掉之后下次打开也不弹出来 —— 窄屏用户会一直关着它。
+   */
+  const [showRail, setShowRail] = useState(readRailPref)
+  const toggleRail = useCallback(() => {
+    setShowRail((v) => {
+      const next = !v
+      try {
+        localStorage.setItem(RAIL_PREF_KEY, next ? '1' : '0')
+      } catch {
+        /* 写不进去（隐私模式）就只对本会话生效 */
+      }
+      return next
+    })
+  }, [])
+
+  /**
+   * `T` 切换胶片条。
+   *
+   * ⛔ `useShortcuts` 里**没有** `T`（I/F/M/A/H + 缩放/旋转那几组），不冲突。
+   * 输入框内不拦：用户在搜索/重命名里打 t 不该把胶片条关掉。
+   */
+  useEffect(() => {
+    if (mode !== 'viewer') return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 't' && e.key !== 'T') return
+      if (e.ctrlKey || e.metaKey || e.altKey) return
+      const t = e.target as HTMLElement | null
+      const tag = t?.tagName
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || t?.isContentEditable) return
+      e.preventDefault()
+      toggleRail()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [mode, toggleRail])
 
   /**
    * `Esc` 分层处理。⚠️ **返回 true 表示「我处理掉了」**，
@@ -754,6 +1049,22 @@ export function App() {
        * 所以这项在"进去之后出不来"的场景里是刚需。
        */
       {
+        id: 'rail',
+        label: showRail ? '隐藏左侧胶片条' : '显示左侧胶片条',
+        hint: 'T',
+        disabled: total <= 1,
+        onSelect: toggleRail,
+        separatorBefore: true,
+      },
+      {
+        id: 'slideshow',
+        label: slideshow ? '停止幻灯片放映' : '幻灯片放映',
+        hint: 'S',
+        disabled: !image,
+        onSelect: toggleSlideshow,
+        separatorBefore: true,
+      },
+      {
         id: 'fullscreen',
         label: isFullscreen ? '退出全屏' : '全屏',
         // F 是**切换**键（不是"进入全屏"）—— 提示写切换键本身，别写成 Enter 之类
@@ -772,6 +1083,11 @@ export function App() {
       isFullscreen,
       image,
       imagePath,
+      showRail,
+      toggleRail,
+      total,
+      slideshow,
+      toggleSlideshow,
     ],
   )
 
@@ -792,6 +1108,7 @@ export function App() {
     onNext: next,
     onPrev: prev,
     onToggleFullscreen: toggleFullscreen,
+    onToggleSlideshow: toggleSlideshow,
     onToggleMaximize: toggleWindowMaximize,
     onToggleInfo: toggleInfo,
     onToggleAdjust: onToggleAdjustPanel,
@@ -799,12 +1116,25 @@ export function App() {
     onEscape,
     isFullscreen,
     onRefresh: handleRefresh,
+    // 放映时整套快捷键让位给 `useSlideshow`（空格/方向键语义完全不同）
+    enabled: mode === 'viewer' && !slideshow,
   })
 
   return (
     <div className="pv-app" data-dragging={dragging} data-fullscreen={isFullscreen} {...html5DropProps}>
       {/* 自绘窗口边缘 resize 热区（decorations: false 后系统边框失效） */}
       <ResizeHandles enabled={!isFullscreen} onResize={startResize} />
+
+      {/*
+        放映暂停的小提示。**只在暂停时出现**：
+        播放中加任何浮层都会挡照片，而用户按了空格后确实需要一个"停住了"的反馈。
+        不拦截鼠标（`pointer-events: none`），点哪儿都不受影响。
+      */}
+      {slideshow && slidePaused && (
+        <div className="pv-slide-pause" role="status">
+          已暂停 · 空格继续 · Esc 退出
+        </div>
+      )}
 
       {!isFullscreen && (
         <Toolbar
@@ -818,6 +1148,8 @@ export function App() {
           canNext={canNext}
           onToggleFullscreen={toggleFullscreen}
           isFullscreen={isFullscreen}
+          onToggleSlideshow={toggleSlideshow}
+          slideshow={slideshow}
           onToggleInfo={toggleInfo}
           showInfo={showInfo}
           onToggleAdjust={onToggleAdjustPanel}
@@ -839,6 +1171,7 @@ export function App() {
           onMinimize={minimize}
           onToggleMaximize={toggleWindowMaximize}
           onClose={closeWindow}
+          onOpenManager={() => setMode('manager')}
         />
       )}
 
@@ -846,8 +1179,35 @@ export function App() {
         className="pv-main"
         onContextMenu={contextMenu.open}
       >
+        {/*
+          同目录胶片条：`.pv-main` 是 flex 容器，它自然成为左侧一列，
+          画布（`.pv-canvas { flex: 1 }`）占剩余宽度，ResizeObserver 会 refit。
+        */}
+        {/*
+          ⚠️ 必须带 `mode === 'viewer'`：图库模式是**盖在** `<main>` 上的，
+          不加这个条件会在后台继续请求一整列缩略图（用户根本看不见）。
+          ⚠️ 放映时也隐藏（`!slideshow`）：全屏放映不该留一条缩略图栏占画面。
+        */}
+        {mode === 'viewer' && showRail && !slideshow && siblings.length > 0 && (
+          <ThumbRail
+            paths={siblings}
+            index={index}
+            onPick={(p) => {
+              // 点当前这张不用重载（会白白重解码一次）
+              if (p !== imagePath) void load(p)
+            }}
+          />
+        )}
+
         {displayImage ? (
-          <ImageCanvas image={displayImage} controller={viewController} />
+          <ImageCanvas
+            image={displayImage}
+            controller={viewController}
+            fx={slideshow ? slideFx : null}
+            fxKey={imagePath}
+            fxMs={fxMs}
+            cropUi={showAdjust}
+          />
         ) : (
           <EmptyState status={status} onOpen={handleOpenDialog} />
         )}
@@ -880,9 +1240,12 @@ export function App() {
         {/* 帮助浮层（居中模态：快捷键速查） */}
         {showHelp && <HelpPanel onClose={toggleHelp} />}
 
-        {/* 设置浮层（居中模态：默认打开方式 + 关于） */}
+        {/* 设置窗口（左分类树 + 右内容；2026-10-24 取代旧的居中模态 SettingsPanel） */}
         {showSettings && (
-          <SettingsPanel
+          <SettingsWindow
+            /* key 里带上页码：从齿轮进来要**立刻**落到 AI 页，而不是沿用上次停留的页 */
+            key={settingsPage}
+            initialPage={settingsPage}
             onClose={toggleSettings}
             associations={associations}
             onToggleAssociation={onToggleAssociation}
@@ -962,6 +1325,29 @@ export function App() {
           onZoomScale={viewController.setZoom}
         />
       )}
+
+      {/*
+        图库模式（S2）：**始终挂载**，切到单图查看时只是 `display:none`。
+        卸载会丢掉「当前在哪个文件夹 / 选了哪些图 / 滚到第几屏」，
+        用户从单图返回时就只剩一个空白主页。
+        ⚠️ 所以必须传 `active` 让它把键盘监听关掉 ——
+        否则单图查看时按 Esc 会顺手把图库模式也退了。
+      */}
+      <ManagerView
+        active={mode === 'manager'}
+        onExit={() => setMode('viewer')}
+        onOpenSettings={openSettings}
+        onOpenImage={(p) => {
+          setMode('viewer')
+          void load(p)
+        }}
+        onPlaySlideshow={playPlaylist}
+        onDragMouseDown={onDragHandleMouseDown}
+        isMaximized={isMaximized}
+        onMinimize={minimize}
+        onToggleMaximize={toggleWindowMaximize}
+        onClose={closeWindow}
+      />
     </div>
   )
 }

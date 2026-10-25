@@ -3,11 +3,17 @@
 # 用法（Git Bash）：
 #   source scripts/msvc-env.sh
 #
-# 用法（PowerShell）：
-#   . scripts\msvc-env.ps1
+# ⚠️ 2026-10-15 实测：**普通的 `cargo build` / `cargo test` / `tauri dev` 并不需要这个脚本**。
+#    rustc 会自己用 vswhere 找到 VS BuildTools 的 link.exe，`cc` crate 也能找到 cl.exe
+#    （bundled SQLite 照样编得过）。本机 `INCLUDE=` `LIB=` 全空时 `cargo build -p photovault`
+#    30 秒成功。→ 这个脚本留着是给**显式需要 cl.exe / cmake 在 PATH 上**的场合用的。
+#
+# 需要的是另外两样（已加入用户 PATH，新开终端即生效）：
+#   C:\Users\Fc\.cargo\bin                          ← cargo / rustc（rustup shim）
+#   C:\Users\Fc\AppData\Local\nasm\nasm-2.16.03     ← nasm，rav1d(AVIF) 汇编必需
 #
 # 背景：Visual Studio 的 vcvars64.bat 需要 cmd.exe 加载，
-# 而本项目的开发流程要求不走 cmd.exe。��把路径直接写进环境变量。
+# 而本项目的开发流程要求不走 cmd.exe。改为把路径直接写进环境变量。
 
 # ── 版本探测（避免硬编码，升级 VS 后自动跟随）──
 # 用 find 定位 bin 目录，若无匹配则回退到当前已知版本

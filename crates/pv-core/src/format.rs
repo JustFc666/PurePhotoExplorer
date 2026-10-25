@@ -239,10 +239,8 @@ fn detect(buf: &[u8]) -> ImageFormat {
     }
 
     // ── RIFF 容器: WebP（WEBP）/ AVI/WEBP ──
-    if buf.starts_with(b"RIFF") && buf.len() >= 12 {
-        if &buf[8..12] == b"WEBP" {
-            return WebP;
-        }
+    if buf.starts_with(b"RIFF") && buf.len() >= 12 && &buf[8..12] == b"WEBP" {
+        return WebP;
     }
 
     // ── TIFF 系（须在 RAW 之前判定，因为多数 RAW 用 TIFF 容器）──

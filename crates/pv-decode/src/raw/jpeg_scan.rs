@@ -118,9 +118,9 @@ pub fn jpeg_extent(data: &[u8], start: usize) -> Option<usize> {
                         }
                     }
                 }
-                match found_marker {
-                    Some(k) => i = k,
-                    None => return None,
+                {
+                    let k = found_marker?;
+                    i = k
                 }
             }
             // 其余段：`FF <marker> <len:u16be>`，按 len 跳过

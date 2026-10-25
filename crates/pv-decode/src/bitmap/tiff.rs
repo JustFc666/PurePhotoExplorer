@@ -90,9 +90,8 @@ fn bytes_to_rgba(
     match (color, buf) {
         // ── 8 位 ──
         (ColorType::Gray(8), DecodingResult::U8(d)) => {
-            for i in 0..n {
-                let g = d[i];
-                img.data[i * 4..i * 4 + 4].copy_from_slice(&[g, g, g, 255]);
+            for (dst, &g) in img.data.chunks_exact_mut(4).zip(d.iter()) {
+                dst.copy_from_slice(&[g, g, g, 255]);
             }
         }
         (ColorType::GrayA(8), DecodingResult::U8(d)) => {
@@ -115,9 +114,9 @@ fn bytes_to_rgba(
         }
         // ── 16 位：取高字节（与 HEIC 10-bit → 8-bit 同策略）──
         (ColorType::Gray(16), DecodingResult::U16(d)) => {
-            for i in 0..n {
-                let g = (d[i] >> 8) as u8;
-                img.data[i * 4..i * 4 + 4].copy_from_slice(&[g, g, g, 255]);
+            for (dst, &v) in img.data.chunks_exact_mut(4).zip(d.iter()) {
+                let g = (v >> 8) as u8;
+                dst.copy_from_slice(&[g, g, g, 255]);
             }
         }
         (ColorType::GrayA(16), DecodingResult::U16(d)) => {

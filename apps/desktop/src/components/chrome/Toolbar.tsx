@@ -1,6 +1,7 @@
 /** 顶部工具栏（同时充当窗口标题栏 —— 见 decorations: false 自绘方案） */
 
 import type { MouseEvent as ReactMouseEvent } from 'react'
+import { ContextMenu, useContextMenu } from './ContextMenu'
 import { WindowControls } from './WindowControls'
 
 /**
@@ -14,7 +15,7 @@ import { WindowControls } from './WindowControls'
  * 所以图标**不会被拉伸**，图形本身就是 4:3 的横幅。
  * 尺寸交给 CSS（高度 28px → 宽 37.33px），这里只画形状。
  */
-function LogoTile() {
+export function LogoTile() {
   return (
     <span className="pv-logo" role="img" aria-label="PurePhotoExplorer">
       <svg viewBox="0 0 32 24" fill="none">
@@ -66,6 +67,10 @@ interface ToolbarProps {
   /** 设置浮层（默认打开方式 + 关于） */
   onToggleSettings: () => void
   showSettings: boolean
+  /** 幻灯片放映开 / 关（S） */
+  onToggleSlideshow: () => void
+  /** 正在放映（「放映」菜单文案与状态） */
+  slideshow: boolean
   /**
    * 打印当前图像（Ctrl+P）。
    *
@@ -93,6 +98,8 @@ interface ToolbarProps {
   onMinimize: () => void
   onToggleMaximize: () => void
   onClose: () => void
+  /** 切到图库模式（S2 管理器） */
+  onOpenManager?: () => void
 }
 
 export function Toolbar({
@@ -114,6 +121,8 @@ export function Toolbar({
   showHelp,
   onToggleSettings,
   showSettings,
+  onToggleSlideshow,
+  slideshow,
   onPrint,
   printing,
   animation,
@@ -123,7 +132,10 @@ export function Toolbar({
   onMinimize,
   onToggleMaximize,
   onClose,
+  onOpenManager,
 }: ToolbarProps) {
+  /** 「放映」下拉菜单的开关状态（Portal 渲染，不影响工具栏布局） */
+  const slideMenu = useContextMenu()
   return (
     <header className="pv-toolbar" onMouseDown={onDragMouseDown}>
       <LogoTile />
@@ -243,13 +255,31 @@ export function Toolbar({
       </button>
       <button
         className="pv-btn"
-        disabled={!hasImage}
         onClick={onToggleInfo}
         title="图片信息 (I)"
         aria-pressed={showInfo}
         aria-label="图片信息"
       >
         信息
+      </button>
+      {/*
+        「放映」菜单（2026-10-19 用户要求）。
+        单图模式的工具栏没有菜单栏，而这个功能下有两个入口（放映 / 设置间隔），
+        所以做成**下拉菜单**而不是又一个平铺按钮 —— 平铺会再多挤一格。
+      */}
+      <button
+        className="pv-btn"
+        disabled={!hasImage}
+        // 阻止冒泡：① 别让标题栏的拖动逻辑把这次按下当成"拖窗口"；
+        // ② 菜单开着时再点按钮，window 的 mousedown 会先关掉再被 click 打开（闪一下）
+        onMouseDown={(e) => e.stopPropagation()}
+        onClick={(e) => slideMenu.open(e)}
+        title="放映（S）—— 全屏自动翻页"
+        aria-haspopup="menu"
+        aria-expanded={slideMenu.state !== null}
+        aria-label="放映"
+      >
+        放映
       </button>
       <button
         className="pv-btn"
@@ -260,6 +290,16 @@ export function Toolbar({
       >
         {printing ? '打印中…' : '打印'}
       </button>
+      {onOpenManager && (
+        <button
+          className="pv-btn"
+          onClick={onOpenManager}
+          title="回到图库（停在离开时浏览的位置）"
+          aria-label="图库"
+        >
+          图库
+        </button>
+      )}
       <button
         className="pv-btn"
         onClick={onToggleHelp}
@@ -310,6 +350,30 @@ export function Toolbar({
         onToggleMaximize={onToggleMaximize}
         onClose={onClose}
       />
+
+      {/* 「放映」下拉菜单（Portal 到 body，不参与工具栏布局） */}
+      {slideMenu.state && (
+        <ContextMenu
+          key={`${slideMenu.state.x},${slideMenu.state.y}`}
+          position={{ x: slideMenu.state.x, y: slideMenu.state.y }}
+          items={[
+            {
+              id: 'slide-toggle',
+              label: slideshow ? '停止放映' : '开始放映',
+              hint: 'S',
+              onSelect: onToggleSlideshow,
+            },
+            {
+              id: 'slide-settings',
+              label: '放映设置…',
+              hint: '间隔 / 排序',
+              separatorBefore: true,
+              onSelect: onToggleSettings,
+            },
+          ]}
+          onClose={slideMenu.close}
+        />
+      )}
     </header>
   )
 }

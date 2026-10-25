@@ -1,0 +1,21 @@
+[package]
+name = "pv-store"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "PurePhotoExplorer 服务层：串起索引/扫描/缓存/解码，供 UI（Tauri 命令）调用"
+
+[dependencies]
+pv-core.workspace = true
+pv-index.workspace = true
+pv-scan.workspace = true
+pv-cache.workspace = true
+pv-decode.workspace = true
+# EXIF 拍摄时间（`taken_at`）—— 排序与按日期筛选的依据
+pv-meta.workspace = true
+# 坐标 → 城市名（内置离线表，`image_places` 的填充来源）
+pv-geo.workspace = true
+# 图库模型（普通 / 智能 / 加密）——侧栏要列图库与各自条目数
+pv-lib.workspace = true
+thiserror.workspace = true

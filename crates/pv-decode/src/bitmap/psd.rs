@@ -349,8 +349,7 @@ fn decode_rle(payload: &[u8], h: &PsdHeader, expected: usize) -> Result<Vec<u8>>
     let row_bytes = h.width as usize * h.bytes_per_sample();
     let mut out = Vec::with_capacity(expected);
     let mut p = table_len;
-    for i in 0..rows {
-        let n = row_len[i];
+    for &n in row_len.iter().take(rows) {
         let end = (p + n).min(payload.len());
         let (row, _) = packbits_row(&payload[p..end], row_bytes)?;
         out.extend_from_slice(&row);
@@ -686,8 +685,8 @@ mod tests {
         // 2 像素：通道0 = [0x11,0x22], [0x33,0x44]；通道1 全 0x55；通道2 全 0x66
         let mut planar = vec![0u8; 3 * 2 * 2];
         planar[0] = 0x11; planar[1] = 0x22; planar[2] = 0x33; planar[3] = 0x44;
-        for i in 4..8 { planar[i] = 0x55; }
-        for i in 8..12 { planar[i] = 0x66; }
+        planar[4..8].fill(0x55);
+        planar[8..12].fill(0x66);
         let img = planar_to_rgba(&planar, &h).unwrap();
         assert_eq!(&img.data[0..4], &[0x11, 0x55, 0x66, 255]);
         assert_eq!(&img.data[4..8], &[0x33, 0x55, 0x66, 255]);

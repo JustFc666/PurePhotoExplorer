@@ -1,0 +1,18 @@
+[package]
+name = "pv-scan"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "PurePhotoExplorer 索引扫描：目录遍历、增量判定、落库（写侧）"
+
+[dependencies]
+pv-core.workspace = true
+pv-index.workspace = true
+notify.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.59", features = [
+    "Win32_Foundation",
+    "Win32_Storage_FileSystem",
+] }

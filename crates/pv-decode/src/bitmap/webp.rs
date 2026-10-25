@@ -251,19 +251,26 @@ mod tests {
             eprintln!("跳过：找不到 WebP 样本");
             return;
         };
-        let t = std::time::Instant::now();
         let info = probe_webp(&p).unwrap();
-        let dt = t.elapsed();
 
         assert_eq!((info.width, info.height), (7680, 4320));
         assert_eq!(info.format, ImageFormat::WebP);
         assert!(!info.is_raw(), "WebP 不是 RAW");
-        // 探测必须**不解码像素**：全解要 ~187ms，只读头是亚毫秒级
+
+        // 探测必须**不解码像素**：全解要 ~187ms，只读头是亚毫秒级。
+        // 计时取多轮**最小值**——对并行测试/系统负载的偶发拖慢免疫，
+        // 同时仍能抓住"退化成全解码"的回归（187ms 远超阈值）。
+        let mut best = std::time::Duration::MAX;
+        for _ in 0..5 {
+            let t = std::time::Instant::now();
+            let _ = probe_webp(&p).unwrap();
+            best = best.min(t.elapsed());
+        }
         assert!(
-            dt.as_millis() < 50,
-            "探测应只读头，实测 {dt:?} —— 是不是退化成全解码了？"
+            best.as_millis() < 50,
+            "探测应只读头（多轮最快 {best:?}）—— 是不是退化成全解码了？"
         );
-        eprintln!("WebP 探测（只读头）{dt:?}");
+        eprintln!("WebP 探测（只读头，多轮最快）{best:?}");
     }
 
     #[test]

@@ -1,0 +1,519 @@
+﻿编码,一级类目,二级类目,主题词(首选词),同义词(非首选词),英文对照
+A001,人物与人像,身份与关系,婴儿,新生儿;宝宝,infant
+A002,人物与人像,身份与关系,儿童,小孩;孩子,child
+A003,人物与人像,身份与关系,青年,年轻人,youth
+A004,人物与人像,身份与关系,老年人,老人;长者,senior
+A005,人物与人像,身份与关系,男性,男士,male
+A006,人物与人像,身份与关系,女性,女士,female
+A007,人物与人像,身份与关系,情侣,,couple
+A008,人物与人像,身份与关系,夫妻,夫妇,married couple
+A009,人物与人像,身份与关系,家庭,家人,family
+A010,人物与人像,身份与关系,全家福,,family portrait
+A011,人物与人像,身份与关系,亲子,,parent-child
+A012,人物与人像,身份与关系,孕妇,准妈妈,pregnant woman
+A013,人物与人像,身份与关系,朋友,好友,friend
+A014,人物与人像,身份与关系,人群,众人,crowd
+A015,人物与人像,身份与关系,行人,路人,pedestrian
+A016,人物与人像,人像类型,自拍,,selfie
+A017,人物与人像,人像类型,合影,合照,group photo
+A018,人物与人像,人像类型,肖像,人像,portrait
+A019,人物与人像,人像类型,特写,,close-up
+A020,人物与人像,人像类型,半身照,半身像,half-body portrait
+A021,人物与人像,人像类型,证件照,,ID photo
+A022,人物与人像,人像类型,侧脸,侧颜,profile
+A023,人物与人像,人像类型,婚纱照,,wedding portrait
+A024,人物与人像,状态与动作,微笑,笑脸,smile
+A025,人物与人像,状态与动作,表情,,expression
+A026,人物与人像,状态与动作,手势,,gesture
+A027,人物与人像,状态与动作,拥抱,,hug
+A028,人物与人像,状态与动作,亲吻,接吻,kiss
+A029,人物与人像,状态与动作,跳跃,,jump
+A030,人物与人像,状态与动作,奔跑,,running
+A031,人物与人像,职业人物,工人,,worker
+A032,人物与人像,职业人物,农民,,farmer
+A033,人物与人像,职业人物,医护人员,医生;护士,medical staff
+A034,人物与人像,职业人物,教师,老师,teacher
+A035,人物与人像,职业人物,学生,,student
+A036,人物与人像,职业人物,军人,士兵,soldier
+A037,人物与人像,职业人物,警察,民警,police officer
+A038,人物与人像,职业人物,消防员,,firefighter
+A039,人物与人像,职业人物,厨师,,chef
+A040,人物与人像,职业人物,运动员,,athlete
+A041,人物与人像,职业人物,舞者,,dancer
+A042,人物与人像,职业人物,艺人,明星;名人,celebrity
+B001,事件与生活时刻,人生仪礼,婚礼,结婚;婚宴,wedding
+B002,事件与生活时刻,人生仪礼,订婚,,engagement
+B003,事件与生活时刻,人生仪礼,求婚,,marriage proposal
+B004,事件与生活时刻,人生仪礼,生日,,birthday
+B005,事件与生活时刻,人生仪礼,毕业典礼,毕业,graduation
+B006,事件与生活时刻,人生仪礼,纪念日,,anniversary
+B007,事件与生活时刻,社交活动,聚会,聚餐,gathering
+B008,事件与生活时刻,社交活动,派对,,party
+B009,事件与生活时刻,社交活动,野餐,,picnic
+B010,事件与生活时刻,公共事件,节日庆典,,festival celebration
+B011,事件与生活时刻,公共事件,庙会,,temple fair
+B012,事件与生活时刻,公共事件,灯会,,lantern show
+B013,事件与生活时刻,公共事件,集市,市集,market fair
+B014,事件与生活时刻,公共事件,展览,展会,exhibition
+B015,事件与生活时刻,公共事件,会议,大会,conference
+B016,事件与生活时刻,公共事件,演出,表演,performance
+B017,事件与生活时刻,公共事件,音乐会,,concert
+B018,事件与生活时刻,公共事件,演唱会,,live concert
+B019,事件与生活时刻,公共事件,开幕式,,opening ceremony
+B020,事件与生活时刻,公共事件,颁奖典礼,颁奖仪式,award ceremony
+B021,事件与生活时刻,公共事件,比赛现场,赛事现场,sporting event
+B022,事件与生活时刻,公共事件,烟花表演,焰火,fireworks show
+B023,事件与生活时刻,传统节日,春节,农历新年,Spring Festival
+B024,事件与生活时刻,传统节日,元宵节,,Lantern Festival
+B025,事件与生活时刻,传统节日,清明节,,Qingming Festival
+B026,事件与生活时刻,传统节日,端午节,,Dragon Boat Festival
+B027,事件与生活时刻,传统节日,七夕,,Qixi Festival
+B028,事件与生活时刻,传统节日,中秋节,,Mid-Autumn Festival
+B029,事件与生活时刻,传统节日,重阳节,,Double Ninth Festival
+B030,事件与生活时刻,现代节日,元旦,,New Year's Day
+B031,事件与生活时刻,现代节日,情人节,,Valentine's Day
+B032,事件与生活时刻,现代节日,妇女节,,Women's Day
+B033,事件与生活时刻,现代节日,劳动节,,Labor Day
+B034,事件与生活时刻,现代节日,儿童节,,Children's Day
+B035,事件与生活时刻,现代节日,母亲节,,Mother's Day
+B036,事件与生活时刻,现代节日,父亲节,,Father's Day
+B037,事件与生活时刻,现代节日,教师节,,Teachers' Day
+B038,事件与生活时刻,现代节日,圣诞节,,Christmas
+C001,旅行与户外,旅行方式,旅行,旅游,travel
+C002,旅行与户外,旅行方式,度假,休假,vacation
+C003,旅行与户外,旅行方式,徒步,远足,hiking
+C004,旅行与户外,旅行方式,露营,,camping
+C005,旅行与户外,旅行方式,登山,爬山,mountaineering
+C006,旅行与户外,旅行方式,自驾游,自驾,self-driving tour
+C007,旅行与户外,旅行方式,骑行,,cycling
+C008,旅行与户外,旅行方式,背包旅行,穷游,backpacking
+C009,旅行与户外,住宿设施,酒店,宾馆,hotel
+C010,旅行与户外,住宿设施,民宿,,guesthouse
+C011,旅行与户外,住宿设施,度假村,,resort
+C012,旅行与户外,目的地类型,景区,景点,scenic spot
+C013,旅行与户外,目的地类型,地标,地标建筑,landmark
+C014,旅行与户外,目的地类型,古迹,历史遗迹,historic site
+C015,旅行与户外,目的地类型,遗址,,ruins
+C016,旅行与户外,目的地类型,博物馆,,museum
+C017,旅行与户外,目的地类型,美术馆,画廊,gallery
+C018,旅行与户外,目的地类型,公园,,park
+C019,旅行与户外,目的地类型,主题乐园,游乐场,theme park
+C020,旅行与户外,目的地类型,动物园,,zoo
+C021,旅行与户外,目的地类型,植物园,,botanical garden
+C022,旅行与户外,目的地类型,水族馆,海洋馆,aquarium
+C023,旅行与户外,目的地类型,观景台,,observation deck
+C024,旅行与户外,户外活动,观光,,sightseeing
+C025,旅行与户外,户外活动,潜水,,diving
+C026,旅行与户外,户外活动,浮潜,,snorkeling
+C027,旅行与户外,户外活动,漂流,,rafting
+C028,旅行与户外,户外活动,温泉,,hot spring
+C029,旅行与户外,户外活动,垂钓,钓鱼,fishing
+C030,旅行与户外,户外活动,观星,,stargazing
+D001,自然与风光,地貌,山地,山峦,mountain
+D002,自然与风光,地貌,雪山,,snow mountain
+D003,自然与风光,地貌,山峰,峰峦,peak
+D004,自然与风光,地貌,峡谷,,canyon
+D005,自然与风光,地貌,丘陵,,hills
+D006,自然与风光,地貌,高原,,plateau
+D007,自然与风光,地貌,平原,,plain
+D008,自然与风光,地貌,草原,草场,grassland
+D009,自然与风光,地貌,沙漠,,desert
+D010,自然与风光,地貌,戈壁,,gobi
+D011,自然与风光,地貌,森林,,forest
+D012,自然与风光,地貌,树林,林木,woods
+D013,自然与风光,地貌,竹林,,bamboo forest
+D014,自然与风光,地貌,热带雨林,,rainforest
+D015,自然与风光,地貌,湿地,,wetland
+D016,自然与风光,地貌,洞穴,溶洞,cave
+D017,自然与风光,水域,河流,江河,river
+D018,自然与风光,水域,湖泊,湖水,lake
+D019,自然与风光,水域,瀑布,,waterfall
+D020,自然与风光,水域,溪流,小溪,stream
+D021,自然与风光,水域,海洋,大海,sea
+D022,自然与风光,水域,海岸,海岸线,coast
+D023,自然与风光,水域,沙滩,海滩,beach
+D024,自然与风光,水域,礁石,,reef
+D025,自然与风光,水域,岛屿,海岛,island
+D026,自然与风光,水域,冰川,,glacier
+D027,自然与风光,天象景观,日出,,sunrise
+D028,自然与风光,天象景观,日落,,sunset
+D029,自然与风光,天象景观,朝霞,,morning glow
+D030,自然与风光,天象景观,晚霞,火烧云,sunset glow
+D031,自然与风光,天象景观,星空,繁星,starry sky
+D032,自然与风光,天象景观,银河,,Milky Way
+D033,自然与风光,天象景观,月亮,月色,moon
+D034,自然与风光,天象景观,彩虹,,rainbow
+D035,自然与风光,天象景观,云海,,sea of clouds
+D036,自然与风光,天象景观,极光,,aurora
+D037,自然与风光,田园景观,田野,田园,field
+D038,自然与风光,田园景观,梯田,,terraced field
+D039,自然与风光,田园景观,花海,,flower sea
+D040,自然与风光,田园景观,草地,,meadow
+E001,天气与天空,天气现象,晴天,晴空,sunny
+E002,天气与天空,天气现象,多云,,cloudy
+E003,天气与天空,天气现象,阴天,,overcast
+E004,天气与天空,天气现象,雨天,下雨,rain
+E005,天气与天空,天气现象,雪景,下雪,snow scene
+E006,天气与天空,天气现象,雷电,闪电,lightning
+E007,天气与天空,天气现象,台风,,typhoon
+E008,天气与天空,天气现象,暴雨,,rainstorm
+E009,天气与天空,天气现象,雾,,fog
+E010,天气与天空,天气现象,雾霾,霾,haze
+E011,天气与天空,天气现象,冰雹,,hail
+E012,天气与天空,天空景象,蓝天,,blue sky
+E013,天气与天空,天空景象,白云,云朵,clouds
+E014,天气与天空,天空景象,黄昏,暮色,dusk
+E015,天气与天空,天空景象,黎明,破晓,dawn
+F001,动物,宠物,猫,猫咪,cat
+F002,动物,宠物,狗,宠物狗,dog
+F003,动物,宠物,兔子,宠物兔,rabbit
+F004,动物,宠物,宠物,萌宠,pet
+F005,动物,家禽家畜,鸡,公鸡;母鸡,chicken
+F006,动物,家禽家畜,鸭,鸭子,duck
+F007,动物,家禽家畜,马,,horse
+F008,动物,家禽家畜,牛,,cattle
+F009,动物,家禽家畜,羊,,sheep
+F010,动物,家禽家畜,猪,,pig
+F011,动物,家禽家畜,骆驼,,camel
+F012,动物,鸟类,鸟,飞鸟,bird
+F013,动物,鸟类,鸽子,,dove
+F014,动物,鸟类,鹰,老鹰,eagle
+F015,动物,鸟类,天鹅,,swan
+F016,动物,鸟类,孔雀,,peacock
+F017,动物,鸟类,企鹅,,penguin
+F018,动物,野生动物,熊猫,大熊猫,giant panda
+F019,动物,野生动物,狮子,,lion
+F020,动物,野生动物,老虎,,tiger
+F021,动物,野生动物,豹,猎豹,leopard
+F022,动物,野生动物,狼,,wolf
+F023,动物,野生动物,狐狸,,fox
+F024,动物,野生动物,熊,棕熊,bear
+F025,动物,野生动物,北极熊,,polar bear
+F026,动物,野生动物,大象,,elephant
+F027,动物,野生动物,长颈鹿,,giraffe
+F028,动物,野生动物,斑马,,zebra
+F029,动物,野生动物,鹿,梅花鹿,deer
+F030,动物,野生动物,猴子,,monkey
+F031,动物,水生动物,海豚,,dolphin
+F032,动物,水生动物,鲸,鲸鱼,whale
+F033,动物,水生动物,鲨鱼,,shark
+F034,动物,水生动物,鱼,鱼类,fish
+F035,动物,水生动物,海星,,starfish
+F036,动物,水生动物,贝壳,海螺,shell
+F037,动物,两栖爬行与昆虫,乌龟,,turtle
+F038,动物,两栖爬行与昆虫,蛇,,snake
+F039,动物,两栖爬行与昆虫,青蛙,蛙,frog
+F040,动物,两栖爬行与昆虫,蝴蝶,,butterfly
+F041,动物,两栖爬行与昆虫,蜜蜂,,bee
+F042,动物,两栖爬行与昆虫,蜻蜓,,dragonfly
+F043,动物,两栖爬行与昆虫,瓢虫,,ladybug
+F044,动物,两栖爬行与昆虫,蜗牛,,snail
+G001,植物与花卉,花卉,花,鲜花,flower
+G002,植物与花卉,花卉,玫瑰,,rose
+G003,植物与花卉,花卉,牡丹,,peony
+G004,植物与花卉,花卉,荷花,莲花,lotus
+G005,植物与花卉,花卉,菊花,,chrysanthemum
+G006,植物与花卉,花卉,梅花,,plum blossom
+G007,植物与花卉,花卉,兰花,,orchid
+G008,植物与花卉,花卉,樱花,,cherry blossom
+G009,植物与花卉,花卉,桃花,,peach blossom
+G010,植物与花卉,花卉,向日葵,,sunflower
+G011,植物与花卉,花卉,郁金香,,tulip
+G012,植物与花卉,花卉,薰衣草,,lavender
+G013,植物与花卉,花卉,油菜花,,rapeseed flower
+G014,植物与花卉,花卉,蒲公英,,dandelion
+G015,植物与花卉,花卉,百合,,lily
+G016,植物与花卉,花卉,杜鹃,映山红,azalea
+G017,植物与花卉,花卉,桂花,,osmanthus
+G018,植物与花卉,树木,树,树木,tree
+G019,植物与花卉,树木,松树,,pine
+G020,植物与花卉,树木,柳树,,willow
+G021,植物与花卉,树木,枫树,,maple
+G022,植物与花卉,树木,银杏,,ginkgo
+G023,植物与花卉,树木,竹子,竹,bamboo
+G024,植物与花卉,树木,椰树,椰子树,coconut palm
+G025,植物与花卉,树木,红叶,枫叶,red leaves
+G026,植物与花卉,绿植与园艺,绿植,绿色植物,green plant
+G027,植物与花卉,绿植与园艺,盆栽,盆花,potted plant
+G028,植物与花卉,绿植与园艺,多肉植物,多肉,succulent
+G029,植物与花卉,绿植与园艺,仙人掌,,cactus
+G030,植物与花卉,绿植与园艺,盆景,,bonsai
+G031,植物与花卉,绿植与园艺,草坪,,lawn
+G032,植物与花卉,绿植与园艺,蘑菇,菌类,mushroom
+H001,城市与建筑,城市景观,城市风光,城市景观,cityscape
+H002,城市与建筑,城市景观,天际线,,skyline
+H003,城市与建筑,城市景观,摩天大楼,高楼,skyscraper
+H004,城市与建筑,城市景观,夜景,城市夜景,night view
+H005,城市与建筑,城市景观,胡同,,hutong
+H006,城市与建筑,城市景观,老街,古街,old street
+H007,城市与建筑,城市景观,古镇,,ancient town
+H008,城市与建筑,城市景观,街道,,street
+H009,城市与建筑,城市景观,广场,,plaza
+H010,城市与建筑,建筑类型,住宅,民居,residence
+H011,城市与建筑,建筑类型,别墅,,villa
+H012,城市与建筑,建筑类型,四合院,,courtyard house
+H013,城市与建筑,建筑类型,寺庙,寺院,temple
+H014,城市与建筑,建筑类型,教堂,,church
+H015,城市与建筑,建筑类型,清真寺,,mosque
+H016,城市与建筑,建筑类型,宫殿,,palace
+H017,城市与建筑,建筑类型,塔,宝塔,tower
+H018,城市与建筑,建筑类型,桥梁,大桥,bridge
+H019,城市与建筑,建筑类型,城墙,,city wall
+H020,城市与建筑,建筑类型,牌坊,牌楼,memorial archway
+H021,城市与建筑,建筑类型,亭子,亭台,pavilion
+H022,城市与建筑,建筑类型,园林,古典园林,classical garden
+H023,城市与建筑,建筑类型,城堡,,castle
+H024,城市与建筑,建筑类型,灯塔,,lighthouse
+H025,城市与建筑,公共设施,喷泉,,fountain
+H026,城市与建筑,公共设施,雕塑,雕像,statue
+H027,城市与建筑,公共设施,纪念碑,,monument
+H028,城市与建筑,公共设施,体育场,体育馆,stadium
+H029,城市与建筑,公共设施,港口,码头,port
+H030,城市与建筑,公共设施,地铁站,,subway station
+H031,城市与建筑,公共设施,商场,购物中心,shopping mall
+H032,城市与建筑,公共设施,店铺,商店,shop
+H033,城市与建筑,公共设施,夜市,,night market
+H034,城市与建筑,公共设施,霓虹灯,,neon light
+I001,室内空间,居家空间,客厅,,living room
+I002,室内空间,居家空间,卧室,,bedroom
+I003,室内空间,居家空间,厨房,,kitchen
+I004,室内空间,居家空间,餐厅,饭厅,dining room
+I005,室内空间,居家空间,书房,,study
+I006,室内空间,居家空间,浴室,卫生间,bathroom
+I007,室内空间,居家空间,阳台,,balcony
+I008,室内空间,居家空间,庭院,院子,courtyard
+I009,室内空间,公共室内,办公室,,office
+I010,室内空间,公共室内,会议室,,meeting room
+I011,室内空间,公共室内,教室,,classroom
+I012,室内空间,公共室内,图书馆,,library
+I013,室内空间,公共室内,展厅,展馆,exhibition hall
+I014,室内空间,公共室内,咖啡馆,咖啡厅,cafe
+I015,室内空间,公共室内,酒吧,,bar
+I016,室内空间,公共室内,健身房,,gym
+I017,室内空间,公共室内,游泳馆,室内泳池,indoor pool
+I018,室内空间,公共室内,舞台,,stage
+J001,美食与饮品,中式美食,中餐,中式菜肴,Chinese cuisine
+J002,美食与饮品,中式美食,火锅,,hotpot
+J003,美食与饮品,中式美食,烧烤,烤肉,barbecue
+J004,美食与饮品,中式美食,面食,,wheat food
+J005,美食与饮品,中式美食,面条,,noodles
+J006,美食与饮品,中式美食,饺子,水饺,dumpling
+J007,美食与饮品,中式美食,包子,馒头,bun
+J008,美食与饮品,中式美食,粥,稀饭,porridge
+J009,美食与饮品,甜品,甜品,甜点,dessert
+J010,美食与饮品,甜品,蛋糕,,cake
+J011,美食与饮品,甜品,冰淇淋,冰激凌,ice cream
+J012,美食与饮品,异国料理,西餐,,Western food
+J013,美食与饮品,异国料理,牛排,,steak
+J014,美食与饮品,异国料理,披萨,,pizza
+J015,美食与饮品,异国料理,汉堡,,hamburger
+J016,美食与饮品,异国料理,沙拉,,salad
+J017,美食与饮品,异国料理,寿司,,sushi
+J018,美食与饮品,食材与水果,水果,,fruit
+J019,美食与饮品,食材与水果,苹果,,apple
+J020,美食与饮品,食材与水果,香蕉,,banana
+J021,美食与饮品,食材与水果,西瓜,,watermelon
+J022,美食与饮品,食材与水果,草莓,,strawberry
+J023,美食与饮品,食材与水果,葡萄,,grape
+J024,美食与饮品,食材与水果,蔬菜,,vegetable
+J025,美食与饮品,食材与水果,海鲜,,seafood
+J026,美食与饮品,餐饮场景,早餐,,breakfast
+J027,美食与饮品,餐饮场景,下午茶,,afternoon tea
+J028,美食与饮品,饮品,咖啡,,coffee
+J029,美食与饮品,饮品,茶,茶水,tea
+J030,美食与饮品,饮品,果汁,,juice
+J031,美食与饮品,饮品,啤酒,,beer
+J032,美食与饮品,饮品,红酒,葡萄酒,red wine
+J033,美食与饮品,饮品,鸡尾酒,,cocktail
+K001,物品与静物,服装,服装,衣服,clothing
+K002,物品与静物,服装,连衣裙,,dress
+K003,物品与静物,服装,西装,西服,suit
+K004,物品与静物,服装,衬衫,,shirt
+K005,物品与静物,服装,牛仔裤,,jeans
+K006,物品与静物,服装,外套,大衣,coat
+K007,物品与静物,服装,鞋,鞋子,shoes
+K008,物品与静物,服装,高跟鞋,,high heels
+K009,物品与静物,服装,运动鞋,,sneakers
+K010,物品与静物,服装,帽子,,hat
+K011,物品与静物,服装,包,包包,bag
+K012,物品与静物,配饰,手表,,watch
+K013,物品与静物,配饰,眼镜,太阳镜,glasses
+K014,物品与静物,配饰,珠宝,,jewelry
+K015,物品与静物,配饰,戒指,,ring
+K016,物品与静物,配饰,项链,,necklace
+K017,物品与静物,配饰,化妆品,,cosmetics
+K018,物品与静物,配饰,香水,,perfume
+K019,物品与静物,家居用品,家具,,furniture
+K020,物品与静物,家居用品,沙发,,sofa
+K021,物品与静物,家居用品,椅子,,chair
+K022,物品与静物,家居用品,桌子,餐桌,table
+K023,物品与静物,家居用品,床,,bed
+K024,物品与静物,家居用品,灯具,台灯,lamp
+K025,物品与静物,家居用品,餐具,,tableware
+K026,物品与静物,家居用品,花瓶,,vase
+K027,物品与静物,文化与日用品,书籍,图书,book
+K028,物品与静物,文化与日用品,玩具,,toy
+K029,物品与静物,文化与日用品,乐器,,musical instrument
+K030,物品与静物,数码产品,相机,,camera
+K031,物品与静物,数码产品,手机,,smartphone
+K032,物品与静物,数码产品,电脑,笔记本电脑,computer
+K033,物品与静物,数码产品,耳机,,headphones
+L001,交通与载具,机动车,汽车,轿车,car
+L002,交通与载具,机动车,跑车,,sports car
+L003,交通与载具,机动车,越野车,吉普,SUV
+L004,交通与载具,机动车,卡车,货车,truck
+L005,交通与载具,机动车,公交车,巴士,bus
+L006,交通与载具,机动车,出租车,的士,taxi
+L007,交通与载具,机动车,摩托车,,motorcycle
+L008,交通与载具,机动车,救护车,,ambulance
+L009,交通与载具,机动车,消防车,,fire truck
+L010,交通与载具,机动车,警车,,police car
+L011,交通与载具,非机动车,自行车,单车,bicycle
+L012,交通与载具,非机动车,电动车,电瓶车,e-bike
+L013,交通与载具,轨道交通,火车,,train
+L014,交通与载具,轨道交通,高铁,动车,high-speed rail
+L015,交通与载具,轨道交通,地铁,,subway
+L016,交通与载具,轨道交通,有轨电车,,tram
+L017,交通与载具,航空器,飞机,,airplane
+L018,交通与载具,航空器,直升机,,helicopter
+L019,交通与载具,航空器,热气球,,hot air balloon
+L020,交通与载具,船舶,轮船,船舶,ship
+L021,交通与载具,船舶,帆船,,sailboat
+L022,交通与载具,船舶,游艇,,yacht
+M001,体育与健身,球类运动,足球,,football
+M002,体育与健身,球类运动,篮球,,basketball
+M003,体育与健身,球类运动,排球,,volleyball
+M004,体育与健身,球类运动,网球,,tennis
+M005,体育与健身,球类运动,羽毛球,,badminton
+M006,体育与健身,球类运动,乒乓球,,table tennis
+M007,体育与健身,球类运动,高尔夫,,golf
+M008,体育与健身,球类运动,棒球,,baseball
+M009,体育与健身,球类运动,台球,桌球,billiards
+M010,体育与健身,水上运动,游泳,,swimming
+M011,体育与健身,水上运动,跳水,,diving sport
+M012,体育与健身,水上运动,冲浪,,surfing
+M013,体育与健身,田径与耐力,田径,,track and field
+M014,体育与健身,田径与耐力,马拉松,,marathon
+M015,体育与健身,田径与耐力,跑步,慢跑,running
+M016,体育与健身,健身与室内,健身,,fitness
+M017,体育与健身,健身与室内,瑜伽,,yoga
+M018,体育与健身,搏击与技击,拳击,,boxing
+M019,体育与健身,搏击与技击,武术,,martial arts
+M020,体育与健身,搏击与技击,跆拳道,,taekwondo
+M021,体育与健身,搏击与技击,柔道,,judo
+M022,体育与健身,搏击与技击,击剑,,fencing
+M023,体育与健身,搏击与技击,射箭,,archery
+M024,体育与健身,极限与户外,攀岩,,rock climbing
+M025,体育与健身,极限与户外,滑雪,,skiing
+M026,体育与健身,极限与户外,滑冰,溜冰,skating
+M027,体育与健身,极限与户外,滑板,,skateboarding
+M028,体育与健身,极限与户外,赛车,,car racing
+N001,文化艺术与娱乐,视觉艺术,绘画,,painting
+N002,文化艺术与娱乐,视觉艺术,油画,,oil painting
+N003,文化艺术与娱乐,视觉艺术,国画,中国画,Chinese painting
+N004,文化艺术与娱乐,视觉艺术,水彩画,,watercolor
+N005,文化艺术与娱乐,视觉艺术,书法,,calligraphy
+N006,文化艺术与娱乐,视觉艺术,陶艺,陶瓷,pottery
+N007,文化艺术与娱乐,视觉艺术,摄影,,photography
+N008,文化艺术与娱乐,表演艺术,电影,,film
+N009,文化艺术与娱乐,表演艺术,戏剧,话剧,theatre
+N010,文化艺术与娱乐,表演艺术,戏曲,,Chinese opera
+N011,文化艺术与娱乐,表演艺术,京剧,,Peking opera
+N012,文化艺术与娱乐,表演艺术,舞蹈,,dance
+N013,文化艺术与娱乐,表演艺术,街舞,,street dance
+N014,文化艺术与娱乐,表演艺术,杂技,,acrobatics
+N015,文化艺术与娱乐,休闲爱好,阅读,读书,reading
+N016,文化艺术与娱乐,休闲爱好,写作,,writing
+N017,文化艺术与娱乐,休闲爱好,手工,DIY,handicraft
+N018,文化艺术与娱乐,休闲爱好,编织,,knitting
+N019,文化艺术与娱乐,休闲爱好,刺绣,,embroidery
+N020,文化艺术与娱乐,休闲爱好,剪纸,,paper cutting
+N021,文化艺术与娱乐,休闲爱好,棋牌,,chess and cards
+N022,文化艺术与娱乐,休闲爱好,围棋,,Go
+N023,文化艺术与娱乐,休闲爱好,象棋,中国象棋,Chinese chess
+N024,文化艺术与娱乐,休闲爱好,游戏,电子游戏,video game
+N025,文化艺术与娱乐,休闲爱好,电竞,,e-sports
+N026,文化艺术与娱乐,休闲爱好,动漫,,anime
+N027,文化艺术与娱乐,休闲爱好,卡拉OK,KTV,karaoke
+N028,文化艺术与娱乐,休闲爱好,收藏,,collection
+O001,行业与生产,农业,农业,农耕,agriculture
+O002,行业与生产,农业,耕作,耕种,farming
+O003,行业与生产,农业,收割,丰收,harvest
+O004,行业与生产,农业,渔业,捕鱼,fishery
+O005,行业与生产,农业,放牧,畜牧,herding
+O006,行业与生产,农业,茶园,采茶,tea plantation
+O007,行业与生产,工业与工程,工厂,厂房,factory
+O008,行业与生产,工业与工程,车间,,workshop
+O009,行业与生产,工业与工程,生产线,,assembly line
+O010,行业与生产,工业与工程,采矿,矿山,mining
+O011,行业与生产,工业与工程,建筑工地,施工,construction site
+O012,行业与生产,商业与服务,购物,,shopping
+O013,行业与生产,商业与服务,办公,商务办公,office work
+O014,行业与生产,商业与服务,金融,股市,finance
+O015,行业与生产,商业与服务,物流,快递,logistics
+O016,行业与生产,商业与服务,实验室,,laboratory
+P001,抽象概念与情感,正面情感,爱,爱情,love
+P002,抽象概念与情感,正面情感,幸福,美满,happiness
+P003,抽象概念与情感,正面情感,欢乐,快乐,joy
+P004,抽象概念与情感,正面情感,宁静,安详,tranquility
+P005,抽象概念与情感,正面情感,浪漫,,romance
+P006,抽象概念与情感,正面情感,希望,,hope
+P007,抽象概念与情感,正面情感,自由,,freedom
+P008,抽象概念与情感,负面与复杂情感,悲伤,忧伤,sadness
+P009,抽象概念与情感,负面与复杂情感,孤独,寂寞,loneliness
+P010,抽象概念与情感,负面与复杂情感,怀旧,回忆,nostalgia
+P011,抽象概念与情感,品质与精神,力量,,strength
+P012,抽象概念与情感,品质与精神,勇气,,courage
+P013,抽象概念与情感,品质与精神,友谊,友情,friendship
+P014,抽象概念与情感,品质与精神,亲情,,family affection
+P015,抽象概念与情感,品质与精神,梦想,,dream
+Q001,摄影风格与技法,题材风格,纪实摄影,,documentary photography
+Q002,摄影风格与技法,题材风格,人像摄影,,portrait photography
+Q003,摄影风格与技法,题材风格,风光摄影,,landscape photography
+Q004,摄影风格与技法,题材风格,街头摄影,街拍,street photography
+Q005,摄影风格与技法,题材风格,生态摄影,,wildlife photography
+Q006,摄影风格与技法,题材风格,静物摄影,,still life photography
+Q007,摄影风格与技法,题材风格,美食摄影,,food photography
+Q008,摄影风格与技法,题材风格,建筑摄影,,architecture photography
+Q009,摄影风格与技法,题材风格,黑白摄影,,black and white photography
+Q010,摄影风格与技法,题材风格,极简主义,极简,minimalism
+Q011,摄影风格与技法,题材风格,胶片,胶片摄影,film photography
+Q012,摄影风格与技法,题材风格,复古,怀旧风,vintage
+Q013,摄影风格与技法,技术手法,微距,,macro
+Q014,摄影风格与技法,技术手法,长曝光,,long exposure
+Q015,摄影风格与技法,技术手法,延时摄影,,time-lapse
+Q016,摄影风格与技法,技术手法,航拍,无人机摄影,aerial photography
+Q017,摄影风格与技法,技术手法,全景,,panorama
+Q018,摄影风格与技法,技术手法,浅景深,背景虚化,shallow depth of field
+Q019,摄影风格与技法,技术手法,逆光,,backlit
+Q020,摄影风格与技法,技术手法,剪影,,silhouette
+Q021,摄影风格与技法,构图,对称构图,,symmetry
+Q022,摄影风格与技法,构图,引导线,,leading lines
+Q023,摄影风格与技法,构图,三分法,九宫格,rule of thirds
+Q024,摄影风格与技法,构图,留白,,negative space
+Q025,摄影风格与技法,构图,俯拍,俯视角,top-down view
+Q026,摄影风格与技法,光线,黄金时刻,,golden hour
+Q027,摄影风格与技法,光线,蓝调时刻,,blue hour
+Q028,摄影风格与技法,光线,夜景摄影,夜拍,night photography
+R001,时间与季节,季节,春天,春季,spring
+R002,时间与季节,季节,夏天,夏季,summer
+R003,时间与季节,季节,秋天,秋季,autumn
+R004,时间与季节,季节,冬天,冬季,winter
+R005,时间与季节,时段,清晨,早晨,morning
+R006,时间与季节,时段,正午,,noon
+R007,时间与季节,时段,午后,,afternoon
+R008,时间与季节,时段,傍晚,,evening
+R009,时间与季节,时段,夜晚,深夜,night
+S001,材质与纹理,材质,纹理,,texture
+S002,材质与纹理,材质,木纹,,wood grain
+S003,材质与纹理,材质,石纹,石材纹理,stone texture
+S004,材质与纹理,材质,大理石,,marble
+S005,材质与纹理,材质,金属质感,,metallic texture
+S006,材质与纹理,材质,布料纹理,,fabric texture
+S007,材质与纹理,材质,纸张,纸质,paper
+S008,材质与纹理,材质,玻璃,,glass
+S009,材质与纹理,材质,水面波纹,,water ripples
+S010,材质与纹理,材质,墙面,墙壁,wall
+S011,材质与纹理,材质,铁锈,,rust
+S012,材质与纹理,背景,涂鸦,,graffiti
+S013,材质与纹理,背景,纯色背景,,solid background

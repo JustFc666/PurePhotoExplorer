@@ -42,12 +42,8 @@ pub(super) fn gray8_to_rgba(src: &[u8], w: u32, h: u32) -> Result<RgbaImage> {
         return Err(PvError::Decode("灰度数据长度不足".into()));
     }
     let mut out = RgbaImage::new(w, h)?;
-    for i in 0..(w as usize) * (h as usize) {
-        let g = src[i];
-        out.data[i * 4] = g;
-        out.data[i * 4 + 1] = g;
-        out.data[i * 4 + 2] = g;
-        out.data[i * 4 + 3] = 255;
+    for (dst, &g) in out.data.chunks_exact_mut(4).zip(src.iter()) {
+        dst.copy_from_slice(&[g, g, g, 255]);
     }
     Ok(out)
 }

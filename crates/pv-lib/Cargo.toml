@@ -1,0 +1,11 @@
+[package]
+name = "pv-lib"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "PurePhotoExplorer 图库领域模型：普通 / 智能图库（加密图库见 §7.3，S2.11）"
+
+[dependencies]
+pv-index.workspace = true
+thiserror.workspace = true

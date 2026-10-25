@@ -25,6 +25,7 @@ use std::fs::File;
 use std::io::{BufReader, Read, Seek, SeekFrom};
 use std::path::Path;
 
+use chrono::TimeZone;
 use exif::Reader;
 use serde::{Deserialize, Serialize};
 
@@ -32,7 +33,19 @@ pub use format::{
     date_time, exposure_bias, exposure_program, exposure_time, f_number, flash, focal_length,
     gps_altitude, gps_coord, gps_decimal, metering_mode, orientation, white_balance,
 };
-pub use rewrite::{align_with_pixels as align_exif_with_pixels, Outcome as ExifRewriteOutcome};
+pub use rewrite::{
+    align_with_pixels as align_exif_with_pixels, read_orientation as read_orientation_tag,
+    Outcome as ExifRewriteOutcome,
+};
+
+/// 读某个文件里 `Orientation` 的原始值（1–8）。
+///
+/// 「按 EXIF 批量摆正」用它决定转多少度。返回 `None` 表示没有方向标签
+/// （或者 EXIF 读不出来）—— 调用方应当当作「无需处理」而不是报错。
+pub fn read_orientation(path: &Path) -> Option<u16> {
+    let raw = read_exif_raw(path)?;
+    read_orientation_tag(&raw)
+}
 
 /// 拍摄地点（EXIF GPS）。
 ///
@@ -118,6 +131,28 @@ impl ExifData {
     /// 是否一个字段都没读到。
     pub fn is_empty(&self) -> bool {
         *self == Self::default()
+    }
+
+    /// 拍摄时间 → **Unix 秒**（索引里 `images.taken_at` 用）。
+    ///
+    /// ## 时区：只能按本地时间理解
+    /// EXIF 的 `DateTimeOriginal` 记录的是**相机当地的墙上时间**，不带时区
+    /// （只有少数机型会额外写 `OffsetTimeOriginal`，本项目暂不读）。
+    /// 所以这里用 `Local` 解释 —— 这是唯一能让「排序」和「按日期筛选」符合直觉的做法。
+    ///
+    /// ⚠️ 副作用要说清楚：跨时区拍的照片，排序会按各自的当地墙上时间，
+    /// 而不是真实的时间先后。这是 EXIF 格式本身的缺陷，不是这里的 bug。
+    ///
+    /// 夏令时切换的空档里，本地时间可能不存在或重复：用 `earliest` 取一个确定值，
+    /// 都取不到才返回 `None`（宁可没有，也不要错一个钟头）。
+    pub fn taken_at_unix(&self) -> Option<i64> {
+        let s = self.date_time_original.as_deref()?;
+        let naive = chrono::NaiveDateTime::parse_from_str(s, "%Y-%m-%d %H:%M:%S").ok()?;
+        let local = chrono::Local
+            .from_local_datetime(&naive)
+            .earliest()
+            .or_else(|| chrono::Local.from_local_datetime(&naive).latest())?;
+        Some(local.timestamp())
     }
 }
 
@@ -299,7 +334,7 @@ fn looks_like_tiff(d: &[u8]) -> bool {
         b"I" => u32::from_le_bytes(h[4..8].try_into().unwrap_or([0; 4])) as usize,
         _ => u32::from_be_bytes(h[4..8].try_into().unwrap_or([0; 4])) as usize,
     };
-    off >= 8 && off < (1 << 28)
+    (8..(1 << 28)).contains(&off)
 }
 
 fn read_exif_inner(path: &Path) -> Result<ExifData, MetaError> {    let mut file = BufReader::new(File::open(path)?);
@@ -770,6 +805,35 @@ fn find_bytes(data: &[u8], needle: &[u8]) -> Option<usize> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// 拍摄时间 → Unix 秒：按**本地时区**解释，反推回来应与原字符串一致。
+    ///
+    /// 这条是「按拍摄时间排序」的地基 —— 存进去的秒数错了，排序就全错，
+    /// 而且界面上看不出任何异常（只是顺序不对）。
+    #[test]
+    fn 拍摄时间转成时间戳() {
+        let e = ExifData {
+            date_time_original: Some("2024-05-01 18:32:10".to_string()),
+            ..Default::default()
+        };
+        let ts = e.taken_at_unix().expect("应有时间戳");
+        let back = chrono::Local.timestamp_opt(ts, 0).unwrap();
+        assert_eq!(
+            back.format("%Y-%m-%d %H:%M:%S").to_string(),
+            "2024-05-01 18:32:10"
+        );
+    }
+
+    #[test]
+    fn 没有或无效的拍摄时间返回None() {
+        assert!(ExifData::default().taken_at_unix().is_none());
+        // 相机没设时间时会写全 0（格式化后是 `---` 之类），不能当成 1970 年
+        let e = ExifData {
+            date_time_original: Some("0000:00:00 00:00:00".to_string()),
+            ..Default::default()
+        };
+        assert!(e.taken_at_unix().is_none(), "无效时间不该变成时间戳");
+    }
 
     /// 真实图库路径（缺失时测试自动跳过，便于在别的机器上跑）
     fn sample(name: &str) -> Option<std::path::PathBuf> {

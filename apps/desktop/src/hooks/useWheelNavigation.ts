@@ -35,7 +35,11 @@ const WHEEL_NAV_COOLDOWN = 220
  * ⚠️ 用的是**类名**而非组件引用，所以类名改名时要同步这里（`grep pv-modal`）。
  * 漏一个的症状很隐蔽：面板能打开，但滚轮翻的是图，面板内容滚不动。
  */
-const SELF_SCROLLING_OVERLAYS = ['.pv-modal']
+const SELF_SCROLLING_OVERLAYS = [
+  '.pv-modal',
+  // 单图模式的左侧胶片条：它自己纵向滚动，滚它不该把图翻走
+  '.pv-rail',
+]
 
 export interface UseWheelNavigationOptions {
   /** 滚轮向下 = +1（下一张），向上 = -1（上一张） */

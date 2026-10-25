@@ -8,6 +8,7 @@ import ctypes
 import json
 import os
 import sys
+import subprocess
 import time
 
 os.chdir(r'C:\Users\Fc\WorkBuddy\2026-10-02-22-48-04')
@@ -59,6 +60,9 @@ try:
             pvi.key(a['name'])
         elif op == 'click':
             pvi.click(a['x'], a['y'])
+        elif op == 'text':
+            # 用 Unicode 输入：路径里的 `:` `\` 等字符用虚拟键码拼不出来
+            pvi.text(a['value'])
         elif op == 'drag':
             pvi.drag(a['x1'], a['y1'], a['x2'], a['y2'], a.get('steps', 24))
         elif op == 'wheel':
@@ -69,7 +73,13 @@ try:
             sys.argv_tmp = sys.argv
             u.SetWindowPos(hwnd, HWND_NOTOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE)
             time.sleep(0.35)
-            os.system(f'"{sys.executable}" scripts/pv-shot-win.py "{a["file"]}" {hwnd}')
+            # ⚠️ 用 subprocess 列表形式调用：os.system 在这台机器上拼出来的命令行
+            # 会被 cmd 报「系统找不到指定的路径」（路径里有中文/斜杠时尤其容易踩到）
+            subprocess.run(
+                [sys.executable, 'scripts/pv-shot-win.py', a['file'], str(hwnd)],
+                cwd=r'C:\Users\Fc\WorkBuddy\2026-10-02-22-48-04',
+                check=False,
+            )
             u.SetWindowPos(hwnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE)
             time.sleep(0.25)
         time.sleep(a.get('after', 0.35))

@@ -65,6 +65,13 @@ export interface UseImageLoader {
    */
   refreshSiblings: () => Promise<void>
   /**
+   * 用一份**外部播放列表**替代「同目录列表」（图库/文件夹的幻灯片放映用）。
+   *
+   * 传 `null` 恢复「按当前文件所在目录翻页」。传进来的路径若不在列表里，
+   * `load` 会自动退出列表模式（见 `syncSiblings`）。
+   */
+  setPlaylist: (paths: string[] | null) => void
+  /**
    * 当前（最后一次请求的）图片路径；没有图时为 `null`。
    *
    * ⚠️ **加载失败时也保留**（不像 `info` 会被清空）—— 「刷新」要能用于
@@ -77,6 +84,13 @@ export interface UseImageLoader {
   index: number
   /** 同目录图片总数 */
   total: number
+  /**
+   * 同目录图片的**绝对路径列表**（已排序，与翻页顺序一致）。
+   *
+   * 给单图模式的左侧胶片条用。只在「重新列目录」时更新（同目录翻页不重列），
+   * 所以翻页不会引起列表重建。
+   */
+  siblings: string[]
   canPrev: boolean
   canNext: boolean
   prev: () => void
@@ -90,6 +104,8 @@ export function useImageLoader(): UseImageLoader {
   const [status, setStatus] = useState<Status>({ kind: 'empty' })
   const [index, setIndex] = useState(-1)
   const [total, setTotal] = useState(0)
+  /** 同目录路径列表（胶片条渲染用；翻页不重列，只在 `syncSiblings` 落地时换） */
+  const [siblings, setSiblings] = useState<string[]>([])
   /** 「刷新」用的当前路径；失败也保留（见 `UseImageLoader.path` 的说明） */
   const [path, setPath] = useState<string | null>(null)
   /**
@@ -106,6 +122,16 @@ export function useImageLoader(): UseImageLoader {
   const siblingsRef = useRef<string[]>([])
   const indexRef = useRef(-1)
   const dirRef = useRef<string | null>(null)
+  /**
+   * 外部播放列表（图库 / 文件夹放映）。
+   *
+   * 为什么需要它：图库里的照片可能散落在几十个目录，`list_siblings` 只会
+   * 列出**当前文件所在的那一个目录** —— 放映到第 2 张就跳出了图库。
+   * 有这份列表时翻页直接走它，不再列目录。
+   */
+  const playlistRef = useRef<string[] | null>(null)
+  /** 列表模式下的 `dirRef` 占位：任何真实目录都不等于它，退出列表后必然重列 */
+  const PLAYLIST_DIR = '__pv_playlist__'
   /** 预取任务代号：切图后自增，使旧的预取链自动放弃 */
   const prefetchGen = useRef(0)
 
@@ -125,6 +151,25 @@ export function useImageLoader(): UseImageLoader {
    * 入口（另存为、手动刷新）都必须传 `force = true`，见 [`refreshSiblings`]。
    */
   const syncSiblings = useCallback(async (path: string, id: number, force = false) => {
+    // ① 有外部播放列表：直接用它，**绝不列目录**
+    const playlist = playlistRef.current
+    if (playlist) {
+      if (!playlist.includes(path)) {
+        // 打开了列表之外的文件 → 用户已经离开了这次放映，退回"按目录翻页"
+        playlistRef.current = null
+      } else {
+        siblingsRef.current = playlist
+        // 用占位值而不是真实目录：否则退出列表后 `shouldRelist` 会认为
+        // 「目录没变」而跳过重列，`siblingsRef` 就永远停在这份播放列表上。
+        dirRef.current = PLAYLIST_DIR
+        setTotal(playlist.length)
+        setSiblings(playlist)
+        indexRef.current = locateInList(playlist, path)
+        setIndex(indexRef.current)
+        return
+      }
+    }
+
     const dir = dirOf(path)
     const cache = { dir: dirRef.current, list: siblingsRef.current }
     if (shouldRelist(cache, dir, force)) {
@@ -141,6 +186,7 @@ export function useImageLoader(): UseImageLoader {
       dirRef.current = dir
       siblingsRef.current = list
       setTotal(list.length)
+      setSiblings(list)
       indexRef.current = locateInList(list, path)
       setIndex(indexRef.current)
     } else {
@@ -310,6 +356,19 @@ export function useImageLoader(): UseImageLoader {
   const prev = useCallback(() => go(-1), [go])
 
   /**
+   * 装/卸外部播放列表。
+   *
+   * ⚠️ 必须**拷贝**一份：调用方常常传 `items.map(...)` 的临时数组，
+   * 但有些地方会直接传来路不明的可变数组；拷贝一下省得后面被就地改掉。
+   * 传 `null` = 回到按目录翻页（下次 `load` 会重列目录）。
+   */
+  const setPlaylist = useCallback((list: string[] | null) => {
+    playlistRef.current = list === null ? null : [...list]
+    // 立刻让 `dirRef` 失效：下一张图进来时必然重新定位
+    if (list === null) dirRef.current = null
+  }, [])
+
+  /**
    * 预取相邻图片（后 5 + 前 2）。
    *
    * - **顺序**预取：最近的先就绪，不并发抢 CPU；
@@ -344,10 +403,12 @@ export function useImageLoader(): UseImageLoader {
     load,
     reload,
     refreshSiblings,
+    setPlaylist,
     path,
     fail,
     index,
     total,
+    siblings,
     canPrev: index > 0,
     canNext: index >= 0 && index < total - 1,
     prev,

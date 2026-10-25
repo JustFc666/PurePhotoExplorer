@@ -25,6 +25,9 @@ tracing-subscriber.workspace = true
 pv-core.workspace = true
 pv-decode.workspace = true
 pv-index.workspace = true
+pv-store.workspace = true
+# 侧栏系统图标：HICON → RGBA → PNG（BMP 不支持 alpha，透明区会变黑块）
+png.workspace = true
 pv-meta.workspace = true
 # 离线地名库：GPS 坐标 → 最近的城市（数据随二进制走，不联网）
 pv-geo.workspace = true
@@ -36,6 +39,9 @@ pv-edit.workspace = true
 windows-sys = { version = "0.59", features = [
     "Win32_Foundation",
     "Win32_Graphics_Gdi",
+    # 文件浏览器（侧栏「文件夹」）要枚举盘符 + 读卷标：
+    # GetLogicalDrives / GetDriveTypeW / GetVolumeInformationW
+    "Win32_Storage_FileSystem",
     # 打印三件套分散在三个模块里（windows-sys 的组织方式，别被名字误导）：
     #   StartDocW / EndDoc / StartPage / EndPage / DOCINFOW → Storage::Xps
     #   PrintDlgW / PRINTDLGW / PD_RETURNDC                → UI::Controls::Dialogs
@@ -44,7 +50,11 @@ windows-sys = { version = "0.59", features = [
     "Win32_UI_Controls_Dialogs",
     "Win32_UI_WindowsAndMessaging",
     "Win32_UI_Shell",
+    # SHParseDisplayName / ITEMIDLIST（「此电脑」图标要先解析成 PIDL）
+    "Win32_UI_Shell_Common",
     "Win32_System_Memory",
+    # 已知文件夹（图片/文档/下载）+ 释放 shell 分配的 PIDL 与字符串
+    "Win32_System_Com",
     # 直接打印（跳过系统对话框）用到：GetDefaultPrinterW / OpenPrinterW /
     # DocumentPropertiesW / ClosePrinter —— 都在 Graphics::Printing
     "Win32_Graphics_Printing",

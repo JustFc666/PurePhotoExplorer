@@ -10,3 +10,5 @@ description = "PurePhotoExplorer 索引层：SQLite schema、缓存键、查询"
 pv-core.workspace = true
 serde.workspace = true
 blake3.workspace = true
+thiserror.workspace = true
+rusqlite.workspace = true

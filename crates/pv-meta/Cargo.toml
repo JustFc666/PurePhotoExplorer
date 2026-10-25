@@ -13,3 +13,6 @@ tracing.workspace = true
 
 # EXIF 解析（纯 Rust，无原生依赖，Windows 上不需要 MSVC 之外的任何东西）
 kamadak-exif = "0.6"
+
+# EXIF 时间字符串 → Unix 时间戳（`taken_at_unix`）。纯 Rust、无系统依赖。
+chrono.workspace = true

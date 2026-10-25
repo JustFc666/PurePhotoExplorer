@@ -43,8 +43,8 @@ impl RawPipeline for EmbeddedPreviewPipeline {
         "embedded-preview-pure-rust"
     }
 
-    fn extract_preview(&self, path: &Path) -> Result<EncodedPreview> {
-        extract_embedded_preview(path)
+    fn extract_preview(&self, path: &Path, need_edge: u32) -> Result<EncodedPreview> {
+        extract_embedded_preview(path, need_edge)
     }
 
     fn extract_preview_slow(&self, path: &Path) -> Result<EncodedPreview> {
@@ -55,10 +55,10 @@ impl RawPipeline for EmbeddedPreviewPipeline {
         Err(PvError::RawDevelopNotImplemented)
     }
 
-    /// Stage 2 未实现（本期范围外）。
-    ///
-    /// 用 trait 的默认实现即可 —— 它返回 `RawDevelopNotImplemented`。
-    /// 这里不覆盖，是为了让「没实现」这件事只有一处声明。
+    // Stage 2 未实现（本期范围外）。
+    //
+    // 用 trait 的默认实现即可 —— 它返回 `RawDevelopNotImplemented`。
+    // 这里不覆盖，是为了让「没实现」这件事只有一处声明。
 
     fn probe(&self, path: &Path) -> Result<RawMetadata> {
         let exif = pv_meta::read_exif(path);

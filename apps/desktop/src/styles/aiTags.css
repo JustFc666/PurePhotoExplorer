@@ -1,0 +1,534 @@
+/* ── AI 标签条（图库标题右侧，2026-10-20）──────────────────────────
+ * 版式目标：标题 + 副标题不动，右侧紧挨一条可横向滚动的胶囊；
+ * 尾巴固定放「分析状态 + 齿轮」，窄窗口时胶囊区自己收（不挤掉尾巴）。
+ */
+.pv-ai-strip {
+  position: relative;
+  /* ⛔ 不能 flex:1：那会把右侧的「人像条」顶到窗口最右边，中间留一大片空白。
+     改成按内容宽度，人像条就紧跟在最后一个 chip 后面（用户 2026-10-25 要求）。 */
+  flex: 0 1 auto;
+  min-width: 0;
+  display: flex;
+  /* ⭐ 2026-10-24：芯片会折成两行，所以顶部对齐（中心对齐会把「← 全部」压到中间） */
+  align-items: flex-start;
+  gap: 8px;
+  /* ⭐ 上对齐：第一行标签贴着标题顶端，第二行才挨着「N 张」（用户 2026-10-24 mockup）。 */
+  /* 紧贴标题（原来 18px 左外边距，就是用户说的「左边空的太多」） */
+  margin: 0 4px 1px 8px;
+  min-width: 0;
+  overflow: hidden;
+  padding-bottom: 1px;
+}
+
+.pv-ai-seg > button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 9px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--pv-text-tertiary);
+  font-size: 11px;
+  cursor: pointer;
+}
+.pv-ai-seg > button.is-on {
+  background: var(--pv-hover);
+  color: var(--pv-text-primary);
+}
+/* 胶囊区：可横滚，隐藏滚动条（别把标题区撑高） */
+.pv-ai-chips {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  /* 行间距 6 → 4：配合 chip 22px，两行共 48px */
+  gap: 4px;
+  overflow: visible;
+}
+
+/* 一行标签：固定 8 个（ROW_MAX），不随窗口宽度变化 */
+.pv-ai-chiprow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: nowrap;
+}
+
+/* 「已选 N 张 · 导出 / 标记」（2026-10-24 用户要求）：挂在**最后一个 tag 行**
+   的同一行右端。chip 行是 nowrap，选中块不许被挤扁。 */
+.pv-ai-chiprow > .pv-mg-headr {
+  margin-left: auto;
+  flex: 0 0 auto;
+  white-space: nowrap;
+  /* ⭐ 2026-10-24：行高锁定 —— 选中块里的「导出/标记」是全局 .pv-btn（高 30px），
+     比 chip（22px）高，一选中就把最后一行撑高 8px、整个标签条跟着动。
+     行内全部压到 22px，与 chip 同高，选不选中行高都不变。 */
+  height: 22px;
+}
+.pv-ai-chiprow > .pv-mg-headr .pv-btn {
+  height: 22px;
+  padding: 0 8px;
+  font-size: 12px;
+  border-radius: 7px;
+}
+.pv-ai-chiprow > .pv-mg-headr .pv-mg-dim {
+  font-size: 11.5px;
+}
+
+.pv-ai-chip {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  /* ⭐ 2026-10-24：字体 13px；高度压到 22px、行间距 4px，让两行 tag 不超过标题块高度 */
+  height: 22px;
+  padding: 0 9px;
+  /* ⛔ 和顶部筛选按钮（.pv-mg-fbtn）保持一致的方圆角，别用 999px 大胶囊 */
+  border-radius: 7px;
+  border: 1px solid var(--pv-border-subtle);
+  background: var(--pv-bg-surface);
+  color: var(--pv-text-secondary);
+  font-size: 13px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
+}
+.pv-ai-chip:hover {
+  background: var(--pv-hover);
+  color: var(--pv-text-primary);
+}
+.pv-ai-chip.is-on {
+  border-color: var(--pv-accent);
+  background: color-mix(in srgb, var(--pv-accent) 16%, transparent);
+  color: var(--pv-text-primary);
+}
+.pv-ai-num {
+  font-size: 12px;
+  color: var(--pv-text-tertiary);
+  font-variant-numeric: tabular-nums;
+}
+
+.pv-ai-face:hover {
+  background: var(--pv-hover);
+}
+.pv-ai-face.is-on {
+  border-color: var(--pv-accent);
+  background: color-mix(in srgb, var(--pv-accent) 16%, transparent);
+  color: var(--pv-text-primary);
+}
+.pv-ai-more {
+  flex: 0 0 auto;
+  height: 24px;
+  padding: 0 8px;
+  border-radius: 999px;
+  border: 1px dashed var(--pv-border-subtle);
+  background: transparent;
+  color: var(--pv-text-tertiary);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.pv-ai-gear:hover {
+  background: var(--pv-hover);
+  color: var(--pv-text-primary);
+}
+
+/* 设置面板：挂在条上，绝对定位 —— 不参与标题区布局，展开不会把标题挤动 */
+.pv-ai-pop {
+  position: absolute;
+  /* 挂在标题栏底部（面板的父级现在是 .pv-mg-head，不再是标签条） */
+  top: calc(100% - 2px);
+  right: 10px;
+  z-index: 60;
+  width: 384px;
+  padding: 10px 12px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--pv-border-strong, var(--pv-border-subtle));
+  background: var(--pv-bg-elevated, var(--pv-bg-surface));
+  box-shadow: 0 12px 32px rgb(0 0 0 / 38%);
+  font-size: 12px;
+  color: var(--pv-text-secondary);
+}
+.pv-ai-pophead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+  color: var(--pv-text-primary);
+  font-size: 12.5px;
+  font-weight: 600;
+}
+.pv-ai-x {
+  border: 0;
+  background: transparent;
+  color: var(--pv-text-tertiary);
+  cursor: pointer;
+  font-size: 12px;
+}
+.pv-ai-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 28px;
+  padding: 2px 0;
+}
+.pv-ai-k {
+  flex: 0 0 76px;
+  color: var(--pv-text-tertiary);
+  font-size: 11.5px;
+}
+.pv-ai-v {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  color: var(--pv-text-primary);
+}
+.pv-ai-v > em {
+  color: var(--pv-text-tertiary);
+  font-style: normal;
+  font-size: 11px;
+}
+.pv-ai-range {
+  flex: 1;
+  min-width: 0;
+  accent-color: var(--pv-accent);
+}
+.pv-ai-pill {
+  padding: 1px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--pv-border-subtle);
+  background: transparent;
+  color: var(--pv-text-secondary);
+  font-size: 11px;
+  cursor: pointer;
+}
+.pv-ai-pill.is-on {
+  border-color: var(--pv-accent);
+  color: var(--pv-accent);
+}
+.pv-ai-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 9px 2px 3px;
+  border-radius: 999px;
+  border: 1px solid var(--pv-border-subtle);
+  background: transparent;
+  color: var(--pv-text-tertiary);
+  font-size: 11px;
+  cursor: pointer;
+}
+.pv-ai-switch i {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--pv-text-tertiary);
+}
+.pv-ai-switch.is-on {
+  border-color: #4caf72;
+  color: #7bc79a;
+}
+.pv-ai-switch.is-on i {
+  background: #4caf72;
+}
+.pv-ai-warn {
+  color: var(--pv-text-tertiary);
+}
+.pv-ai-bar > i {
+  display: block;
+  height: 100%;
+  background: var(--pv-accent);
+}
+.pv-ai-popfoot {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+/* ── 两级钻取（2026-10-21）── */
+
+.pv-ai-crumb {
+  flex: 0 0 auto;
+  font-size: 13px;
+  color: var(--pv-text-tertiary);
+  margin-right: 2px;
+}
+/* 面包屑做成按钮后：可点 = 按整个一级筛选（2026-10-23） */
+.pv-ai-crumb.is-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 22px;
+  border-radius: 7px;
+  padding: 0 9px;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--pv-text-secondary);
+  cursor: pointer;
+}
+.pv-ai-crumb.is-btn:hover {
+  background: var(--pv-hover);
+  color: var(--pv-text-primary);
+}
+/* 当前正按这个一级筛选 —— 和二级 chip 的选中态保持一致 */
+.pv-ai-crumb.is-btn.is-on {
+  border-color: var(--pv-accent);
+  background: color-mix(in srgb, var(--pv-accent) 16%, transparent);
+  color: var(--pv-text-primary);
+}
+.pv-ai-note {
+  margin: 6px 0 2px;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--pv-text-tertiary);
+}
+.pv-ai-note.is-ok {
+  color: #7bc79a;
+}
+.pv-ai-link {
+  border: 0;
+  background: transparent;
+  color: var(--pv-accent);
+  font-size: 11.5px;
+  cursor: pointer;
+  padding: 0 2px;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+/* ── 主题词管理弹窗 ── */
+.pv-vocab-mask {
+  position: fixed;
+  inset: 0;
+  z-index: 300;
+  background: rgb(0 0 0 / 45%);
+  display: grid;
+  place-items: center;
+}
+.pv-vocab {
+  width: min(760px, 92vw);
+  height: min(620px, 86vh);
+  display: flex;
+  flex-direction: column;
+  background: var(--pv-bg-elevated, #22222a);
+  border: 1px solid var(--pv-border-subtle);
+  border-radius: 12px;
+  box-shadow: 0 24px 60px rgb(0 0 0 / 50%);
+  overflow: hidden;
+}
+.pv-vocab-head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 12px 14px 8px;
+  border-bottom: 1px solid var(--pv-border-subtle);
+}
+.pv-vocab-head b {
+  font-size: 14px;
+}
+.pv-vocab-sub {
+  font-size: 11.5px;
+  color: var(--pv-text-tertiary);
+  margin-right: auto;
+}
+.pv-vocab-tools {
+  display: flex;
+  gap: 8px;
+  padding: 10px 14px 6px;
+}
+.pv-vocab-search {
+  flex: 1;
+  padding: 6px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--pv-border-subtle);
+  background: var(--pv-bg-surface);
+  color: var(--pv-text-primary);
+  outline: none;
+  font-size: 12.5px;
+}
+.pv-vocab-search:focus {
+  border-color: var(--pv-accent);
+}
+.pv-vocab-l1 {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 6px 14px 10px;
+  border-bottom: 1px solid var(--pv-border-subtle);
+}
+.pv-vocab-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 6px 8px;
+}
+.pv-vocab-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 5px 8px;
+  border-radius: 6px;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+.pv-vocab-row:hover {
+  background: var(--pv-hover);
+}
+.pv-vocab-row.is-off {
+  opacity: 0.45;
+}
+.pv-vocab-term {
+  flex: 0 0 auto;
+  min-width: 76px;
+  color: var(--pv-text-primary);
+}
+.pv-vocab-cat {
+  flex: 0 0 auto;
+  color: var(--pv-text-tertiary);
+  font-size: 11px;
+  min-width: 96px;
+}
+.pv-vocab-en {
+  flex: 1;
+  color: var(--pv-text-tertiary);
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pv-vocab-empty {
+  padding: 30px;
+  text-align: center;
+  color: var(--pv-text-tertiary);
+  font-size: 12px;
+}
+.pv-vocab-foot {
+  padding: 8px 14px;
+  border-top: 1px solid var(--pv-border-subtle);
+  font-size: 11px;
+  color: var(--pv-text-tertiary);
+}
+
+/* 计数为 0 的一级：仍然显示（用户要看得出"这类一张都没有"），但弱化且不可点 */
+.pv-ai-chip.is-zero,
+.pv-ai-chip:disabled {
+  opacity: 0.34;
+  cursor: default;
+}
+.pv-ai-chip.is-zero:hover {
+  background: var(--pv-bg-surface);
+  color: var(--pv-text-tertiary);
+}
+
+/* 二级视图里的一级面包屑：可点击，点它回到整个一级 */
+.pv-ai-crumb.is-btn {
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  padding: 2px 4px;
+  border-radius: 6px;
+  color: var(--pv-text-secondary);
+}
+.pv-ai-crumb.is-btn:hover {
+  background: var(--pv-hover);
+  color: var(--pv-text-primary);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+/* ── 「全部」单独占一列（2026-10-24 用户定稿）────────────────────
+ * 它是「取消筛选」的全局动作，和被筛的标签不是一类东西，
+ * 所以从每行 8 个的 chip 流里拿出来，靠 `.pv-ai-strip` 的 flex 行
+ * 自然形成最左侧独立一列；右侧 `.pv-ai-chips` 仍是 8 列 × 2 行。
+ * ⛔ 不要把「全部」塞回 chiprow：那样它会被算进「每行 8 个」里，
+ *    第一行就只剩 7 个真标签了。 */
+.pv-ai-all {
+  flex: 0 0 auto;
+  align-self: flex-start;
+  /* 与第一行的 chip 同高、同基线 */
+  margin-top: 0;
+}
+
+/* 左列：全部 / 无标签 上下两行，和右侧两行标签网格行对齐 */
+.pv-ai-leftcol {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 0 0 auto;
+}
+
+/* 「…」展开的浮层（剩余标签 / 剩余人物共用）
+ * fixed 定位：标签条和标题区都有 overflow 裁剪，absolute 会被切掉 */
+.pv-pop-mask {
+  position: fixed;
+  inset: 0;
+  z-index: 94;
+}
+
+.pv-pop {
+  position: fixed;
+  z-index: 95;
+  min-width: 132px;
+  max-height: 320px;
+  overflow-y: auto;
+  padding: 4px;
+  border-radius: 8px;
+  background: var(--pv-bg-elevated);
+  border: 1px solid var(--pv-border-strong);
+  box-shadow: var(--pv-shadow-md);
+}
+
+.pv-pop-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  height: 26px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--pv-text-primary);
+  font-size: 12px;
+  font-family: inherit;
+  cursor: pointer;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.pv-pop-item:hover {
+  background: var(--pv-hover);
+}
+
+.pv-pop-num {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--pv-text-tertiary);
+  font-variant-numeric: tabular-nums;
+}
+
+/* 「…」按钮本身：沿用 chip 外观 */
+.pv-ai-more {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 22px;
+  min-width: 30px;
+  padding: 0 6px;
+  border-radius: 11px;
+  border: 1px solid var(--pv-border);
+  background: transparent;
+  color: var(--pv-text-tertiary);
+  font-size: 13px;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.pv-ai-more:hover {
+  border-color: var(--pv-accent);
+  color: var(--pv-text-primary);
+}

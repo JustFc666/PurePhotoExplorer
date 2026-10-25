@@ -186,6 +186,20 @@ interface PrintPreviewProps {
   /** 出错时的消息 */
   error?: string
   onClose: () => void
+  /**
+   * 批量打印的页码信息（单张不传）。
+   *
+   * 只用于**切换预览哪一张**：版面参数对整批共用一套，
+   * 送印时后端逐张按同一套参数处理。
+   */
+  page?: { index: number; total: number; onPrev: () => void; onNext: () => void }
+  /**
+   * 强制快速打印（跳过系统对话框）。
+   *
+   * 批量场景必须开：一张弹一次系统对话框没人受得了，
+   * 而且「取消」只对当前那张有意义、其余已经印出去了。
+   */
+  forceQuick?: boolean
   /** 确认送印 */
   onConfirm: (opts: {
     paper: PaperSize
@@ -248,13 +262,19 @@ export function PrintPreview({
   printing,
   error,
   onClose,
+  page,
+  forceQuick = false,
   onConfirm,
 }: PrintPreviewProps) {
   const [paper, setPaper] = useState<PaperSize>(PAPER_SIZES[0]!)
   const [orientation, setOrientation] = useState<PrintOrientation>('portrait')
   const [quality, setQuality] = useState<PrintQuality>('high')
   const [fit, setFit] = useState(true)
-  const [quick, setQuick] = useState(false)
+  const [quick, setQuick] = useState(forceQuick)
+  // 切到批量时（或首次以批量打开）自动勾上，且后面不允许取消
+  useEffect(() => {
+    if (forceQuick) setQuick(true)
+  }, [forceQuick])
   /** 页边距（毫米，四边同值）—— 与送印传后端的是同一个值 */
   const [marginMm, setMarginMm] = useState(MARGIN_MM)
   /** 本机打印机列表；空数组 = 枚举失败，下拉框退化为只有「系统默认」 */
@@ -330,6 +350,31 @@ export function PrintPreview({
       <div className="pv-print" ref={paperRef} role="dialog" aria-label="打印预览">
         <div className="pv-print-head">
           <span className="pv-print-title">打印预览</span>
+          {page && (
+            <span className="pv-print-pager">
+              <button
+                type="button"
+                onClick={page.onPrev}
+                disabled={page.index <= 0}
+                aria-label="预览上一张"
+                title="上一张"
+              >
+                ‹
+              </button>
+              <span className="pv-print-pageno">
+                {page.index + 1} / {page.total}
+              </span>
+              <button
+                type="button"
+                onClick={page.onNext}
+                disabled={page.index >= page.total - 1}
+                aria-label="预览下一张"
+                title="下一张"
+              >
+                ›
+              </button>
+            </span>
+          )}
           <button
             className="pv-print-close"
             onClick={onClose}
@@ -495,9 +540,14 @@ export function PrintPreview({
           <input
             type="checkbox"
             checked={quick}
+            disabled={forceQuick}
             onChange={(e) => setQuick(e.target.checked)}
           />
-          <span>快速打印（跳过对话框，直接送所选打印机）</span>
+          <span>
+            {forceQuick
+              ? '批量打印：固定直接送印（逐张，不弹系统对话框）'
+              : '快速打印（跳过对话框，直接送所选打印机）'}
+          </span>
         </label>
 
         {error && (

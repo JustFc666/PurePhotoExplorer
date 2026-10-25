@@ -309,3 +309,27 @@ mod tests {
         assert_eq!(t, before);
     }
 }
+
+/// 读 IFD0 里 `Orientation` 的**原始值**（1–8）；没有该标签或结构不完整返回 `None`。
+///
+/// 与 [`align_with_pixels`] 共用同一套解析，供「按 EXIF 批量摆正」判断该转多少度：
+/// `3` → 180°，`6` → 顺时针 90°，`8` → 逆时针 90°。
+/// `2/4/5/7` 需要**镜像**，而画布只有旋转/裁剪，调用方应当跳过并如实报告。
+pub fn read_orientation(tiff: &[u8]) -> Option<u16> {
+    let head = Head::parse(tiff)?;
+    let entries = head.ifd0_entries(tiff)?;
+    for e in entries {
+        if e.tag != TAG_ORIENTATION {
+            continue;
+        }
+        let at = e.offset + 8;
+        if at + 2 > tiff.len() {
+            return None;
+        }
+        return Some(match head.big {
+            true => u16::from_be_bytes([tiff[at], tiff[at + 1]]),
+            false => u16::from_le_bytes([tiff[at], tiff[at + 1]]),
+        });
+    }
+    None
+}

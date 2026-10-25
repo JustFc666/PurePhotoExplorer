@@ -4,10 +4,11 @@ version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
-description = "PurePhotoExplorer 三级缓存：内存 LRU + 磁盘缩略图库"
+description = "PurePhotoExplorer 缓存：L1 内存 LRU + L2 磁盘缩略图库（键→字节，编解码交给上层）"
 
 [dependencies]
 pv-core.workspace = true
 pv-index.workspace = true
 serde.workspace = true
 tracing.workspace = true
+lru.workspace = true

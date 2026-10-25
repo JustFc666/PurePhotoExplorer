@@ -5,6 +5,9 @@ members = [
     "crates/pv-decode",
     "crates/pv-cache",
     "crates/pv-index",
+    "crates/pv-lib",
+    "crates/pv-scan",
+    "crates/pv-store",
     "crates/pv-meta",
     "crates/pv-geo",
     "crates/pv-vault",
@@ -24,6 +27,9 @@ pv-core = { path = "crates/pv-core" }
 pv-decode = { path = "crates/pv-decode" }
 pv-cache = { path = "crates/pv-cache" }
 pv-index = { path = "crates/pv-index" }
+pv-lib = { path = "crates/pv-lib" }
+pv-scan = { path = "crates/pv-scan" }
+pv-store = { path = "crates/pv-store" }
 pv-meta = { path = "crates/pv-meta" }
 pv-geo = { path = "crates/pv-geo" }
 pv-vault = { path = "crates/pv-vault" }
@@ -39,6 +45,19 @@ rayon = "1.10"
 blake3 = "1.5"
 memmap2 = "0.9"
 lru = "0.12"
+
+# SQLite（索引层，S2）。
+# `bundled` = 自带编译 SQLite 源码，不依赖系统 DLL；**需要 C 编译器**
+# （本机 MSVC 已装，构建前先 source scripts/msvc-env.sh）。
+rusqlite = { version = "0.32", features = ["bundled"] }
+
+# 文件系统实时监听（S2 索引写侧）。Windows 上即 ReadDirectoryChangesW。
+notify = "6"
+
+# EXIF 里的 `YYYY:MM:DD HH:MM:SS` → Unix 时间戳。
+# 只为了把「拍摄时间」落进索引（排序/按日期筛选用），不需要复杂的时区功能。
+# `clock` 才提供 `Local` —— EXIF 不带时区，只能按相机所在地的本地时间理解。
+chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
 
 # 纯 Rust 图像后端（一期不依赖 MSVC）
 jpeg-decoder = "0.3"

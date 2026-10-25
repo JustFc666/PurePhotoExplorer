@@ -119,15 +119,21 @@ impl DecoderRegistry {
 
             // TIFF 容器特例：常规 TIFF（非相机 RAW）没有内嵌预览，
             // 两阶段管线会失败 → 降级到 TIFF 解码器（见 probe() 的同款逻辑）。
+            //
+            // `need_edge` 把这次解码的目标尺寸传下去：缩略图档（256）因此
+            // 只读文件开头 4MB，不必为了一张 256 的图把 47MB 的 ARW 读一遍。
+            // 导出档 `max_edge == None` → 传 0 → 强制拿最大的那张预览。
+            let need_edge = target.max_edge.unwrap_or(0);
             if is_tiff_container(&head) {
-                match pv_core::raw::extract_preview_with_fallback(raw.as_ref(), path) {
+                match pv_core::raw::extract_preview_with_fallback(raw.as_ref(), path, need_edge) {
                     Ok(preview) => return decode_encoded_preview(&preview, target),
                     // 无可用预览 → 当普通 TIFF 解码
                     Err(_) => return crate::bitmap::decode_tiff(path, target),
                 }
             }
 
-            let preview = pv_core::raw::extract_preview_with_fallback(raw.as_ref(), path)?;
+            let preview =
+                pv_core::raw::extract_preview_with_fallback(raw.as_ref(), path, need_edge)?;
             return decode_encoded_preview(&preview, target);
         }
 

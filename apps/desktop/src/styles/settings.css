@@ -1,0 +1,486 @@
+/**
+ * 设置窗口（SettingsWindow）样式。
+ *
+ * ## 为什么单独一个文件
+ * `app.css` 已经 2000+ 行、`theme.css` 只放令牌 —— 设置窗口是一整块新界面，
+ * 塞进 app.css 会让人找不到。这里只写"设置窗口自己的"规则，
+ * 颜色/尺寸一律引用 `theme.css` 的令牌，不新增色值。
+ *
+ * ## 量出来的关键尺寸（与设计稿一致）
+ * - 窗口 780×620；标题栏 38；左栏 196；底栏 34
+ * - 控件行：标签 12 + 6px + 控件；项间 18
+ * - 滑块轨 2px / 拇指 12；开关 34×18；勾选 16；按钮 28
+ */
+
+.pv-set-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.46);
+}
+
+.pv-set-window {
+  width: 780px;
+  max-width: calc(100vw - 32px);
+  height: 620px;
+  max-height: calc(100vh - 32px);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border-radius: 12px;
+  background: var(--pv-bg-app);
+  border: 1px solid var(--pv-border-strong);
+  box-shadow: var(--pv-shadow-lg);
+}
+
+.pv-set-head {
+  flex: 0 0 38px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 10px 0 14px;
+  border-bottom: 1px solid var(--pv-border-subtle);
+  background: var(--pv-bg-surface);
+}
+
+.pv-set-head-title {
+  font-size: 12.5px;
+  color: var(--pv-text-secondary);
+}
+
+.pv-set-head-spacer {
+  flex: 1;
+}
+
+.pv-set-close {
+  width: 26px;
+  height: 26px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--pv-text-tertiary);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.pv-set-close:hover {
+  background: var(--pv-hover);
+  color: var(--pv-text-primary);
+}
+
+.pv-set-body {
+  flex: 1 1 auto;
+  display: flex;
+  min-height: 0;
+}
+
+/* ── 左栏：分类树 ─────────────────────────────────────────── */
+.pv-set-nav {
+  flex: 0 0 196px;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 8px 6px;
+  overflow-y: auto;
+  background: var(--pv-bg-surface);
+  border-right: 1px solid var(--pv-border-subtle);
+}
+
+.pv-set-search {
+  height: 26px;
+  margin-bottom: 8px;
+  padding: 0 8px;
+  border-radius: 5px;
+  border: 1px solid var(--pv-border);
+  background: var(--pv-bg-app);
+  color: var(--pv-text-primary);
+  font-size: 11.5px;
+  font-family: inherit;
+}
+
+.pv-set-search::placeholder {
+  color: var(--pv-text-disabled);
+}
+
+.pv-set-search:focus {
+  outline: none;
+  border-color: var(--pv-accent);
+}
+
+.pv-set-group {
+  height: 24px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 4px;
+  padding: 0 4px;
+  font-size: 12px;
+  color: var(--pv-text-secondary);
+  user-select: none;
+}
+
+.pv-set-group:first-of-type {
+  margin-top: 0;
+}
+
+.pv-set-item {
+  height: 24px;
+  display: flex;
+  align-items: center;
+  padding: 0 6px 0 18px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--pv-text-secondary);
+  font-size: 12px;
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.pv-set-item:hover {
+  background: var(--pv-hover);
+  color: var(--pv-text-primary);
+}
+
+/* 选中：左侧 2px 强调条 + 弱底（与侧栏目录树同一套语言） */
+.pv-set-item.is-on {
+  background: var(--pv-selected);
+  box-shadow: inset 2px 0 0 var(--pv-accent);
+  color: var(--pv-text-primary);
+}
+
+/* ── 右栏：内容 ───────────────────────────────────────────── */
+.pv-set-main {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 16px 20px 24px;
+  overflow-y: auto;
+}
+
+.pv-set-h1 {
+  margin: 0 0 18px;
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--pv-text-primary);
+}
+
+.pv-set-row {
+  margin-bottom: 18px;
+}
+
+.pv-set-label {
+  margin-bottom: 6px;
+  font-size: 12px;
+  color: var(--pv-text-secondary);
+}
+
+.pv-set-hint {
+  margin-top: 5px;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--pv-text-tertiary);
+}
+
+.pv-set-slider-wrap {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.pv-set-value {
+  flex: 0 0 52px;
+  text-align: right;
+  font-size: 12px;
+  color: var(--pv-text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+/* 滑块：行内绘制，没有原生弹层问题，所以用 input[type=range] 保留键盘/读屏 */
+.pv-set-slider {
+  flex: 1 1 auto;
+  height: 18px;
+  margin: 0;
+  background: transparent;
+  -webkit-appearance: none;
+  appearance: none;
+  cursor: pointer;
+}
+
+.pv-set-slider::-webkit-slider-runnable-track {
+  height: 2px;
+  border-radius: 1px;
+  background: var(--pv-border-strong);
+}
+
+.pv-set-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 12px;
+  height: 12px;
+  margin-top: -5px;
+  border-radius: 50%;
+  background: var(--pv-ramp-50);
+  border: 2px solid var(--pv-accent);
+}
+
+.pv-set-slider:focus-visible::-webkit-slider-thumb {
+  box-shadow: 0 0 0 3px var(--pv-accent-ring);
+}
+
+.pv-set-slider::-moz-range-track {
+  height: 2px;
+  border-radius: 1px;
+  background: var(--pv-border-strong);
+}
+
+.pv-set-slider::-moz-range-progress {
+  height: 2px;
+  background: var(--pv-accent);
+}
+
+.pv-set-slider::-moz-range-thumb {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--pv-ramp-50);
+  border: 2px solid var(--pv-accent);
+}
+
+/* 下拉触发器：点击展开的是现有自绘 ContextMenu，不是原生 select */
+.pv-set-select {
+  height: 28px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 10px;
+  border-radius: 6px;
+  border: 1px solid var(--pv-border);
+  background: var(--pv-bg-input);
+  color: var(--pv-text-primary);
+  font-size: 12px;
+  font-family: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+
+.pv-set-select:hover {
+  border-color: var(--pv-border-strong);
+}
+
+.pv-set-select-caret {
+  margin-left: auto;
+  font-size: 10px;
+  color: var(--pv-text-tertiary);
+}
+
+/* 开关：34×18，旁边必须跟「开/关」文字（不只靠颜色） */
+.pv-set-switch-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.pv-set-switch {
+  position: relative;
+  flex: 0 0 34px;
+  width: 34px;
+  height: 18px;
+  padding: 0;
+  border: 0;
+  border-radius: 9px;
+  background: var(--pv-border-strong);
+  cursor: pointer;
+  transition: background 120ms ease;
+}
+
+.pv-set-switch::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--pv-ramp-200);
+  transition: transform 120ms ease, background 120ms ease;
+}
+
+.pv-set-switch.is-on {
+  background: var(--pv-accent);
+}
+
+.pv-set-switch.is-on::after {
+  transform: translateX(16px);
+  background: #fff;
+}
+
+.pv-set-switch:focus-visible {
+  box-shadow: 0 0 0 3px var(--pv-accent-ring);
+}
+
+/* 勾选：16×16，选中 accent 底 + 白 ✓（自绘，不用原生 checkbox） */
+.pv-set-check {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border-radius: 4px;
+  border: 1px solid var(--pv-border-strong);
+  background: transparent;
+  color: transparent;
+  font-size: 10px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.pv-set-check.is-on {
+  background: var(--pv-accent);
+  border-color: var(--pv-accent);
+  color: #fff;
+}
+
+.pv-set-check-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 26px;
+  font-size: 12px;
+  color: var(--pv-text-primary);
+}
+
+.pv-set-check-row.is-off {
+  color: var(--pv-text-tertiary);
+}
+
+.pv-set-grid2 {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  column-gap: 24px;
+}
+
+/* 按钮 */
+.pv-set-btn {
+  height: 28px;
+  padding: 0 12px;
+  border-radius: 6px;
+  border: 1px solid var(--pv-border-strong);
+  background: transparent;
+  color: var(--pv-text-primary);
+  font-size: 12px;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.pv-set-btn:hover {
+  background: var(--pv-hover);
+}
+
+.pv-set-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.pv-set-btn--primary {
+  background: var(--pv-accent);
+  border-color: var(--pv-accent);
+  color: #fff;
+}
+
+.pv-set-btn--primary:hover {
+  background: var(--pv-accent-hover);
+}
+
+.pv-set-btn--danger {
+  border-color: rgba(226, 75, 74, 0.55);
+  background: rgba(163, 45, 45, 0.18);
+  color: #f09595;
+}
+
+.pv-set-btn--danger:hover {
+  background: rgba(163, 45, 45, 0.28);
+}
+
+.pv-set-btnrow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+/* 词表页：111 条列表 */
+.pv-set-vocab {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  max-height: 372px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.pv-set-vocab-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 28px;
+  padding: 0 6px;
+  border-radius: 4px;
+  font-size: 12px;
+  color: var(--pv-text-primary);
+}
+
+.pv-set-vocab-row:hover {
+  background: var(--pv-hover);
+}
+
+.pv-set-vocab-row.is-off {
+  color: var(--pv-text-disabled);
+}
+
+.pv-set-vocab-l1 {
+  flex: 0 0 64px;
+  font-size: 11px;
+  color: var(--pv-text-tertiary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 只读信息行（如人脸库统计） */
+.pv-set-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: 6px;
+  background: var(--pv-bg-surface);
+  border: 1px solid var(--pv-border-subtle);
+  font-size: 12px;
+  color: var(--pv-text-secondary);
+}
+
+.pv-set-info strong {
+  font-weight: 500;
+  color: var(--pv-text-primary);
+}
+
+.pv-set-foot {
+  flex: 0 0 34px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 14px;
+  border-top: 1px solid var(--pv-border-subtle);
+  background: var(--pv-bg-surface);
+  font-size: 11px;
+  color: var(--pv-text-tertiary);
+}

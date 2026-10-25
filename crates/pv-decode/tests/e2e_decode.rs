@@ -417,17 +417,21 @@ fn 真实大图JPEG_探测与解码() {
 
     let be = BitmapBackend;
 
-    // 探测：应为 O(1)，不触发解码
-    let t = Instant::now();
+    // 探测：应为 O(1)，不触发解码。
+    // 计时取多轮**最小值**，避免并行测试/系统负载造成的偶发拖慢（flaky）。
     let info = be.probe(&p).expect("探测应成功");
-    let probe_us = t.elapsed().as_micros();
+    let mut probe_us = u128::MAX;
+    for _ in 0..5 {
+        let t = Instant::now();
+        let _ = be.probe(&p).expect("探测应成功");
+        probe_us = probe_us.min(t.elapsed().as_micros());
+    }
     assert_eq!(info.format, pv_core::format::ImageFormat::Jpeg);
     assert_eq!(info.width, 5847, "宽度应从 SOF 标记正确解析");
     assert_eq!(info.height, 3898, "高度应从 SOF 标记正确解析");
     assert!(
         probe_us < 50_000,
-        "探测应 < 50ms（O(1) 解析 SOF），实际 {} µs",
-        probe_us
+        "探测应 < 50ms（O(1) 解析 SOF），多轮最快 {probe_us} µs"
     );
 
     // 预览档解码：应有尺寸的像素且被正确缩放
@@ -476,13 +480,13 @@ fn 真实大图JPEG_探测与解码() {
 ///
 /// 不依赖任何外部图像库，纯手写字节，便于端到端验证 BMP 解码链路。
 fn make_test_bmp(path: &Path) -> std::io::Result<()> {
-    let mut px = vec![[128u8, 128, 128]; 16];
+    let mut px = [[128u8, 128, 128]; 16];
     px[0] = [255, 0, 0];
     px[3] = [0, 255, 0];
     px[12] = [0, 0, 255];
     px[15] = [255, 255, 255];
 
-    let stride = 12usize; // 4*3，已对齐到 4
+    let _stride = 12usize; // 4*3，已对齐到 4
     let mut pixel_bytes = Vec::new();
     for y in (0..4).rev() {
         for x in 0..4 {
@@ -497,7 +501,7 @@ fn make_test_bmp(path: &Path) -> std::io::Result<()> {
     out.extend_from_slice(b"BM");
     out.extend_from_slice(&file_size.to_le_bytes());
     out.extend_from_slice(&[0u8; 4]);
-    out.extend_from_slice(&(pixel_offset as u32).to_le_bytes());
+    out.extend_from_slice(&pixel_offset.to_le_bytes());
     out.extend_from_slice(&dib_size.to_le_bytes());
     out.extend_from_slice(&(4i32).to_le_bytes());
     out.extend_from_slice(&(4i32).to_le_bytes());

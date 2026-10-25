@@ -130,7 +130,7 @@ pub fn save_edited_image(
 }
 
 /// 与命令解耦的实现，便于单测（不需要构造 Tauri `State`）。
-fn save_impl(
+pub(crate) fn save_impl(
     registry: &pv_decode::DecoderRegistry,
     path: &std::path::Path,
     rotation_steps: i32,

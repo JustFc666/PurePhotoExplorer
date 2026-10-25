@@ -156,13 +156,6 @@ body {
    组件基类
    ═══════════════════════════════════════════════════════════ */
 
-/* 面板 */
-.pv-panel {
-  background: var(--pv-bg-surface);
-  border: 1px solid var(--pv-border-subtle);
-  border-radius: 12px;
-}
-
 /* 工具栏（尺寸/内边距在 app.css 里定义，此处不重复声明，避免"改了没效果"） */
 
 /* 按钮 */
@@ -215,19 +208,6 @@ body {
   color: #fff;
 }
 
-/* 输入框 */
-.pv-input {
-  height: 30px;
-  padding: 0 10px;
-  font: inherit;
-  font-size: 13px;
-  color: var(--pv-text-primary);
-  background: var(--pv-bg-input);
-  border: 1px solid var(--pv-border);
-  border-radius: 8px;
-  outline: none;
-  user-select: text;
-}
 .pv-input:focus {
   border-color: var(--pv-accent);
   box-shadow: 0 0 0 3px var(--pv-accent-soft);

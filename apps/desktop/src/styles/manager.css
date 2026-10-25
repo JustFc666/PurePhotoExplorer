@@ -1,0 +1,1722 @@
+/**
+ * 图库模式（S2 管理器）样式。
+ *
+ * 全部走 `theme.css` 的设计令牌（明暗两套自动切换），只有「压在图上的角标」
+ * 这类必须盖在照片上的元素才用固定半透明黑/白 —— 那些不能跟着主题走。
+ *
+ * 一律 `.pv-mg-*` 前缀，避免和单图浏览的 `.pv-*` 规则打架。
+ */
+
+.pv-mg {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--pv-bg-app);
+  color: var(--pv-text-primary);
+  z-index: 30;
+}
+
+/* 切到单图查看时只藏起来 —— 保留「在哪个文件夹、选了哪些图、滚到第几屏」。
+   用 `display:none` 而不是 `visibility:hidden`：后者仍占布局、仍会被点。 */
+.pv-mg.is-hidden {
+  display: none;
+}
+
+/* ── 顶栏（兼自绘标题栏） ────────────────────────────────── */
+.pv-mg-bar {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 6px 5px 8px;
+  background: var(--pv-bg-surface);
+  border-bottom: 1px solid var(--pv-border-subtle);
+  user-select: none;
+}
+.pv-mg-brand {
+  font-size: 13px;
+  font-weight: 500;
+  white-space: nowrap;
+  padding: 0 6px 0 2px;
+}
+
+/* ── 菜单 ── */
+.pv-mg-menubar {
+  display: flex;
+  align-items: center;
+  gap: 1px;
+}
+.pv-mg-menu {
+  position: relative;
+}
+.pv-mg-menubtn {
+  border: 0;
+  background: transparent;
+  color: var(--pv-text-secondary);
+  font-size: 12.5px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  cursor: default;
+  white-space: nowrap;
+}
+.pv-mg-menubtn:hover,
+.pv-mg-menubtn.is-open {
+  background: var(--pv-hover);
+  color: var(--pv-text-primary);
+}
+.pv-mg-dropdown {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  z-index: 40;
+  margin-top: 4px;
+  min-width: 196px;
+  padding: 4px;
+  background: var(--pv-bg-surface);
+  border: 1px solid var(--pv-border);
+  border-radius: 8px;
+  box-shadow: var(--pv-shadow-lg);
+}
+.pv-mg-menuitem {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  border: 0;
+  background: transparent;
+  color: var(--pv-text-primary);
+  font-size: 12.5px;
+  padding: 5px 8px;
+  border-radius: 6px;
+  text-align: left;
+}
+.pv-mg-menuitem:hover:not(:disabled) {
+  background: var(--pv-hover);
+}
+.pv-mg-menuitem:disabled {
+  color: var(--pv-text-disabled);
+  cursor: default;
+}
+.pv-mg-menutick {
+  flex: 0 0 12px;
+  color: var(--pv-accent);
+  font-size: 11px;
+}
+.pv-mg-menulabel {
+  flex: 1 1 auto;
+  white-space: nowrap;
+}
+.pv-mg-menuhint {
+  color: var(--pv-text-tertiary);
+  font-size: 11px;
+}
+.pv-mg-sep {
+  height: 1px;
+  margin: 4px 6px;
+  background: var(--pv-border-subtle);
+}
+
+/* ── 搜索 / 视图模式 / 排序 ── */
+.pv-mg-search {
+  flex: 1 1 auto;
+  min-width: 130px;
+  max-width: 340px;
+  height: 26px;
+  padding: 0 12px;
+  border-radius: 999px;
+  border: 1px solid var(--pv-border-subtle);
+  background: var(--pv-bg-input);
+  color: inherit;
+  font-size: 12.5px;
+}
+.pv-mg-search:focus {
+  outline: none;
+  border-color: var(--pv-accent);
+  box-shadow: 0 0 0 3px var(--pv-accent-soft);
+}
+
+.pv-mg-seg {
+  display: inline-flex;
+  gap: 2px;
+}
+.pv-mg-icobtn {
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--pv-text-secondary);
+  font-size: 13px;
+  line-height: 1;
+  cursor: default;
+}
+.pv-mg-icobtn:hover {
+  background: var(--pv-hover);
+  color: var(--pv-text-primary);
+}
+.pv-mg-icobtn.is-on {
+  background: var(--pv-accent-soft);
+  border-color: var(--pv-accent-ring);
+  color: var(--pv-accent);
+}
+
+/*
+ * 排序控件：`排序 [文件名 ▾]`。
+ *
+ * ⚠️ 「排序」这两字不能省：只放一个「文件名 ⌄」时，用户会以为它是筛选器 /
+ * 视图选项（真实反馈：「哪里选择排序方式？」）。
+ *
+ * ⚠️ 用自绘按钮 + `ContextMenu`，**不用原生 `<select>`**：
+ * 自绘无边框 + 深色主题下，原生 select 的弹层由 WebView2 自绘，
+ * 配色不跟随应用（深底深字，选项看着像不存在），位置也可能被窗口裁掉。
+ */
+.pv-mg-sortwrap {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+}
+.pv-mg-sortlabel {
+  font-size: 12px;
+  color: var(--pv-text-secondary);
+  user-select: none;
+}
+.pv-mg-sortbtn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 8px;
+  border-radius: 6px;
+  border: 1px solid var(--pv-border-subtle);
+  background: var(--pv-bg-input);
+  color: var(--pv-text-primary);
+  font-size: 12.5px;
+  font-family: inherit;
+  cursor: pointer;
+}
+.pv-mg-sortbtn:hover {
+  border-color: var(--pv-border-strong, var(--pv-border-subtle));
+  background: var(--pv-bg-hover, var(--pv-bg-input));
+}
+.pv-mg-caret {
+  font-size: 10px;
+  opacity: 0.6;
+  line-height: 1;
+}
+
+/* ── 主体两栏 ───────────────────────────────────────────── */
+.pv-mg-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+}
+
+.pv-mg-side {
+  flex: 0 0 208px;
+  display: flex;
+  flex-direction: column;
+  border-right: 1px solid var(--pv-border-subtle);
+  background: var(--pv-bg-surface);
+  overflow: hidden;
+}
+
+/* 拖拽条：夹在侧栏与主区之间。平时几乎隐形，悬停/拖动时亮起来 */
+.pv-mg-split {
+  flex: 0 0 5px;
+  cursor: col-resize;
+  background: transparent;
+  transition: background 0.12s ease;
+}
+.pv-mg-split:hover,
+.pv-mg-split.is-active {
+  background: var(--pv-accent);
+  opacity: 0.55;
+}
+
+/* 拖拽期间全局换光标并禁止选中文字（否则拖过文字会选一片） */
+body.is-col-resizing {
+  cursor: col-resize !important;
+  user-select: none !important;
+}
+.pv-mg-sec {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+/*
+ * ⭐ 两个分区用**显式 class** 定 flex，不要用 `:first-child` / `:last-child`。
+ *
+ * 曾经的坑：右键菜单曾挂在侧栏 `<aside>` 里，它的 wrapper 会变成 `:last-child`，
+ * 把图库分区的 `flex: 1 1 42%` 顶掉 → 侧栏布局瞬间重算，用户看到「跳一下」。
+ * 菜单现已改用 Portal 挂到 body，这里同时改成显式 class 双保险。
+ */
+.pv-mg-sec-tree {
+  flex: 1 1 58%;
+}
+.pv-mg-sec-lib {
+  flex: 1 1 42%;
+  border-top: 1px solid var(--pv-border-subtle);
+}
+.pv-mg-sech {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 8px 4px 12px;
+  user-select: none;
+}
+.pv-mg-sectitle {
+  font-size: 12.5px; /* 与树行（.pv-mg-row）同字号 —— 用户嫌 11.5px 太小 */
+  font-weight: 600;
+  color: var(--pv-text-secondary);
+}
+/* 「图库」标题右边的新建按钮。常驻可见（侧栏没有别的建库入口，藏起来等于没有）。
+   位置：分区标题行右端，正对下面每行的「张数」列（用户指定）。
+   用全角「＋」字形比 `+` 更居中；按钮本体做小（16px），别抢行高。 */
+.pv-mg-secadd {
+  flex: 0 0 auto;
+  width: 16px;
+  height: 16px;
+  margin-right: 2px; /* 视觉对齐下面 rowcount 的右缘（字形自带留白） */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--pv-text-tertiary);
+  font-size: 11px;
+  line-height: 1;
+  cursor: pointer;
+}
+.pv-mg-secadd:hover {
+  border-color: var(--pv-border);
+  background: var(--pv-bg-hover, var(--pv-hover));
+  color: var(--pv-text-primary);
+}
+.pv-mg-secadd:active {
+  background: var(--pv-hover);
+}
+.pv-mg-secadd:focus-visible {
+  outline: none;
+  border-color: var(--pv-accent);
+  box-shadow: 0 0 0 3px var(--pv-accent-soft);
+}
+/* 「扫描中…」/「处理中…」提示：放在分区标题右边，别用遮罩，
+   否则用户不知道是哪个操作在跑 */
+/* 标题旁的「未加入图库」徽标：浏览模式必须让人一眼看出来 */
+.pv-mg-badge {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--pv-border);
+  background: var(--pv-hover);
+  color: var(--pv-text-tertiary);
+  font-size: 11px;
+  font-weight: 400;
+  vertical-align: middle;
+}
+/* 树节点的小图标（🖥 / 💽 / 矢量文件夹）。emoji 只作兜底，不放大，保持在行高内。 */
+/*
+ * 节点图标位。
+ *
+ * ⚠️ `opacity` 必须是 1：系统图标本身带色（黄色文件夹、彩色盘符），
+ * 先前的 0.85 会把它们洗淡，反而不像资源管理器。
+ */
+.pv-mg-ico-glyph {
+  flex: 0 0 auto;
+  width: 16px;
+  height: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  line-height: 1;
+  text-align: center;
+}
+/* 系统图标（`SHGetFileInfoW` 取来，32×32 BMP，缩到 16px 显示） */
+.pv-mg-ico-img {
+  width: 16px;
+  height: 16px;
+  display: block;
+  object-fit: contain;
+}
+/* 盘符的 `(C:)` 说明 */
+.pv-mg-rownote {
+  flex: 0 0 auto;
+  margin-left: 4px;
+  font-size: 11px;
+  color: var(--pv-text-tertiary);
+}
+.pv-mg-ico:hover:not(:disabled) {
+  background: var(--pv-hover);
+  color: var(--pv-text-primary);
+}
+.pv-mg-ico:disabled {
+  color: var(--pv-text-disabled);
+}
+.pv-mg-treelist {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  padding: 0 6px 8px;
+}
+.pv-mg-row {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  height: 26px;
+  padding-right: 8px;
+  border-radius: 6px;
+  color: var(--pv-text-secondary);
+  font-size: 12.5px;
+  cursor: default;
+  user-select: none;
+}
+.pv-mg-row:hover {
+  background: var(--pv-hover);
+}
+.pv-mg-row.is-on {
+  background: var(--pv-selected);
+  color: var(--pv-accent);
+}
+/* 拖拽悬停在**图库行**上（把文件夹拖进来入库）：描边比填充更醒目，
+   也不会和「选中」的浅蓝底混淆 —— 两种状态可能同时出现。 */
+.pv-mg-row.is-drop {
+  outline: 1px dashed var(--pv-accent);
+  outline-offset: -2px;
+  background: var(--pv-accent-soft);
+}
+.pv-mg-chev {
+  flex: 0 0 14px;
+  width: 14px;
+  height: 14px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font-size: 10px;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: default;
+}
+.pv-mg-rowname {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pv-mg-rowcount {
+  flex: 0 0 auto;
+  color: var(--pv-text-tertiary);
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+}
+.pv-mg-row.is-on .pv-mg-rowcount {
+  color: var(--pv-accent);
+  opacity: 0.85;
+}
+.pv-mg-hint {
+  padding: 4px 10px 6px;
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--pv-text-tertiary);
+}
+/* ── 目录树的地址栏 ────────────────────────────────────────
+   取代原来的「文件夹」分区标题：直接敲路径回车就到（照资源管理器）。 */
+.pv-mg-addrbox {
+  flex: 0 0 auto;
+  padding: 6px 8px 4px 8px;
+}
+.pv-mg-addr {
+  width: 100%;
+  height: 24px;
+  padding: 0 8px;
+  border-radius: 5px;
+  border: 1px solid var(--pv-border-subtle);
+  background: var(--pv-bg-input);
+  color: inherit;
+  font-size: 11.5px;
+  /* 路径里全是反斜杠和数字，等宽更容易核对 */
+  font-family: var(--pv-font-mono, Consolas, 'Cascadia Mono', monospace);
+}
+.pv-mg-addr:focus {
+  outline: none;
+  border-color: var(--pv-accent);
+  box-shadow: 0 0 0 3px var(--pv-accent-soft);
+}
+.pv-mg-addr.is-bad {
+  border-color: #e07070;
+}
+.pv-mg-addrerr {
+  padding: 0 10px 2px;
+  font-size: 11px;
+  color: #e07070;
+}
+
+/* 侧栏里的小分组标题（「自定义图库」/「已加入的目录」）：
+   比分区标题更弱，只做分隔，不做抓手 */
+/* ── 主区 ───────────────────────────────────────────────── */
+.pv-mg-main {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.pv-mg-head {
+  /* ⚠️ 必须 relative：AI 设置面板（.pv-ai-pop）是它的绝对定位子元素，
+     少了这行 panel 会以视口为参照 → `top:100%` 落到窗口下面，看起来「点了没反应」。 */
+  position: relative;
+  flex: 0 0 auto;
+  display: flex;
+  /* ⭐ 2026-10-25 定稿：三块（标题 / 标签 / 人像）**紧挨着排**，不互相分散。
+     - `flex-start`：以前是 space-between，把人像顶到窗口最右边、中间空一片。
+     - `center`：人像 80px 决定行高，标题与标签跟着垂直居中 → 上下留白相等。 */
+  align-items: center;
+  justify-content: flex-start;
+  gap: 10px;
+  /* ⭐ 2026-10-24：tag 区上下的黑边各减 3px（10→7 / 6→3） */
+  padding: 7px 16px 3px;
+}
+.pv-mg-headl {
+  min-width: 0;
+  /* ⛔ 不能收缩（flex-shrink:0）：标签条的基准宽度很大，一旦让它参与收缩，
+     标题会被挤成「测试…」。芯片现在是折行的，不需要挤标题。 */
+  flex: 0 0 auto;
+  max-width: 46%;
+}
+.pv-mg-headr {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+}
+/* 2026-10-24 晚：选中块改挂到 AI 标签条最后一个 tag 行的右端（AiTagStrip trailing），
+   不再单独占一行，is-selrow 方案已删。 */
+.pv-mg-title {
+  margin: 0;
+  /* ⭐ 2026-10-24：17 → 20px，把标题块撑到和两行 tag（48px）差不多高 */
+  font-size: 20px;
+  font-weight: 600;
+  line-height: 1.25;
+  /* ⛔ 标题必须一行：`艺术 · 二次元` 折成两行会顶乱整个头部 */
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.pv-mg-sub {
+  margin-top: 3px;
+  font-size: 13px;
+  color: var(--pv-text-tertiary);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.pv-mg-dim {
+  color: var(--pv-text-tertiary);
+}
+.pv-mg-err {
+  color: #e07070;
+}
+
+.pv-mg-chip {
+  padding: 3px 11px;
+  border-radius: 999px;
+  border: 1px solid var(--pv-border-subtle);
+  background: var(--pv-bg-surface);
+  color: var(--pv-text-secondary);
+  font-size: 12px;
+  cursor: default;
+  white-space: nowrap;
+}
+.pv-mg-chip:hover {
+  background: var(--pv-hover);
+  color: var(--pv-text-primary);
+}
+.pv-mg-chip.is-on {
+  background: var(--pv-accent-soft);
+  border-color: var(--pv-accent-ring);
+  color: var(--pv-accent);
+}
+
+/* ── 卡片网格 ── */
+.pv-mg-grid {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  padding: 0 16px 14px;
+  display: grid;
+  /* `1fr` 而不是固定宽度：每行匀满，与设计稿的等宽列一致 */
+  grid-template-columns: repeat(auto-fill, minmax(var(--pv-card, 168px), 1fr));
+  gap: 16px 12px;
+  align-content: start;
+}
+.pv-mg-card {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+  padding: 6px;
+  border: 1px solid var(--pv-border-subtle);
+  border-radius: 10px;
+  background: var(--pv-bg-surface);
+  box-shadow: var(--pv-shadow-sm);
+  cursor: default;
+  user-select: none;
+}
+.pv-mg-card:hover {
+  border-color: var(--pv-border);
+}
+.pv-mg-card.is-selected {
+  border-color: var(--pv-accent-ring);
+  background: var(--pv-selected);
+}
+.pv-mg-card:focus-visible {
+  outline: 2px solid var(--pv-accent-ring);
+  outline-offset: 1px;
+}
+.pv-mg-card.is-offline {
+  opacity: 0.55;
+}
+.pv-mg-cardimg {
+  position: relative;
+}
+/* 文件夹卡片的面：和缩略图同尺寸（4:3），中间一个大图标 */
+.pv-mg-card.is-dir {
+  cursor: default;
+}
+/* ⭐ 目录卡片也要 4:3：缩略图盒 `.pv-mg-thumbbox` 就是这个比例，
+   目录不给高度的话会比照片卡片矮一截，混排时网格行高参差。 */
+.pv-mg-card.is-dir .pv-mg-cardimg {
+  aspect-ratio: 4 / 3;
+}
+.pv-mg-dirface {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  background: var(--pv-bg-elevated);
+  border-radius: 6px;
+}
+/*
+ * 矢量文件夹图标（内联 SVG）：宽度**跟着缩略图档位**走 ——
+ * `--pv-card` 是 116 / 168 / 236 / 320，取 0.4 倍再封顶 112px，
+ * 得到 46 / 67 / 94 / 112px；高度按 viewBox 的 256:218 自动得出，
+ * 所以任何档位都不会被拉扁，也不会糊（矢量）。
+ */
+.pv-mg-diricon {
+  flex: 0 0 auto;
+  width: min(calc(var(--pv-card, 168px) * 0.4), 112px);
+  aspect-ratio: 256 / 218;
+  height: auto;
+}
+
+.pv-mg-cardname {
+  padding: 0 2px;
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* 原地重命名输入框（2026-10-24）：占满文件名行，与卡片名同字号 */
+.pv-mg-namedit {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 1px 3px;
+  font: inherit;
+  font-size: 12px;
+  color: var(--pv-text-primary);
+  background: var(--pv-bg-elevated, var(--pv-bg-surface));
+  border: 1px solid var(--pv-accent);
+  border-radius: 4px;
+  outline: none;
+}
+.pv-mg-cardmeta {
+  padding: 0 2px;
+  font-size: 11px;
+  color: var(--pv-text-tertiary);
+  font-variant-numeric: tabular-nums;
+  /* 右边要放「标签」按钮，所以改成 flex；文本自己负责省略号 */
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+.pv-mg-metatext {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* 卡片右下角的「标签」按钮：默认低调，悬停才变强调色 */
+.pv-mg-tagbtn {
+  flex: 0 0 auto;
+  height: 18px;
+  padding: 0 7px;
+  border-radius: 999px;
+  border: 1px solid var(--pv-border-subtle);
+  background: transparent;
+  color: var(--pv-text-tertiary);
+  font-size: 10.5px;
+  line-height: 1;
+  cursor: pointer;
+}
+/* 无匹配：虚线 + 更淡，一眼能看出"这张没打上"而不是"没加载" */
+.pv-mg-tagbtn.is-empty {
+  border-style: dashed;
+  color: var(--pv-text-tertiary);
+  opacity: 0.75;
+}
+.pv-mg-tagbtn.is-empty:hover {
+  border-color: var(--pv-text-tertiary);
+  background: transparent;
+}
+
+.pv-mg-tagbtn:hover {
+  border-color: var(--pv-accent);
+  background: var(--pv-hover);
+  color: var(--pv-text-primary);
+}
+
+/* 缩略图承载盒（卡片与胶片条共用） */
+.pv-mg-thumbbox {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  background: var(--pv-bg-canvas);
+  border-radius: 6px;
+  overflow: hidden;
+}
+.pv-mg-thumbbox canvas {
+  max-width: 100%;
+  max-height: 100%;
+}
+/* 画布常驻挂载（见 ThumbCanvas 注释），没图时藏起来 —— 否则会露出
+   浏览器给的默认 300×150 空白画布 */
+.pv-mg-thumbbox canvas.is-hidden {
+  display: none;
+}
+.pv-mg-loading {
+  font-size: 13px;
+  color: var(--pv-text-disabled);
+}
+.pv-mg-bad {
+  font-size: 11px;
+  color: var(--pv-text-tertiary);
+}
+
+/* 勾选角标：压在照片上，所以用固定的半透明黑/白，不跟主题走 */
+.pv-mg-check {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 19px;
+  height: 19px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  border: 1.5px solid rgba(255, 255, 255, 0.8);
+  background: rgba(20, 20, 24, 0.34);
+  color: #fff;
+  font-size: 12px;
+  line-height: 1;
+  opacity: 0;
+  transition: opacity 0.12s ease;
+}
+.pv-mg-card:hover .pv-mg-check {
+  opacity: 1;
+}
+.pv-mg-card.is-selected .pv-mg-check {
+  opacity: 1;
+  background: var(--pv-accent);
+  border-color: var(--pv-accent);
+}
+
+/* 星级：贴左下角，半透明深底 + 金色星，缩略图再亮也读得清 */
+.pv-mg-stars {
+  position: absolute;
+  left: 6px;
+  bottom: 6px;
+  padding: 1px 5px;
+  border-radius: 9px;
+  background: rgba(16, 16, 20, 0.55);
+  color: #f2c14e;
+  font-size: 11px;
+  line-height: 1.4;
+  letter-spacing: 1px;
+  pointer-events: none;
+}
+/* 旗标：右上角与勾选角标并排，靠左一点避免重叠 */
+.pv-mg-flagmark {
+  position: absolute;
+  top: 8px;
+  right: 30px;
+  width: 10px;
+  height: 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #e2823b;
+  font-size: 10px;
+  line-height: 1;
+  text-shadow: 0 0 3px rgba(0, 0, 0, 0.6);
+  pointer-events: none;
+}
+
+/* ── 列表视图 ── */
+.pv-mg-list {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  padding: 0 16px 14px;
+}
+/* ── 卡片：离屏跳过 layout/paint（content-visibility）─────────────────
+   N=500 时 DOM 约 3000 节点，纯 CSS 就能砍掉大部分布局/绘制开销：
+   两行声明，不动 JS、不破坏 Ctrl+F 与无障碍（节点仍在 DOM 里）。
+   ⚠️ `contain-intrinsic-size` **不能省**：不给占位尺寸，离屏元素会被当成
+   0 高，滚动条长度会跳。`auto` 让浏览器记住每张卡真实渲染过的高度，
+   后面的长度只是「从没渲染过的卡」的回落估算值。
+   ⚠️ 这是兜底不是万能：它省 layout/paint，**不省 DOM 节点**。
+   条目数继续涨（几千→几万）仍要上按行开窗。 */
+.pv-mg-card {
+  content-visibility: auto;
+  contain-intrinsic-size: auto calc(var(--pv-card) * 1.4 + 56px);
+}
+
+/* 列表行：行高固定 30px，占位值直接写死 */
+.pv-mg-listrow {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 30px;
+}
+
+.pv-mg-listrow {
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr) 122px 76px 92px;
+  align-items: center;
+  gap: 8px;
+  height: 30px;
+  padding: 0 8px;
+  border-radius: 6px;
+  font-size: 12.5px;
+  cursor: default;
+  user-select: none;
+}
+.pv-mg-listrow:hover {
+  background: var(--pv-hover);
+}
+.pv-mg-listrow.is-selected {
+  background: var(--pv-selected);
+}
+.pv-mg-listrow:focus-visible {
+  outline: 2px solid var(--pv-accent-ring);
+  outline-offset: -2px;
+}
+.pv-mg-listcheck {
+  width: 18px;
+  height: 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  border: 1.5px solid var(--pv-border-strong);
+  color: #fff;
+  font-size: 11px;
+  line-height: 1;
+}
+.pv-mg-listcheck.is-on {
+  background: var(--pv-accent);
+  border-color: var(--pv-accent);
+}
+/* 名称列：文件夹行前面要放一个小图标，所以用 flex 排，
+   文字再单独套一层 —— `text-overflow: ellipsis` 只对块级文本节点有效，
+   直接把图标和文字混在一个 span 里，省略号会失效。 */
+.pv-mg-listname {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  overflow: hidden;
+}
+.pv-mg-listtext {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* 列表里的文件夹图标：行高 30px，给 14px 宽刚好 */
+.pv-mg-listico {
+  flex: 0 0 auto;
+  width: 14px;
+  aspect-ratio: 256 / 218;
+  height: auto;
+}
+.pv-mg-listmeta {
+  color: var(--pv-text-tertiary);
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ── 空态 / 状态栏 ── */
+.pv-mg-empty {
+  flex: 1 1 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  color: var(--pv-text-tertiary);
+}
+.pv-mg-status {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 28px;
+  padding: 0 12px;
+  font-size: 12px;
+  color: var(--pv-text-secondary);
+  background: var(--pv-bg-surface);
+  border-top: 1px solid var(--pv-border-subtle);
+  overflow: hidden;
+  white-space: nowrap;
+}
+.pv-mg-status > * {
+  flex-shrink: 0;
+}
+.pv-mg-statuspath {
+  flex-shrink: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ── 导出结果提示 ──
+ * 贴在主区右下角（避开 28px 状态栏），不用 alert：批量导出后用户要接着看图，
+ * 弹窗还得再点一次「确定」。
+ * `position: fixed` 相对视口，所以右侧留出侧栏宽度由 JS 决定不了 —— 直接靠右，
+ * 视觉上和主区对齐即可（侧栏在左边，不影响右侧留白）。
+ */
+.pv-mg-toast {
+  position: fixed;
+  right: 16px;
+  bottom: 44px; /* 状态栏 28px + 16px 留白 */
+  z-index: 45; /* 高于右键菜单(40)，导出结果要能盖住菜单 */
+  max-width: 460px;
+  padding: 10px 14px;
+  border-radius: 8px;
+  background: var(--pv-bg-elevated);
+  border: 1px solid var(--pv-border-strong);
+  box-shadow: var(--pv-shadow-lg);
+  color: var(--pv-text-primary);
+  font-size: 12.5px;
+  line-height: 1.5;
+  cursor: default;
+  user-select: none;
+}
+/* 左侧色条表达语气，不靠整块变色（深色主题下大块红/绿很刺眼） */
+.pv-mg-toast::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 8px;
+  bottom: 8px;
+  width: 3px;
+  border-radius: 0 3px 3px 0;
+  background: var(--pv-accent);
+}
+.pv-mg-toast.is-ok::before {
+  background: #3f9c5a;
+}
+.pv-mg-toast.is-warn::before {
+  background: #d08a2c;
+}
+.pv-mg-toast.is-err::before {
+  background: #c4534e;
+}
+.pv-mg-toasttext {
+  padding-left: 6px;
+}
+.pv-mg-toastdetail {
+  margin: 6px 0 0;
+  padding-left: 6px;
+  font: inherit;
+  font-size: 11.5px;
+  color: var(--pv-text-secondary);
+  white-space: pre-wrap;
+  word-break: break-all;
+  max-height: 120px;
+  overflow: auto;
+}
+
+/* ── 侧栏「标签」分区（2026-10-19）──────────────────────────────
+   夹在「图库」和「全部照片」之间：一个小标题 + 若干标签行（复用 .pv-mg-row）。 */
+.pv-mg-taghead {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 10px 4px;
+  color: var(--pv-text-tertiary);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.pv-mg-tagtitle {
+  font-weight: 600;
+}
+
+.pv-mg-tagcount {
+  font-size: 10.5px;
+  opacity: 0.7;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── 标签选择浮层 ──────────────────────────────────────────────
+   遮罩 + 居中卡片。⛔ 不用原生 <select>/<datalist>：弹层不跟深色主题。 */
+.pv-tagmask {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.45);
+}
+
+.pv-tagbox {
+  width: 320px;
+  max-height: 60vh;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px;
+  border-radius: 10px;
+  border: 1px solid var(--pv-border);
+  background: var(--pv-bg-surface);
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.45);
+}
+
+.pv-tagtitle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--pv-text-primary);
+}
+
+.pv-tagclose {
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--pv-text-tertiary);
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.pv-tagclose:hover {
+  background: var(--pv-hover);
+  color: var(--pv-text-primary);
+}
+
+.pv-taginput {
+  height: 30px;
+  padding: 0 10px;
+  border-radius: 6px;
+  border: 1px solid var(--pv-border);
+  background: var(--pv-bg-input);
+  color: var(--pv-text-primary);
+  font-size: 13px;
+  outline: none;
+}
+
+.pv-taginput:focus {
+  border-color: var(--pv-accent);
+}
+
+.pv-taglist {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  scrollbar-width: thin;
+}
+
+.pv-tagrow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--pv-text-primary);
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.pv-tagrow.is-cur,
+.pv-tagrow:hover {
+  background: var(--pv-hover);
+}
+
+.pv-tagrow.is-new .pv-tagname {
+  color: var(--pv-accent);
+}
+
+/* 勾选位固定宽度：全选/半选/空 三种状态不能让整行左右跳 */
+.pv-tagmark {
+  flex: 0 0 14px;
+  width: 14px;
+  text-align: center;
+  color: var(--pv-accent);
+  font-size: 12px;
+}
+
+.pv-tagname {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pv-tagmeta {
+  flex: 0 0 auto;
+  font-size: 11px;
+  color: var(--pv-text-tertiary);
+  font-variant-numeric: tabular-nums;
+}
+
+.pv-taghint,
+.pv-tagbusy {
+  padding: 8px;
+  font-size: 12px;
+  color: var(--pv-text-tertiary);
+  text-align: center;
+}
+
+/* ── 顶部筛选下拉（2026-10-21：格式 / 相机）──────────────────────
+ * 原来是横排 chip，格式+相机加起来几十项会把标题区挤成两行。
+ */
+.pv-mg-filters {
+  flex: 0 0 auto;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 0 16px 8px;
+  /* ⚠️ 不能裁：下拉面板是子元素，靠 absolute 撑到容器外 */
+  overflow: visible;
+}
+
+/* ── 标准下拉框（2026-10-24）────────────────────────────────────────
+   触发器定宽（格式/年份 200、相机 240、地点 280），面板锚定在按钮正下方。
+   「不要悬浮」= 面板挂在按钮的父容器里，不是 portal 到 body 的浮层。 */
+.pv-fdd {
+  position: relative;
+  flex: 0 0 auto;
+}
+.pv-fdd > .pv-mg-fbtn {
+  width: 100%;
+  justify-content: flex-start;
+}
+.pv-fdd-panel {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 60;
+  width: 100%;
+  /* ⭐ 最多 13 行（行高 28px × 13 + 上下 4px 内边距 = 372px），超出滚动 */
+  max-height: 372px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 4px;
+  border-radius: 8px;
+  border: 1px solid var(--pv-border, #33333d);
+  background: var(--pv-bg-surface);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.5);
+}
+/* 行内名字：勾选框 + 文本，长名字省略号 */
+.pv-fdd-name {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+}
+.pv-fdd-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pv-mg-fbtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 10px;
+  border-radius: 7px;
+  border: 1px solid var(--pv-border-subtle);
+  background: var(--pv-bg-surface);
+  color: var(--pv-text-secondary);
+  font-size: 12px;
+  cursor: pointer;
+}
+.pv-mg-fbtn:hover {
+  background: var(--pv-hover);
+  color: var(--pv-text-primary);
+}
+.pv-mg-fbtn.is-on {
+  border-color: var(--pv-accent);
+  color: var(--pv-text-primary);
+}
+.pv-mg-fbtn.is-on .pv-mg-fval {
+  color: var(--pv-text-primary);
+}
+.pv-mg-caret {
+  font-size: 10px;
+  color: var(--pv-text-tertiary);
+}
+
+/* 状态栏右下角「已选 N 张 · 大小」：占位靠右，不再和左侧统计挤在一起 */
+.pv-mg-selinfo {
+  margin-left: auto;
+  white-space: nowrap;
+}
+
+/* 筛选触发器：撑满固定宽度，值区吃掉剩余空间并省略（完整内容在 title 浮层里） */
+.pv-mg-fbtn {
+  width: 100%;
+  justify-content: flex-start;
+  overflow: hidden;
+}
+
+/* 下拉行的悬停浮层：显示被省略的完整名字（相机/地点名经常很长）。
+ * `position: fixed` + 鼠标坐标，避开面板的 overflow 裁剪；不吃鼠标事件。 */
+.pv-fdd-tip {
+  position: fixed;
+  z-index: 95;
+  max-width: 380px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  background: var(--pv-bg-elevated);
+  border: 1px solid var(--pv-border-strong);
+  box-shadow: var(--pv-shadow-md);
+  color: var(--pv-text-primary);
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: normal;
+  word-break: break-all;
+  pointer-events: none;
+}
+
+/* ── 人像条（图库标题行右侧，标签条之后）────────────────────────
+ * 形态：人像 | 圆角方形头像 ×6 | +N | 39 人 · 517 脸 | 重新识别
+ * ⭐ 头像是**圆角方形**（用户 2026-10-25 要求）：小尺寸圆形会切掉太多脸部。
+ */
+.pv-ps {
+  /* 紧贴标签条右侧：不留分隔线、只留 10px 呼吸（用户 2026-10-25 要求）。
+     `align-self: center` 让它相对整块标题区**上下留白相等**（之前贴顶太上面）。 */
+  flex: 0 0 auto;
+  align-self: center;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: 10px;
+  white-space: nowrap;
+}
+
+.pv-ps-label {
+  font-size: 11px;
+  color: var(--pv-text-tertiary);
+}
+
+.pv-ps-faces {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.pv-ps-face {
+  /* 80×80 圆角方形：占满标题区三行（2 行标签 44px + 标题）的整个高度 */
+  width: 80px;
+  height: 80px;
+  padding: 0;
+  border-radius: 12px;
+  border: 1px solid var(--pv-border-subtle);
+  background: var(--pv-bg-elevated);
+  color: var(--pv-text-secondary);
+  font-size: 26px;
+  font-family: inherit;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.pv-ps-face:hover {
+  border-color: var(--pv-accent);
+  color: var(--pv-text-primary);
+}
+
+.pv-ps-more {
+  min-width: 80px;
+  height: 80px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 12px;
+  border: 1px dashed var(--pv-border);
+  color: var(--pv-text-tertiary);
+  font-size: 13px;
+}
+
+/* 右侧竖排：计数 + 重新识别（贴着 80px 头像的上沿） */
+.pv-ps-info {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 6px;
+}
+
+.pv-ps-count {
+  font-size: 11px;
+  color: var(--pv-text-tertiary);
+}
+
+.pv-ps-empty {
+  font-size: 11px;
+  color: var(--pv-text-tertiary);
+}
+
+.pv-ps-btn {
+  height: 22px;
+  padding: 0 9px;
+  border-radius: 5px;
+  border: 1px solid var(--pv-border);
+  background: transparent;
+  color: var(--pv-text-secondary);
+  font-size: 11px;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.pv-ps-btn:hover {
+  background: var(--pv-hover);
+  color: var(--pv-text-primary);
+}
+
+.pv-ps-btn.is-primary {
+  background: var(--pv-accent);
+  border-color: var(--pv-accent);
+  color: #fff;
+}
+
+/* 标题行的操作区（浏览模式的「加入图库…」等）靠右，不跟着三块挤在左边 */
+.pv-mg-headr {
+  margin-left: auto;
+}
+
+/* ── 标题区外壳：左列（标题行 + 筛选行）与右侧人像条并排 ────────────
+ * 人像条要跨「标题 + 两行标签 + 筛选行」三行的总高（用户 2026-10-25 要求），
+ * 所以它的高度由左列决定，头像跟着拉伸。 */
+.pv-mg-top {
+  display: flex;
+  align-items: stretch;
+  gap: 10px;
+}
+
+.pv-mg-top-main {
+  /* ⛔ 不能 flex:1：那会把右侧人像推到窗口最右边，标签与人像之间空一大片
+     （用户 2026-10-25 截图对比：要像「人像紧跟标签右端」那样贴左）。 */
+  flex: 0 1 auto;
+  min-width: 0;
+}
+
+.pv-mg-top {
+  justify-content: flex-start;
+}
+
+/* 人像块：撑满三行高度；头像宽度仍 80，高度随容器 */
+.pv-ps {
+  align-self: stretch;
+}
+
+.pv-ps-faces {
+  height: 100%;
+  align-items: stretch;
+}
+
+.pv-ps-face,
+.pv-ps-more {
+  width: 80px;
+  height: auto;
+}
+
+/* ── 2026-10-25 收尾：三行固定、人像高度固定 80、筛选不换行 ──────── */
+
+/* 筛选行**必须单行**：换行会让整个标题区长高、人像被拉长（用户报过）。
+ * ⛔ 这里**不能 `overflow: hidden`**：下拉面板是绝对定位在按钮下方的子元素，
+ *    一旦裁掉就变成"点开看不见面板"（2026-10-25 用户报的显示 bug）。
+ *    单行靠 `nowrap` + 子项 `flex: 0 0 auto` 保证，不靠裁。 */
+.pv-mg-filters {
+  flex-wrap: nowrap;
+  overflow: visible;
+}
+
+.pv-mg-filters > * {
+  flex: 0 0 auto;
+}
+
+/* 人像块：固定 80 高、垂直居中（覆盖上面 `align-self: stretch` 的旧规则） */
+.pv-ps {
+  align-self: center;
+  height: 80px;
+  align-items: center;
+}
+
+.pv-ps-faces {
+  height: 80px;
+  align-items: center;
+}
+
+.pv-ps-face,
+.pv-ps-more {
+  width: 80px;
+  height: 80px;
+}
+
+/* 「…」是按钮了，去掉默认按钮样式差异 */
+.pv-ps-more {
+  padding: 0;
+  background: transparent;
+  font-size: 16px;
+  cursor: pointer;
+}
+
+.pv-ps-more:hover {
+  border-color: var(--pv-accent);
+  color: var(--pv-text-primary);
+}
+
+/* ── 人脸头像（canvas 裁剪）────────────────────────────────────── */
+.pv-face {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  border-radius: 12px;
+  background: var(--pv-bg-elevated);
+}
+
+.pv-face-canvas {
+  display: block;
+  border-radius: 12px;
+}
+
+.pv-face-fallback {
+  font-size: 26px;
+  color: var(--pv-text-tertiary);
+}
+
+/* 人像条里的头像按钮占满整格 */
+.pv-ps-face .pv-face,
+.pv-ps-face .pv-face-canvas {
+  width: 100%;
+  height: 100%;
+}
+
+/* ── 人像专栏（覆盖在主区之上）────────────────────────────────── */
+.pv-pw {
+  position: absolute;
+  inset: 0;
+  z-index: 6;
+  display: flex;
+  flex-direction: column;
+  background: var(--pv-bg-app);
+}
+
+.pv-pw-head {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--pv-border-subtle);
+}
+
+.pv-pw-back {
+  height: 24px;
+  padding: 0 8px;
+  border-radius: 5px;
+  border: 1px solid var(--pv-border);
+  background: transparent;
+  color: var(--pv-text-secondary);
+  font-size: 12px;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.pv-pw-back:hover {
+  background: var(--pv-hover);
+  color: var(--pv-text-primary);
+}
+
+.pv-pw-title {
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--pv-text-primary);
+}
+
+.pv-pw-sub {
+  font-size: 12px;
+  color: var(--pv-text-tertiary);
+}
+
+.pv-pw-empty {
+  padding: 40px 16px;
+  font-size: 12px;
+  line-height: 1.8;
+  color: var(--pv-text-tertiary);
+  text-align: center;
+}
+
+.pv-pw-grid {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(112px, 1fr));
+  gap: 18px 12px;
+  padding: 16px;
+  align-content: start;
+}
+
+.pv-pw-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 4px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.pv-pw-card:hover {
+  background: var(--pv-hover);
+}
+
+.pv-pw-name {
+  font-size: 12px;
+  color: var(--pv-text-primary);
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pv-pw-count {
+  font-size: 11px;
+  color: var(--pv-text-tertiary);
+}
+
+.pv-pw-photos {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(168px, 1fr));
+  gap: 10px;
+  padding: 16px;
+  align-content: start;
+}
+
+.pv-pw-photo {
+  aspect-ratio: 1;
+  padding: 0;
+  border: 1px solid var(--pv-border-subtle);
+  border-radius: 6px;
+  overflow: hidden;
+  background: var(--pv-bg-elevated);
+  cursor: pointer;
+}
+
+.pv-pw-photo img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.pv-pw-ph {
+  font-size: 12px;
+  color: var(--pv-text-tertiary);
+}
+
+/* 头像间距 15px（用户 2026-10-25 要求） */
+.pv-ps-faces {
+  gap: 20px;
+}
+
+/* 「更多 / 面部」两行（替代原来的三个点） */
+.pv-ps-more {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  font-size: 12px;
+  line-height: 1.3;
+}
+
+.pv-ps-more-l {
+  display: block;
+}
+
+/* 「更多面部 / 共 N 人」：第三行比前两行小一号，避免 80px 方块里字太挤 */
+.pv-ps-more-s {
+  font-size: 10px;
+  color: var(--pv-text-tertiary);
+}
+
+/* ── 人像墙浮层（替代原来的整页人像专栏，2026-10-25）────────────
+ * 固定宽 468（与 PERSON_POP_W 一致）、6 列、56px 头像、只显张数。
+ * 多了滚轮滚动；高度上限 400 保证不超出一屏。 */
+.pv-pwp {
+  position: fixed;
+  z-index: 95;
+  /* 6 列 × 80px + 5×10 间距 + 24 内边距 ≈ 554；取 560 留一点余量 */
+  width: 560px;
+  /* 默认露三行：头部 40 + 上下内边距 24 + 3×80 + 2×10 间距 ≈ 324 */
+  max-height: 324px;
+  display: flex;
+  flex-direction: column;
+  border-radius: 10px;
+  background: var(--pv-bg-surface);
+  border: 1px solid var(--pv-border-strong);
+  box-shadow: var(--pv-shadow-lg);
+  overflow: hidden;
+}
+
+.pv-pwp-head {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 12px;
+  border-bottom: 1px solid var(--pv-border-subtle);
+}
+
+.pv-pwp-title {
+  font-size: 12px;
+  color: var(--pv-text-primary);
+}
+
+.pv-pwp-sub {
+  font-size: 11px;
+  color: var(--pv-text-tertiary);
+}
+
+.pv-pwp-x {
+  width: 22px;
+  height: 22px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--pv-text-tertiary);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.pv-pwp-x:hover {
+  background: var(--pv-hover);
+  color: var(--pv-text-primary);
+}
+
+.pv-pwp-grid {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 10px;
+  padding: 12px;
+  align-content: start;
+}
+
+.pv-pwp-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  padding: 3px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.pv-pwp-card:hover {
+  background: var(--pv-hover);
+}
+
+/* 当前正在筛的人：头像外一圈强调环 */
+.pv-pwp-card.is-on .pv-face {
+  box-shadow: 0 0 0 2px var(--pv-accent);
+}
+
+.pv-pwp-n {
+  font-size: 10px;
+  color: var(--pv-text-tertiary);
+  font-variant-numeric: tabular-nums;
+}
+
+.pv-pwp-card.is-on .pv-pwp-n {
+  color: #afa9ec;
+}
+
+/* 内联改名输入框：占住头像位置，避免卡片跳动 */
+.pv-pwp-input {
+  width: 80px;
+  height: 80px;
+  padding: 0 4px;
+  border-radius: 10px;
+  border: 1px solid var(--pv-accent);
+  background: var(--pv-bg-input);
+  color: var(--pv-text-primary);
+  font-size: 11px;
+  font-family: inherit;
+  text-align: center;
+}
+
+.pv-pwp-empty {
+  grid-column: 1 / -1;
+  padding: 24px 0;
+  text-align: center;
+  font-size: 12px;
+  color: var(--pv-text-tertiary);
+}
+
+/* 「更多图像」四个字一行不换行（用户 2026-10-25） */
+.pv-ps-more-l {
+  white-space: nowrap;
+}

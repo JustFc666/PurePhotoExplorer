@@ -58,6 +58,7 @@ pub fn list_printers() -> Vec<String> {
 /// 打印是最终输出，不能拿 2048px 的预览去印 —— 那在 A4 上会明显发糊。
 /// 与写回用 Export 是同一个理由。
 #[tauri::command]
+#[allow(clippy::too_many_arguments)] // 参数镜像 Win32 打印对话框，拆分收益低
 pub fn print_image(
     state: State<'_, AppState>,
     path: String,
@@ -100,7 +101,8 @@ pub fn print_image(
 const USE_SHELL_PRINT: bool = false;
 
 /// 与命令解耦的实现，便于单测（不需要构造 Tauri `State`）。
-fn print_impl(
+#[allow(clippy::too_many_arguments)] // 与 print_image 参数一一对应
+pub(crate) fn print_impl(
     registry: &pv_decode::DecoderRegistry,
     path: &std::path::Path,
     rotation_steps: i32,

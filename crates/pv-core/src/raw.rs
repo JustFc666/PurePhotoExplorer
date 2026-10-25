@@ -183,7 +183,17 @@ pub trait RawPipeline: Send + Sync {
     fn name(&self) -> &'static str;
 
     /// Stage 1 快路径：提取内嵌预览（不解码像素，5-15 ms）
-    fn extract_preview(&self, path: &Path) -> Result<EncodedPreview>;
+    ///
+    /// `need_edge`：调用方**期望**的预览长边（像素）。`0` = 不限、要最大的那张。
+    ///
+    /// 为什么要这个参数：内嵌预览可能有多张，而**读全文件找最大那张很贵**
+    /// （实测一张 47MB 的 ARW 要读 47MB）。有了它，实现方可以只读文件开头一段，
+    /// 「找到一张已经够用的」就返回 —— 缩略图档（256）因此能快一个数量级，
+    /// 而导出档传 0，仍会老老实实拿最大的那张。
+    ///
+    /// ⚠️ 它是**提示**不是硬约束：拿不准就该返回能拿到的最好的那张，
+    /// 不要为了满足它而失败。
+    fn extract_preview(&self, path: &Path, need_edge: u32) -> Result<EncodedPreview>;
 
     /// Stage 1 降级路径：half-size 去马赛克（200-500 ms）
     fn extract_preview_slow(&self, path: &Path) -> Result<EncodedPreview>;
@@ -214,7 +224,7 @@ impl RawPipeline for UnavailablePipeline {
         "unavailable"
     }
 
-    fn extract_preview(&self, _path: &Path) -> Result<EncodedPreview> {
+    fn extract_preview(&self, _path: &Path, _need_edge: u32) -> Result<EncodedPreview> {
         Err(PvError::UnsupportedFormat(format!(
             "RAW 解码器未接入: {}",
             self.reason
@@ -241,11 +251,14 @@ impl RawPipeline for UnavailablePipeline {
 }
 
 /// 便于上层统一处理"先快后慢"的降级逻辑
+///
+/// `need_edge` 透传给 [`RawPipeline::extract_preview`]（0 = 要最大的）。
 pub fn extract_preview_with_fallback<P: RawPipeline + ?Sized>(
     p: &P,
     path: &Path,
+    need_edge: u32,
 ) -> Result<EncodedPreview> {
-    match p.extract_preview(path) {
+    match p.extract_preview(path, need_edge) {
         Ok(v) => Ok(v),
         // 内嵌预览缺失或失败 → 降级到 half-size 解码
         Err(PvError::Corrupt(_)) | Err(PvError::Decode(_)) | Err(PvError::UnsupportedFormat(_)) => {
@@ -290,7 +303,7 @@ mod tests {
         };
         let path = PathBuf::from("x.nef");
         assert!(matches!(
-            p.extract_preview(&path),
+            p.extract_preview(&path, 256),
             Err(PvError::UnsupportedFormat(_))
         ));
         assert!(matches!(p.probe(&path), Err(PvError::UnsupportedFormat(_))));

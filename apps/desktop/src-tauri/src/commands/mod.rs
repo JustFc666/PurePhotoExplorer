@@ -37,19 +37,32 @@
 //! - [`print`]  `print_image`（Win32 PrintDlg + GDI，所见即所印）
 //! - [`app`]    `app_info` / `supported_formats` / 文件关联
 //! - [`folder`] `list_siblings`（同目录浏览）
+//! - [`manager`] S2 图库：扫描 / 查询 / 统计 / 缩略图
+//! - [`browse`] 「我的电脑」式文件浏览器（盘符 + 用户标准文件夹 + 子目录）
+//! - [`batch`]  批量写文件：转格式 / 按 EXIF 摆正 / 批量打印
 
+mod ai;
 mod app;
+mod batch;
+mod browse;
 mod dto;
 mod edit;
 mod folder;
 mod image;
+mod manager;
+mod people;
 mod pixel;
 mod print;
 
+pub use ai::*;
 pub use app::*;
+pub use batch::*;
+pub use browse::*;
 pub use dto::*;
 pub use edit::*;
 pub use folder::*;
 pub use image::*;
+pub use manager::*;
+pub use people::*;
 pub use pixel::*;
 pub use print::*;

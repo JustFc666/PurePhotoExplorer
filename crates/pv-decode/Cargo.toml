@@ -32,3 +32,7 @@ jpeg-encoder.workspace = true
 [dev-dependencies]
 png.workspace = true
 rayon.workspace = true
+# 只用于基准测试（`tests/bench_jpeg_scale.rs`），**不进发布产物**。
+# 目的：量 libjpeg-turbo 的 DCT 缩放（scale_denom）能否打赢现行的 zune 全解码 + SIMD 缩放。
+# 决定不采用就把这一行和那个测试文件一起删掉。
+mozjpeg = "0.10"

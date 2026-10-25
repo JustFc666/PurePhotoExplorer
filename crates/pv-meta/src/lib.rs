@@ -19,6 +19,6 @@
 pub mod exif;
 
 pub use exif::{
-    align_exif_with_pixels, read_exif, read_exif_raw, ExifData, ExifRewriteOutcome, GpsData,
-    MetaError,
+    align_exif_with_pixels, read_exif, read_exif_raw, read_orientation, ExifData,
+    ExifRewriteOutcome, GpsData, MetaError,
 };

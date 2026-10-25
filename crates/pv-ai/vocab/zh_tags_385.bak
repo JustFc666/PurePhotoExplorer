@@ -1,0 +1,386 @@
+﻿编码,一级类目,二级类目,主题词,同义词,英文对照
+A001,人物,人群,婴儿,新生儿;宝宝,infant
+A002,人物,人群,儿童,小孩;孩子,child
+A003,人物,人群,青年,年轻人,youth
+A004,人物,人群,老年人,老人;长者,senior
+A005,人物,人群,男性,男士,male
+A006,人物,人群,女性,女士,female
+A007,人物,人群,情侣,夫妻,couple
+A009,人物,人群,家庭,家人;亲子,family
+A012,人物,人群,孕妇,准妈妈,pregnant woman
+A013,人物,人群,朋友,好友,friend
+A014,人物,人群,人群,众人;行人,crowd
+A016,人物,人像,自拍,,selfie
+A017,人物,人像,合影,合照;全家福,group photo
+A018,人物,人像,肖像,人像,portrait
+A019,人物,人像,特写,半身照,close-up
+A021,人物,人像,证件照,,ID photo
+A022,人物,人像,侧脸,侧颜,profile
+A024,人物,表情动作,微笑,笑脸,smile
+A026,人物,表情动作,手势,,gesture
+A027,人物,表情动作,拥抱,,hug
+A028,人物,表情动作,亲吻,接吻,kiss
+A029,人物,表情动作,跳跃,,jump
+A030,人物,表情动作,奔跑,,running
+A031,人物,职业,工人,,worker
+A032,人物,职业,农民,,farmer
+A033,人物,职业,医护人员,医生;护士,medical staff
+A034,人物,职业,教师,老师,teacher
+A035,人物,职业,学生,,student
+A036,人物,职业,军人,士兵,soldier
+A037,人物,职业,警察,民警;消防员,police officer
+A039,人物,职业,厨师,,chef
+A040,人物,职业,运动员,,athlete
+A041,人物,职业,舞者,艺人,dancer
+B001,活动,人生大事,婚礼,结婚;婚宴;订婚;求婚;婚纱照,wedding
+B004,活动,人生大事,生日,纪念日,birthday
+B005,活动,人生大事,毕业典礼,毕业,graduation
+B007,活动,聚会,聚会,聚餐;派对,gathering
+B009,活动,聚会,野餐,,picnic
+B010,活动,现场,节日庆典,,festival celebration
+B013,活动,现场,集市,市集;庙会;灯会,market fair
+B014,活动,现场,展览,展会,exhibition
+B015,活动,现场,会议,大会,conference
+B016,活动,现场,演出,表演;卡拉OK;演唱会;音乐会;开幕式;颁奖典礼,performance
+B021,活动,现场,比赛现场,赛事现场,sporting event
+B022,活动,现场,烟花表演,焰火,fireworks show
+B023,活动,中国节日,春节,农历新年,Spring Festival
+B025,活动,中国节日,清明节,,Qingming Festival
+B026,活动,中国节日,端午节,,Dragon Boat Festival
+B028,活动,中国节日,中秋节,,Mid-Autumn Festival
+B038,活动,外国节日,圣诞节,,Christmas
+C001,旅行,出行方式,旅行,旅游;背包旅行,travel
+C002,旅行,出行方式,度假,休假,vacation
+C003,旅行,出行方式,徒步,远足,hiking
+C004,旅行,出行方式,露营,,camping
+C005,旅行,出行方式,登山,爬山,mountaineering
+C006,旅行,出行方式,自驾游,自驾,self-driving tour
+C007,旅行,出行方式,骑行,,cycling
+C009,旅行,住宿,酒店,宾馆,hotel
+C010,旅行,住宿,民宿,,guesthouse
+C011,旅行,住宿,度假村,,resort
+C012,旅行,目的地,景区,景点,scenic spot
+C013,旅行,目的地,地标,地标建筑,landmark
+C014,旅行,目的地,古迹,历史遗迹;遗址,historic site
+C016,旅行,目的地,博物馆,美术馆,museum
+C018,旅行,目的地,公园,,park
+C019,旅行,目的地,主题乐园,游乐场,theme park
+C020,旅行,目的地,动物园,,zoo
+C021,旅行,目的地,植物园,,botanical garden
+C022,旅行,目的地,水族馆,海洋馆,aquarium
+C023,旅行,目的地,观景台,,observation deck
+C024,旅行,玩法,观光,,sightseeing
+C025,旅行,玩法,潜水,,diving
+C026,旅行,玩法,浮潜,,snorkeling
+C027,旅行,玩法,漂流,,rafting
+C028,旅行,玩法,温泉,,hot spring
+C029,旅行,玩法,垂钓,钓鱼,fishing
+C030,旅行,玩法,观星,,stargazing
+D001,风景,地貌,山地,山峦;高原;丘陵;山峰,mountain
+D002,风景,地貌,雪山,,snow mountain
+D004,风景,地貌,峡谷,,canyon
+D008,风景,地貌,草原,草场,grassland
+D009,风景,地貌,沙漠,戈壁,desert
+D011,风景,地貌,森林,树林;竹林;热带雨林,forest
+D015,风景,地貌,湿地,,wetland
+D016,风景,地貌,洞穴,溶洞,cave
+D017,风景,水景,河流,江河;溪流,river
+D018,风景,水景,湖泊,湖水,lake
+D019,风景,水景,瀑布,,waterfall
+D021,风景,水景,海洋,大海;海岸,sea
+D023,风景,水景,沙滩,海滩,beach
+D024,风景,水景,礁石,,reef
+D025,风景,水景,岛屿,海岛,island
+D026,风景,水景,冰川,,glacier
+D027,风景,天象,日出,黎明;朝霞,sunrise
+D028,风景,天象,日落,黄昏;晚霞,sunset
+D031,风景,天象,星空,繁星;银河,starry sky
+D033,风景,天象,月亮,月色,moon
+D034,风景,天象,彩虹,,rainbow
+D035,风景,天象,云海,,sea of clouds
+D036,风景,天象,极光,,aurora
+D037,风景,田园,田野,田园;平原,field
+D038,风景,田园,梯田,,terraced field
+D039,风景,田园,花海,,flower sea
+D040,风景,田园,草地,草坪,meadow
+E001,天气,天气,晴天,晴空,sunny
+E003,天气,天气,阴天,多云,overcast
+E004,天气,天气,雨天,下雨;暴雨;冰雹,rain
+E005,天气,天气,雪景,下雪,snow scene
+E006,天气,天气,雷电,闪电,lightning
+E007,天气,天气,台风,,typhoon
+E009,天气,天气,雾,雾霾,fog
+E012,天气,天空,蓝天,,blue sky
+E013,天气,天空,白云,云朵,clouds
+F001,动物,宠物,猫,猫咪,cat
+F002,动物,宠物,狗,宠物狗,dog
+F003,动物,宠物,兔子,宠物兔,rabbit
+F004,动物,宠物,宠物,萌宠,pet
+F005,动物,家畜,鸡,公鸡;母鸡,chicken
+F006,动物,家畜,鸭,鸭子,duck
+F007,动物,家畜,马,,horse
+F008,动物,家畜,牛,,cattle
+F009,动物,家畜,羊,,sheep
+F012,动物,鸟,鸟,飞鸟,bird
+F013,动物,鸟,鸽子,,dove
+F014,动物,鸟,鹰,老鹰,eagle
+F015,动物,鸟,天鹅,,swan
+F016,动物,鸟,孔雀,,peacock
+F017,动物,鸟,企鹅,,penguin
+F018,动物,野生,熊猫,大熊猫,giant panda
+F019,动物,野生,狮子,,lion
+F020,动物,野生,老虎,豹,tiger
+F022,动物,野生,狼,,wolf
+F023,动物,野生,狐狸,,fox
+F024,动物,野生,熊,棕熊;北极熊,bear
+F026,动物,野生,大象,,elephant
+F027,动物,野生,长颈鹿,,giraffe
+F028,动物,野生,斑马,,zebra
+F029,动物,野生,鹿,梅花鹿,deer
+F030,动物,野生,猴子,,monkey
+F031,动物,水生,海豚,,dolphin
+F032,动物,水生,鲸,鲸鱼,whale
+F033,动物,水生,鲨鱼,,shark
+F034,动物,水生,鱼,鱼类,fish
+F035,动物,水生,海星,,starfish
+F036,动物,水生,贝壳,海螺,shell
+F037,动物,昆虫,乌龟,,turtle
+F038,动物,昆虫,蛇,,snake
+F039,动物,昆虫,青蛙,蛙,frog
+F040,动物,昆虫,蝴蝶,,butterfly
+F041,动物,昆虫,蜜蜂,,bee
+G001,植物,花,花,鲜花;牡丹;梅花;兰花;桃花;蒲公英;百合;杜鹃;桂花,flower
+G002,植物,花,玫瑰,,rose
+G004,植物,花,荷花,莲花,lotus
+G005,植物,花,菊花,,chrysanthemum
+G008,植物,花,樱花,,cherry blossom
+G010,植物,花,向日葵,,sunflower
+G011,植物,花,郁金香,,tulip
+G012,植物,花,薰衣草,,lavender
+G013,植物,花,油菜花,,rapeseed flower
+G018,植物,树,树,树木;松树;柳树;枫树;银杏;椰树,tree
+G023,植物,树,竹子,竹,bamboo
+G025,植物,树,红叶,枫叶,red leaves
+G026,植物,绿植,绿植,绿色植物;盆栽,green plant
+G028,植物,绿植,多肉植物,多肉;仙人掌,succulent
+G030,植物,绿植,盆景,,bonsai
+G032,植物,绿植,蘑菇,菌类,mushroom
+H001,城市,街景,城市风光,城市景观;天际线,cityscape
+H003,城市,街景,摩天大楼,高楼,skyscraper
+H004,城市,街景,夜景,城市夜景,night view
+H006,城市,街景,老街,古街;胡同;四合院;古镇,old street
+H008,城市,街景,街道,,street
+H009,城市,街景,广场,,plaza
+H025,城市,公共设施,喷泉,,fountain
+H026,城市,公共设施,雕塑,雕像,statue
+H027,城市,公共设施,纪念碑,,monument
+H028,城市,公共设施,体育场,体育馆,stadium
+H029,城市,公共设施,港口,码头,port
+H030,城市,公共设施,地铁站,,subway station
+H031,城市,公共设施,商场,购物中心;店铺,shopping mall
+H033,城市,公共设施,夜市,,night market
+H034,城市,公共设施,霓虹灯,,neon light
+X032,城市,公共设施,学校,校园;大学;中学;小学,school
+H010,建筑,房屋,住宅,民居,residence
+H011,建筑,房屋,别墅,,villa
+H013,建筑,教堂寺庙,寺庙,寺院,temple
+H014,建筑,教堂寺庙,教堂,,church
+H015,建筑,教堂寺庙,清真寺,,mosque
+H016,建筑,古迹,宫殿,,palace
+H017,建筑,塔桥,塔,宝塔,tower
+H018,建筑,塔桥,桥梁,大桥,bridge
+H019,建筑,古迹,城墙,,city wall
+H020,建筑,古迹,牌坊,牌楼,memorial archway
+H022,建筑,古迹,园林,古典园林;亭子,classical garden
+H023,建筑,古迹,城堡,,castle
+H024,建筑,塔桥,灯塔,,lighthouse
+I001,室内,家里,客厅,,living room
+I002,室内,家里,卧室,,bedroom
+I003,室内,家里,厨房,,kitchen
+I004,室内,家里,餐厅,饭厅,dining room
+I005,室内,家里,书房,,study
+I006,室内,家里,浴室,卫生间,bathroom
+I007,室内,家里,阳台,,balcony
+I008,室内,家里,庭院,院子,courtyard
+I009,室内,公共场所,办公室,会议室,office
+I011,室内,公共场所,教室,,classroom
+I012,室内,公共场所,图书馆,,library
+I013,室内,公共场所,展厅,展馆,exhibition hall
+I014,室内,公共场所,咖啡馆,咖啡厅,cafe
+I015,室内,公共场所,酒吧,,bar
+I016,室内,公共场所,健身房,,gym
+I017,室内,公共场所,游泳馆,室内泳池,indoor pool
+I018,室内,公共场所,舞台,,stage
+J001,美食,中餐,中餐,中式菜肴,Chinese cuisine
+J002,美食,中餐,火锅,,hotpot
+J003,美食,中餐,烧烤,烤肉,barbecue
+J005,美食,中餐,面条,面食,noodles
+J006,美食,中餐,饺子,水饺;包子,dumpling
+J008,美食,中餐,粥,稀饭,porridge
+J009,美食,甜点,甜品,甜点;下午茶,dessert
+J010,美食,甜点,蛋糕,,cake
+J011,美食,甜点,冰淇淋,冰激凌,ice cream
+J012,美食,西餐,西餐,,Western food
+J013,美食,西餐,牛排,,steak
+J014,美食,西餐,披萨,,pizza
+J015,美食,西餐,汉堡,,hamburger
+J016,美食,西餐,沙拉,,salad
+J017,美食,西餐,寿司,,sushi
+J018,美食,食材,水果,苹果;香蕉;葡萄,fruit
+J021,美食,食材,西瓜,,watermelon
+J022,美食,食材,草莓,,strawberry
+J024,美食,食材,蔬菜,,vegetable
+J025,美食,食材,海鲜,,seafood
+J026,美食,用餐,早餐,,breakfast
+J028,美食,饮品,咖啡,,coffee
+J029,美食,饮品,茶,茶水,tea
+J030,美食,饮品,果汁,,juice
+J031,美食,饮品,啤酒,,beer
+J032,美食,饮品,红酒,葡萄酒,red wine
+J033,美食,饮品,鸡尾酒,,cocktail
+X023,美食,饮品,奶茶,珍珠奶茶,milk tea
+X024,美食,中餐,便当,盒饭,bento
+K001,物品,衣服,服装,衣服,clothing
+K002,物品,衣服,连衣裙,,dress
+K003,物品,衣服,西装,西服,suit
+K004,物品,衣服,衬衫,,shirt
+K005,物品,衣服,牛仔裤,,jeans
+K006,物品,衣服,外套,大衣,coat
+K007,物品,衣服,鞋,鞋子;高跟鞋,shoes
+K009,物品,衣服,运动鞋,,sneakers
+K010,物品,衣服,帽子,,hat
+K011,物品,衣服,包,包包,bag
+K012,物品,配饰,手表,,watch
+K013,物品,配饰,眼镜,太阳镜,glasses
+K014,物品,配饰,珠宝,戒指;项链,jewelry
+K017,物品,配饰,化妆品,香水,cosmetics
+K019,物品,家居,家具,,furniture
+K020,物品,家居,沙发,,sofa
+K021,物品,家居,椅子,,chair
+K022,物品,家居,桌子,餐桌,table
+K023,物品,家居,床,,bed
+K024,物品,家居,灯具,台灯,lamp
+K025,物品,家居,餐具,,tableware
+K026,物品,家居,花瓶,,vase
+K027,物品,杂项,书籍,图书,book
+K028,物品,杂项,玩具,,toy
+K029,物品,杂项,乐器,,musical instrument
+K030,物品,数码,相机,,camera
+K031,物品,数码,手机,,smartphone
+K032,物品,数码,电脑,笔记本电脑,computer
+K033,物品,数码,耳机,,headphones
+X020,物品,数码,键盘,机械键盘,keyboard
+X021,物品,数码,显示器,屏幕;电脑屏幕,monitor
+X022,物品,数码,无人机,航拍机,drone
+X029,物品,杂项,手办,模型摆件;figure,figure
+X030,物品,杂项,高达,机甲模型;敢达,gundam
+X031,物品,杂项,模型,拼装模型;模型玩具,model kit
+L001,交通,汽车,汽车,轿车;跑车;越野车;救护车;消防车;警车,car
+L004,交通,汽车,卡车,货车,truck
+L005,交通,汽车,公交车,巴士,bus
+L006,交通,汽车,出租车,的士,taxi
+L007,交通,汽车,摩托车,,motorcycle
+L011,交通,两轮,自行车,单车,bicycle
+L012,交通,两轮,电动车,电瓶车,e-bike
+L013,交通,轨道,火车,高铁,train
+L015,交通,轨道,地铁,有轨电车,subway
+L017,交通,飞机,飞机,直升机,airplane
+L019,交通,飞机,热气球,,hot air balloon
+L020,交通,船,轮船,船舶,ship
+L021,交通,船,帆船,游艇,sailboat
+X025,交通,枢纽,机场,航站楼,airport
+X033,军事,兵器,武器,枪械;兵器,weapon
+X034,军事,兵器,刀剑,刀具;长剑;武士刀,sword
+X035,军事,军备,坦克,装甲车;战车,tank
+X036,军事,军备,军舰,战舰;航空母舰,warship
+M001,运动,球类,足球,,football
+M002,运动,球类,篮球,,basketball
+M003,运动,球类,排球,,volleyball
+M004,运动,球类,网球,,tennis
+M005,运动,球类,羽毛球,,badminton
+M006,运动,球类,乒乓球,,table tennis
+M007,运动,球类,高尔夫,,golf
+M008,运动,球类,棒球,,baseball
+M009,运动,球类,台球,桌球,billiards
+M010,运动,水上,游泳,,swimming
+M011,运动,水上,跳水,,diving sport
+M012,运动,水上,冲浪,,surfing
+M015,运动,跑步,跑步,慢跑;马拉松;田径,running
+M016,运动,健身,健身,,fitness
+M017,运动,健身,瑜伽,,yoga
+M018,运动,搏击,拳击,,boxing
+M019,运动,搏击,武术,柔道;击剑;跆拳道,martial arts
+M023,运动,搏击,射箭,,archery
+M024,运动,极限,攀岩,,rock climbing
+M025,运动,极限,滑雪,,skiing
+M026,运动,极限,滑冰,溜冰,skating
+M027,运动,极限,滑板,,skateboarding
+M028,运动,极限,赛车,,car racing
+N001,文化,美术,绘画,,painting
+N002,文化,美术,油画,,oil painting
+N003,文化,美术,国画,中国画,Chinese painting
+N004,文化,美术,水彩画,,watercolor
+N005,文化,美术,书法,,calligraphy
+N006,文化,美术,陶艺,陶瓷,pottery
+N008,文化,爱好,电影,,film
+N010,文化,表演,戏曲,京剧;戏剧,Chinese opera
+N012,文化,表演,舞蹈,街舞;杂技,dance
+N015,文化,爱好,阅读,读书;写作,reading
+N017,文化,爱好,手工,DIY;编织;刺绣;剪纸,handicraft
+N021,文化,爱好,棋牌,围棋;象棋,chess and cards
+N024,文化,爱好,游戏,电子游戏,video game
+N028,文化,爱好,收藏,,collection
+O002,行业,农业,耕作,耕种;收割,farming
+O004,行业,农业,渔业,捕鱼,fishery
+O005,行业,农业,放牧,畜牧,herding
+O006,行业,农业,茶园,采茶,tea plantation
+O007,行业,工业,工厂,厂房;车间;生产线,factory
+O010,行业,工业,采矿,矿山,mining
+O011,行业,工业,建筑工地,施工,construction site
+O016,行业,工业,实验室,,laboratory
+Q001,风格,题材,纪实,,documentary photography
+Q004,风格,题材,街拍,街拍,street photography
+Q009,风格,题材,黑白,,black and white photography
+Q010,风格,题材,极简,极简,minimalism
+Q011,风格,题材,胶片,胶片摄影,film photography
+Q012,风格,题材,复古,怀旧风,vintage
+Q013,风格,技法,微距,,macro
+Q014,风格,技法,长曝光,延时摄影,long exposure
+Q016,风格,技法,航拍,无人机摄影,aerial photography
+Q017,风格,技法,全景,,panorama
+Q018,风格,技法,浅景深,背景虚化,shallow depth of field
+Q019,风格,技法,逆光,,backlit
+Q020,风格,技法,剪影,,silhouette
+Q026,风格,光线,黄金时刻,,golden hour
+Q027,风格,光线,蓝调时刻,,blue hour
+X015,风格,题材,二次元,动画风;动漫风,anime
+X016,风格,题材,日系,日式;和风,japanese style
+X017,风格,题材,赛博朋克,未来都市,cyberpunk
+X018,风格,题材,像素风,像素画,pixel art
+X019,风格,题材,小清新,清新;清淡,fresh style
+X026,风格,题材,卡通,动画片;卡通画,cartoon
+X027,风格,题材,漫画,连环画;漫改;动漫,comic
+X028,风格,题材,cosplay,角色扮演;cos,cosplay
+S001,材质,质感,纹理,石纹;布料纹理,texture
+S002,材质,质感,木纹,,wood grain
+S005,材质,质感,金属质感,,metallic texture
+S007,材质,质感,纸张,纸质,paper
+S008,材质,质感,玻璃,,glass
+S009,材质,质感,水面波纹,,water ripples
+S010,材质,质感,墙面,墙壁,wall
+S012,材质,背景,涂鸦,,graffiti
+S013,材质,背景,纯色背景,,solid background
+X001,文档,截图,截图,截屏;屏幕截图;软件界面;网页截图,screenshot
+X002,文档,截图,聊天截图,对话截图,chat screenshot
+X003,文档,截图,游戏画面,游戏截图,game screen
+X004,文档,办公文档,文档,文件,document
+X005,文档,办公文档,表格,电子表格,spreadsheet
+X006,文档,办公文档,白板,白板板书,whiteboard
+X007,文档,证件,证件,证明文件;名片;驾驶证,document card
+X008,文档,证件,身份证,证件原件,ID card
+X009,文档,证件,护照,签证,passport
+X010,文档,证件,证书,奖状;毕业证,certificate
+X011,文档,证件,银行卡,信用卡,bank card
+X012,文档,单据,发票,报销单;账单;票据,invoice
+X013,文档,单据,合同,协议,contract
+X014,文档,单据,机票,登机牌,boarding pass

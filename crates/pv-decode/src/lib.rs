@@ -20,10 +20,12 @@ pub mod bitmap;
 pub mod decoder;
 pub mod encode;
 pub mod raw;
+pub mod thumbs;
 pub mod transform;
 
 pub use bitmap::{
-    decode_animation, decode_gif, decode_webp_animation, Animation, AnimationFrame, BitmapBackend,
+    decode_animation, decode_gif, decode_jpeg_from_bytes, decode_webp_animation, Animation,
+    AnimationFrame, BitmapBackend,
 };
 pub use decoder::{
     fit_within, DecodePurpose, DecodeTarget, DecoderRegistry, ImageDecoder, ImageInfo, RgbaImage,
@@ -33,6 +35,7 @@ pub use encode::{
     not_writable_reason, write_rgba_atomic, write_rgba_atomic_with_exif,
 };
 pub use raw::EmbeddedPreviewPipeline;
+pub use thumbs::{decode_scaled, make_thumbnail, make_thumbnail_with_bitmap, probe_dimensions};
 pub use transform::{
     crop_normalized, crop_to_aspect, rotate180, rotate90_ccw, rotate90_cw, rotate90_steps,
 };

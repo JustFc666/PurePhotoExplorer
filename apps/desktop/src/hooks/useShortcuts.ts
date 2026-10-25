@@ -46,6 +46,8 @@ interface ShortcutsProps {
   onPrev: () => void
   /** 全屏切换（F） */
   onToggleFullscreen: () => void
+  /** 幻灯片放映开/关（S）。放映期间本 hook 整体关闭，所以这个键只在非放映时生效 */
+  onToggleSlideshow: () => void
   /** 最大化 / 还原（M） */
   onToggleMaximize: () => void
   /** 图片信息浮层（I） */
@@ -71,6 +73,8 @@ interface ShortcutsProps {
   onEscape: () => boolean
   /** 当前是否全屏（决定 Esc 是退出全屏还是适应窗口） */
   isFullscreen: boolean
+  /** 关掉键盘监听（图库模式下由管理器接管，避免快捷键串台） */
+  enabled?: boolean
 }
 
 export function useShortcuts({
@@ -81,6 +85,7 @@ export function useShortcuts({
   onNext,
   onPrev,
   onToggleFullscreen,
+  onToggleSlideshow,
   onToggleMaximize,
   onToggleInfo,
   onToggleAdjust,
@@ -88,8 +93,10 @@ export function useShortcuts({
   onEscape,
   isFullscreen,
   onRefresh,
+  enabled = true,
 }: ShortcutsProps) {
   useEffect(() => {
+    if (!enabled) return
     const handler = (e: KeyboardEvent) => {
       // 输入框内不拦截
       const target = e.target as HTMLElement | null
@@ -116,6 +123,13 @@ export function useShortcuts({
       if (!e.ctrlKey && !e.metaKey && e.key.toLowerCase() === 'f') {
         e.preventDefault()
         onToggleFullscreen()
+        return
+      }
+
+      // S 幻灯片放映（不带修饰键）
+      if (!e.ctrlKey && !e.metaKey && e.key.toLowerCase() === 's') {
+        e.preventDefault()
+        onToggleSlideshow()
         return
       }
 
@@ -242,5 +256,5 @@ export function useShortcuts({
 
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
-  }, [onOpen, onPrint, onAction, hasImage, onNext, onPrev, onToggleFullscreen, onToggleMaximize, onToggleInfo, onToggleAdjust, onToggleHelp, onEscape, isFullscreen, onRefresh])
+  }, [onOpen, onPrint, onAction, hasImage, onNext, onPrev, onToggleFullscreen, onToggleSlideshow, onToggleMaximize, onToggleInfo, onToggleAdjust, onToggleHelp, onEscape, isFullscreen, onRefresh, enabled])
 }

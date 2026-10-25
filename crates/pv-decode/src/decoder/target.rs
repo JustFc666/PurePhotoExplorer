@@ -60,7 +60,7 @@ impl DecodeTarget {
 pub fn fit_within(width: u32, height: u32, max_edge: Option<u32>) -> (u32, u32) {
     match max_edge {
         None => (width, height),
-        Some(m) if m == 0 => (width, height),
+        Some(0) => (width, height),
         Some(m) => {
             let longest = width.max(height);
             if longest <= m {

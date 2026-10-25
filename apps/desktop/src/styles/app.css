@@ -249,6 +249,13 @@
   backface-visibility: hidden;
 }
 
+/* 放映切换的「幻影」层（上一张的画面，用来播滑出/淡出）。
+   位置与主画布完全一致，靠 DOM 顺序压在上面；平时宽高为 0，什么也不显示。 */
+.pv-slide-ghost {
+  pointer-events: none;
+  will-change: opacity, translate;
+}
+
 /* ── 缩放控件 ──
  * 内联在底部信息栏：当前百分比 + 可拖拽滑块
  */
@@ -1266,6 +1273,139 @@
   border-bottom: 1px solid var(--pv-border-subtle);
 }
 
+/* ── 设置：浏览与显示（分段按钮 / 步进器 / 缓存行） ──────────────
+   ⛔ 分段按钮必须自绘：原生 `<select>` 在自绘无边框窗口里弹层不跟随深色配色，
+   深底深字等于看不见（2026-10-17 踩过）。 */
+.pv-setting-seg {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
+  margin: 6px 0 14px;
+}
+
+/* 三选一的场景（如放映特效）——四等分会挤成窄条 */
+.pv-setting-seg.is-3 {
+  grid-template-columns: repeat(3, 1fr);
+}
+
+/* 行内的分段控件：不占整行，跟着右侧控件走 */
+.pv-setting-ctl-grow {
+  flex: 1;
+  justify-content: flex-end;
+}
+
+.pv-setting-ctl-grow .pv-setting-seg {
+  flex: 1;
+  margin: 0;
+  max-width: 260px;
+}
+
+.pv-seg {
+  height: 28px;
+  padding: 0 6px;
+  border-radius: 6px;
+  border: 1px solid var(--pv-border);
+  background: var(--pv-bg-input);
+  color: var(--pv-text-secondary);
+  font-size: 12px;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pv-seg:hover {
+  border-color: var(--pv-border-strong);
+  color: var(--pv-text-primary);
+}
+
+.pv-seg.is-on {
+  border-color: var(--pv-accent);
+  background: var(--pv-accent-soft);
+  color: var(--pv-accent);
+  font-weight: 600;
+}
+
+/* 一行「标签 ……… 控件」：标签靠左、控件靠右 */
+.pv-setting-line {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 32px;
+  margin-bottom: 8px;
+}
+
+.pv-setting-key {
+  font-size: 13px;
+  color: var(--pv-text-primary);
+}
+
+.pv-setting-ctl {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.pv-setting-val {
+  font-size: 12px;
+  color: var(--pv-text-tertiary);
+  font-variant-numeric: tabular-nums;
+}
+
+/* 数值右对齐到固定宽度：滑杆拖动时数字变化不会把整行推来推去 */
+.pv-setting-val-num {
+  min-width: 58px;
+  text-align: right;
+}
+
+/* 滑杆：只染手柄/已选段，轨道交给系统（自绘轨道反而在 DPI 缩放下会错位） */
+.pv-range {
+  width: 150px;
+  accent-color: var(--pv-accent);
+  cursor: pointer;
+}
+
+.pv-range:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+/* 步进器：两个小方按钮夹一个数值 */
+.pv-step {
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border-radius: 5px;
+  border: 1px solid var(--pv-border);
+  background: var(--pv-bg-input);
+  color: var(--pv-text-secondary);
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.pv-step:hover:not(:disabled) {
+  border-color: var(--pv-accent);
+  color: var(--pv-accent);
+}
+
+.pv-step:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.pv-step-value {
+  min-width: 44px;
+  text-align: center;
+  font-size: 12.5px;
+  color: var(--pv-text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
 .pv-check-all .pv-check-label {
   font-size: 13px;
   font-weight: 500;
@@ -1664,6 +1804,10 @@
 .pv-ctx {
   position: fixed;
   z-index: 40;
+  /* 条目多时（标签弹层可能有十几个）不给无限长：到边就滚动，别被窗口裁掉 */
+  max-height: calc(100vh - 16px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
   padding: 4px;
   border-radius: 8px;
   background: var(--pv-bg-elevated);
@@ -1717,8 +1861,42 @@
   cursor: not-allowed;
 }
 
+/* 勾选方框（多选筛选菜单）：空框 / 打勾两态 */
+.pv-ctx-check {
+  flex: 0 0 auto;
+  width: 12px;
+  height: 12px;
+  margin-right: 7px;
+  border-radius: 3px;
+  border: 1px solid var(--pv-border-strong, #4a4a55);
+  background: transparent;
+  display: inline-grid;
+  place-items: center;
+}
+.pv-ctx-check.is-on {
+  border-color: var(--pv-accent);
+  background: var(--pv-accent);
+}
+.pv-ctx-check.is-on::after {
+  content: '';
+  width: 3px;
+  height: 6px;
+  border: solid #fff;
+  border-width: 0 1.6px 1.6px 0;
+  transform: rotate(45deg) translateY(-1px);
+}
+
 .pv-ctx-label {
   white-space: nowrap;
+  /* 超长标签（如 EXIF 镜头串）要省略，不能把菜单撑破 */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  /*
+   * 吃掉剩余空间，让文字靠左。
+   * 菜单项是 `justify-content: space-between`（本来为了让右侧的快捷键提示贴边），
+   * 没有 hint 的项（排序菜单就是）不加这行会被推到最右边。
+   */
+  margin-right: auto;
 }
 
 .pv-ctx-hint {
@@ -1726,5 +1904,204 @@
   margin-left: auto;
   font-size: 11px;
   color: var(--pv-text-tertiary);
+  font-variant-numeric: tabular-nums;
+}
+
+/* 有子菜单的项：把 `▸` 顶到最右，并给点余量免得和文字贴住 */
+.pv-ctx-item.has-sub .pv-ctx-hint {
+  margin-left: 12px;
+  font-size: 10px;
+  opacity: 0.75;
+}
+
+/* ── 输入名称的小弹窗（PromptDialog） ──────────────────────────
+   Tauri 的 dialog 插件没有 prompt，只能自己做一个。 */
+.pv-modal-mask {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.42);
+}
+
+.pv-modal {
+  width: min(380px, calc(100vw - 32px));
+  padding: 16px;
+  border-radius: 10px;
+  background: var(--pv-bg-elevated);
+  border: 1px solid var(--pv-border-strong);
+  box-shadow: var(--pv-shadow-lg);
+}
+
+.pv-modal-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--pv-text-primary);
+}
+
+.pv-modal-label {
+  margin-top: 6px;
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--pv-text-tertiary);
+}
+
+.pv-modal-input {
+  width: 100%;
+  margin-top: 10px;
+  height: 30px;
+  padding: 0 10px;
+  border-radius: 6px;
+  border: 1px solid var(--pv-border);
+  background: var(--pv-bg-input);
+  color: var(--pv-text-primary);
+  font-size: 13px;
+}
+
+.pv-modal-input:focus {
+  outline: none;
+  border-color: var(--pv-accent);
+  box-shadow: 0 0 0 3px var(--pv-accent-soft);
+}
+
+/* 提交失败的原因（如「已经有同名图库了」）。放在输入框下面，弹窗不关。 */
+.pv-modal-err {
+  margin-top: 8px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--pv-danger, #e07070);
+}
+
+.pv-modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+/* ── 单图模式左侧胶片条 ──
+ * 与画布同处 `.pv-main`（`display: flex`），所以它是「左侧一列」，
+ * 画布自动占剩余宽度；`useImageView` 的 ResizeObserver 会跟着 refit。
+ *
+ * 宽度 108px：缩略图 96×72（4:3）+ 文件名。再宽会明显挤压画面。
+ */
+/* ── 幻灯片放映：暂停提示 ─────────────────────────────────────
+   只在暂停时出现（播放中任何浮层都挡照片）。
+   `pointer-events: none` —— 它只是提示，不能吃掉点击（全屏下用户可能还想拖动画布）。 */
+.pv-slide-pause {
+  position: fixed;
+  left: 50%;
+  top: 24px;
+  transform: translateX(-50%);
+  z-index: 40;
+  padding: 6px 14px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.62);
+  color: #fff;
+  font-size: 12px;
+  letter-spacing: 0.02em;
+  pointer-events: none;
+  user-select: none;
+}
+
+.pv-rail {
+  flex: 0 0 108px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  background: var(--pv-bg-surface);
+  border-right: 1px solid var(--pv-border-subtle);
+  user-select: none;
+  scrollbar-width: thin;
+}
+.pv-rail-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 12px;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--pv-text-tertiary);
+  text-align: center;
+}
+.pv-rail-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  width: 100%;
+  padding: 4px 6px;
+  box-sizing: border-box;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: center;
+  cursor: pointer;
+}
+.pv-rail-cell:hover {
+  background: var(--pv-hover);
+}
+.pv-rail-thumb {
+  display: block;
+  width: 100%;
+  border-radius: 5px;
+  outline: 2px solid transparent;
+  outline-offset: -2px;
+  transition: outline-color 0.1s ease;
+}
+/* 当前项：只描边，不做位移/缩放 —— 翻页时整列会跟着滚，加动画容易看着晕 */
+.pv-rail-cell.is-current .pv-rail-thumb {
+  outline-color: var(--pv-accent);
+}
+.pv-rail-name {
+  font-size: 10.5px;
+  line-height: 13px;
+  color: var(--pv-text-tertiary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.pv-rail-cell.is-current .pv-rail-name {
+  color: var(--pv-text-primary);
+}
+
+/* ── 打印预览的批量翻页（`page` prop 存在时才渲染）──
+ * 只换「预览哪一张」，版面参数对整批共用；
+ * 因此放在标题栏里，而不是做成纸张区上的翻页箭头 —— 它不属于版面的一部分。
+ */
+.pv-print-pager {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--pv-text-secondary);
+  user-select: none;
+}
+.pv-print-pager button {
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--pv-border);
+  border-radius: 5px;
+  background: var(--pv-bg-elevated);
+  color: var(--pv-text-primary);
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+}
+.pv-print-pager button:hover:not(:disabled) {
+  background: var(--pv-hover);
+}
+.pv-print-pager button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.pv-print-pageno {
+  min-width: 52px;
+  text-align: center;
   font-variant-numeric: tabular-nums;
 }

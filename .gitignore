@@ -26,3 +26,21 @@ Thumbs.db
 # 大型二进制素材 / QA 截图：保留在本地，不入仓库（体积过大，且含个人照片）
 test-image/
 docs/verification/
+# AI 模型权重（719MB，脚本按需下载，见 docs/AI自动打标与人脸识别-可行性.md）
+assets/ai/chinese-clip/
+assets/ai/chinese-clip-h14/
+assets/ai/tag_result.json
+# 人脸模型与探针产物（模型几十 MB、拼图含私人照片，一律不入仓库）
+assets/ai/face/*.onnx
+assets/ai/face/*.caffemodel
+assets/ai/clusters/
+assets/ai/face_emb.json
+assets/ai/face_probe.json
+assets/ai/face_probe_smoke.json
+assets/ai/probe_*.json
+assets/ai/scores_all.json
+assets/ai/label_sample*.json
+assets/ai/run_*.log
+
+# 小红书素材（私人照片，不入仓库）
+rednote/
