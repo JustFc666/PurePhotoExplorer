@@ -11,6 +11,9 @@ dist/
 backups/
 Temp/
 
+# 清理暂存区（确认无误后可整目录删除）
+.trash-*/
+
 # OS / IDE
 .DS_Store
 Thumbs.db

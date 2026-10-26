@@ -35,10 +35,6 @@ const OTHER = 'EXIF / 其他'
  */
 const PER_ROW = 6
 const MAX_TAGS = PER_ROW * 2
-/**
- * 每行固定几个标签（用户 2026-10-24 要求「每行 8 个」）。
- * ⛔ 不用 flex-wrap 自然折行：窗口一宽就全挤进一行，用户要的是**恒定两行**。
- */
 
 interface Props {
   /** 当前范围内的标签（名字 + 张数），来自 `mgr.tags` */
