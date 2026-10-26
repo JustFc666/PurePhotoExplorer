@@ -126,6 +126,26 @@ def main() -> int:
         default=0.0,
         help="簇内一致性门槛：一张脸与同簇其它脸的平均相似度低于它就被踢出",
     )
+    ap.add_argument(
+        "--min-cluster-sim",
+        type=float,
+        default=0.55,
+        help="整簇可信度：簇内**平均两两相似度**低于它的整簇解散（0 = 关闭）。"
+        "用来干掉「木纹+耳朵+婴儿」这种误检拼盘，而不逐张动其他脸",
+    )
+    ap.add_argument(
+        "--weak-max-size",
+        type=int,
+        default=6,
+        help="「弱簇」判定的规模上限：只有 ≤ 这个张数的簇才可能被判为误检拼盘",
+    )
+    ap.add_argument(
+        "--weak-max-pair",
+        type=float,
+        default=0.68,
+        help="「弱簇」判定的相似度上限：簇内最高两两相似度低于它才算弱簇"
+        "（真人即使平均低，也总会有几对 ≥0.7 的强相似）",
+    )
     ap.add_argument("--dry", action="store_true", help="只报告不写库")
     ap.add_argument("--reset", action="store_true", help="清掉所有人物（包括已命名的）重来")
     args = ap.parse_args()
@@ -170,6 +190,39 @@ def main() -> int:
         for idx, lb in enumerate(labels.tolist()):
             groups.setdefault(lb, []).append(idx)
         keep = {lb: g for lb, g in groups.items() if len(g) >= args.min_faces}
+
+        # 整簇可信度：簇内平均两两相似度低于门槛就整簇解散。
+        # ⭐ 这条只否决"整簇都不可信"的组合，**不逐张动脸** ——
+        #    所以清晰的组、少量照片的组、侧脸/小脸都不受影响。
+        if args.min_cluster_sim > 0 and keep:
+            for lb in list(keep.keys()):
+                g = keep[lb]
+                block = sim[np.ix_(g, g)]
+                n = len(g)
+                mean_pair = float((block.sum() - n) / (n * (n - 1)))
+                max_pair = float(np.max(block - np.eye(n) * 9))
+                # ⭐ 三个条件同时满足才解散：
+                #    ① 规模小（≤ weak-max-size）—— 几十张的真人簇不动
+                #    ② 平均相似度低（< min-cluster-sim）
+                #    ③ **没有任何一对强相似**（< weak-max-pair）
+                #   真人即使角度/光变化大、平均只有 0.52，也总会有几对 ≥0.7；
+                #   而"木纹+耳朵+婴儿"这种拼盘最高只有 0.657。
+                if (
+                    n <= args.weak_max_size
+                    and mean_pair < args.min_cluster_sim
+                    and max_pair < args.weak_max_pair
+                ):
+                    keep.pop(lb)
+                    print(
+                        f"  解散簇 #{lb}：{n} 张脸，平均 {mean_pair:.3f}，最高 {max_pair:.3f}"
+                    )
+                    if args.dry:
+                        for i in g[:6]:
+                            nm = con.execute(
+                                "SELECT i.rel_name FROM faces f JOIN images i ON i.id=f.image_id WHERE f.id=?",
+                                (face_ids[i],),
+                            ).fetchone()
+                            print(f"      - {nm[0][:56] if nm else '?'}")
 
         print(f"人脸 {len(face_ids)} 张 · 簇 {len(groups)} 个 · 其中 ≥{args.min_faces} 张的 {len(keep)} 个")
         print(f"单例簇 {int((counts == 1).sum())} 个（不建人物，仍保留 faces 行）")

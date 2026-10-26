@@ -11,7 +11,9 @@ import sys
 import subprocess
 import time
 
-os.chdir(r'C:\Users\Fc\WorkBuddy\2026-10-02-22-48-04')
+# 工程根目录按脚本位置推导（不要写死盘符：2026-10-26 工程从 C: 迁到 J:）
+_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+os.chdir(_ROOT)
 import importlib.util
 
 spec = importlib.util.spec_from_file_location('pvi', 'scripts/pv-input.py')
@@ -77,7 +79,7 @@ try:
             # 会被 cmd 报「系统找不到指定的路径」（路径里有中文/斜杠时尤其容易踩到）
             subprocess.run(
                 [sys.executable, 'scripts/pv-shot-win.py', a['file'], str(hwnd)],
-                cwd=r'C:\Users\Fc\WorkBuddy\2026-10-02-22-48-04',
+                cwd=_ROOT,
                 check=False,
             )
             u.SetWindowPos(hwnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE)

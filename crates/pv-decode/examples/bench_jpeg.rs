@@ -12,9 +12,11 @@ use pv_decode::{BitmapBackend, DecodePurpose, DecodeTarget, ImageDecoder};
 use std::time::Instant;
 
 fn main() {
+    // 默认样例图按 crate 位置推导（2026-10-26 工程迁到 J: 后不再写死绝对路径）
+    let default_path = concat!(env!("CARGO_MANIFEST_DIR"), "/../../test-image/DSC9515.JPG");
     let path = std::env::args()
         .nth(1)
-        .unwrap_or_else(|| r"C:\Users\Fc\WorkBuddy\2026-10-02-22-48-04\test-image\DSC9515.JPG".to_string());
+        .unwrap_or_else(|| default_path.to_string());
     let p = std::path::Path::new(&path);
     if !p.exists() {
         eprintln!("文件不存在: {}", p.display());

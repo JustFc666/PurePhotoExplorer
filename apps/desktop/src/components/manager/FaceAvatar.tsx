@@ -30,9 +30,12 @@ interface Props {
 /**
  * 裁剪时四周留白比例（相对脸框边长）。
  *
- * 2026-10-25 从 0.12 收到 0.06：YuNet 的框本身已经含额头和下巴，
- * 再外扩 12% 等于把脸缩小一圈 —— 同样的源像素被摊到更多背景上，看起来更糊。
- * 留 6% 只是防止边缘贴太紧。
+ * ⭐ 2026-10-26 回退定稿：**恢复外扩 0.06**。
+ * 试过内收 0.92（脸占满、等效清晰度 +33%），用户实测「效果不好」——
+ * 切掉额头/下巴后看着像被裁坏的证件照，认人反而变差。
+ * 现状：外扩 6% 保留完整头部轮廓，清晰度由封面脸尺寸（最大脸规则）保证。
+ *
+ * ⛔ 别再试 `FACE_FILL` 内收方案。
  */
 const PAD = 0.06
 
@@ -85,7 +88,7 @@ export function FaceAvatar({ face, size = 80, className, fallback }: Props) {
 
         const W = img.width
         const H = img.height
-        /* 归一化框 → 像素框，再按 PAD 外扩 */
+        /* 归一化框 → 像素框，再按 PAD 外扩（回退版：保留完整头部轮廓） */
         const bw = face.w * W
         const bh = face.h * H
         const pad = Math.max(bw, bh) * PAD
