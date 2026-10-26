@@ -58,7 +58,8 @@ PurePhotoExplorer 是一个轻量、快速的本地图片浏览器、编辑器�
 ```bash
 cd apps/desktop && npm install && npm run build
 cd ../.. && cargo build --release
-# 产物：target/release/PurePhotoExplorer.exe
+# 产物：target/release/photovault.exe
+# 发布时再改名为 PurePhotoExplorer.exe（crate 名沿用 photovault，未改）
 ```
 
 > ⚠️ 改过 `apps/desktop/src-tauri/tauri.conf.json` 之后，必须先
