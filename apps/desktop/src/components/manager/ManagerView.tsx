@@ -49,6 +49,7 @@ import {
   type ThumbTier,
 } from '../../ipc/manager'
 import { subscribeThumbPending } from '../../ipc/thumbQueue'
+import { notifyPeopleChanged } from '../../lib/peopleEvents'
 import { useFsTree } from '../../hooks/useFsTree'
 import { useGridWindow } from '../../hooks/useGridWindow'
 import { errText, useManager, type GridItem } from '../../hooks/useManager'
@@ -1176,6 +1177,15 @@ export function ManagerView(props: Props) {
     // 删除/重命名：行会消失或 key 会变，缩略图自然重取，**不需要**动版本号
     if (mgr.isBrowsing) await mgr.rescan()
     else mgr.reload()
+    /*
+     * 一并广播「人物数据可能变了」。
+     *
+     * 这里走的是移动 / 删除 / 旋转保存 / EXIF 摆正等所有「索引已改」的批量出口。
+     * 其中重命名、旋转并不动脸，多发一次事件只是让人像条多拉一次列表（一次查询，
+     * 开销可忽略）；但反过来漏发就会让界面停在旧数字上且无法自愈
+     * —— 2026-10-27「更多图像 共31人」不更新就是这么来的。宁可多发。
+     */
+    notifyPeopleChanged()
   }, [mgr])
 
   /** 删除整个标签（照片不动，只拆挂载）。 */
@@ -1477,8 +1487,7 @@ export function ManagerView(props: Props) {
   /**
    * 把当前人物的头像换成「这张图里他的脸」。
    *
-   * 成功后广播 `pv:person-renamed` —— 人像条与人像墙都在监听它重拉列表，
-   * 语义上是「人物数据变了」，改名和换封面共用同一个事件。
+   * 成功后广播人物变更事件 —— 人像条与人像墙都在监听它重拉列表。
    * 头像位图不用手动清：`cropCache` 的 key 含 `face.id`，换封面后 face.id 变了，
    * 旧缓存天然不会被命中。
    */
@@ -1489,7 +1498,7 @@ export function ManagerView(props: Props) {
       console.warn('[person] 这张图里没有该人物的脸', { personId, imageId })
       return
     }
-    window.dispatchEvent(new CustomEvent('pv:person-renamed'))
+    notifyPeopleChanged()
   }, [])
 
   const cardMenuItems = useMemo<ContextMenuItem[]>(() => {

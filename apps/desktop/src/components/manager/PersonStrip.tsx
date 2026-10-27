@@ -18,6 +18,7 @@
 
 import { useEffect, useState } from 'react'
 import { managerPeople, type PersonItem } from '../../ipc/people'
+import { onPeopleChanged } from '../../lib/peopleEvents'
 import { FaceAvatar } from './FaceAvatar'
 
 interface Props {
@@ -80,16 +81,18 @@ export function PersonStrip({ onOpenWall, onOpenPerson, visible, libraryId }: Pr
     }
   }, [visible, libraryId])
 
-  /* 浮层里改了名 → 这里跟着重拉（否则筛选后的标题还是旧名字） */
+  /*
+   * 人物数据变了就重拉：改名、换封面、合并/拆分/删人物，以及**删照片 / 移除目录**
+   * （脸会跟着图一起没）。2026-10-27 用户报「删除后『更多图像 共31人』没更新」——
+   * 就是删目录这条路径漏了广播，数字停在旧值上。
+   */
   useEffect(() => {
-    const onRenamed = () => {
-      if (!visible) return
+    if (!visible) return
+    return onPeopleChanged(() => {
       void managerPeople(1, libraryId)
         .then(setPeople)
         .catch(() => undefined)
-    }
-    window.addEventListener('pv:person-renamed', onRenamed)
-    return () => window.removeEventListener('pv:person-renamed', onRenamed)
+    })
   }, [visible, libraryId])
 
   if (!visible) return null

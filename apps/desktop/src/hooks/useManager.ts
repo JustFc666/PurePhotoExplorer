@@ -18,6 +18,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { notifyPeopleChanged } from '../lib/peopleEvents'
 import {
   managerAddToLibrary,
   managerCount,
@@ -1078,6 +1079,12 @@ export function useManager(): ManagerApi {
         // 正看着被移除的目录就退回「全部照片」，否则会停在一个已经不存在的范围上
         if (scope.kind === 'folder' && scope.id === f.id) setScope({ kind: 'all' })
         await refreshMeta()
+        /*
+         * 目录里的照片连同**人脸**一起被删了（`persons` 会少人、`face_count` 会变），
+         * 人像条和人像墙各自持有一份人物列表，必须通知它们重拉 ——
+         * 否则会一直显示旧的「共 N 人」。
+         */
+        notifyPeopleChanged()
       } catch (e) {
         setError(errText(e))
       } finally {

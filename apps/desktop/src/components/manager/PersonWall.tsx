@@ -15,6 +15,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { managerPeople, managerRenamePerson, type PersonItem } from '../../ipc/people'
+import { notifyPeopleChanged } from '../../lib/peopleEvents'
 import { FaceAvatar } from './FaceAvatar'
 
 export interface Anchor {
@@ -85,7 +86,7 @@ export function PersonWall({ anchor, currentId, onClose, onSelect }: Props) {
     /* 本地先更新，避免等一次往返才看到新名字 */
     setPeople((prev) => prev.map((x) => (x.id === p.id ? { ...x, name } : x)))
     void managerRenamePerson(p.id, name)
-      .then(() => window.dispatchEvent(new CustomEvent('pv:person-renamed')))
+      .then(notifyPeopleChanged)
       .catch(() => undefined)
   }
 
@@ -195,7 +196,7 @@ export function PersonWall({ anchor, currentId, onClose, onSelect }: Props) {
                 setMenu(null)
                 setPeople((prev) => prev.map((x) => (x.id === p.id ? { ...x, name: null } : x)))
                 void managerRenamePerson(p.id, null)
-                  .then(() => window.dispatchEvent(new CustomEvent('pv:person-renamed')))
+                  .then(notifyPeopleChanged)
                   .catch(() => undefined)
               }}
             >
