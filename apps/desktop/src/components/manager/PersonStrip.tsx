@@ -16,9 +16,11 @@
  * ⛔ 这里不放"设置/齿轮"：AI 设置唯一入口是顶栏的「设置」（用户 2026-10-24 定）。
  */
 
-import { useEffect, useState } from 'react'
-import { managerPeople, type PersonItem } from '../../ipc/people'
-import { onPeopleChanged } from '../../lib/peopleEvents'
+import { useEffect, useMemo, useState } from 'react'
+import { managerPeople, managerRenamePerson, type PersonItem } from '../../ipc/people'
+import { notifyPeopleChanged, onPeopleChanged } from '../../lib/peopleEvents'
+import { ContextMenu, useContextMenu, type ContextMenuItem } from '../chrome/ContextMenu'
+import { PromptDialog } from '../chrome/PromptDialog'
 import { FaceAvatar } from './FaceAvatar'
 
 interface Props {
@@ -41,6 +43,11 @@ function avatarText(p: PersonItem, index: number): string {
 
 export function PersonStrip({ onOpenWall, onOpenPerson, visible, libraryId }: Props) {
   const [people, setPeople] = useState<PersonItem[]>([])
+  /** 右键点中的头像 → 菜单的「作用对象」（菜单项里要用它） */
+  const [ctxPerson, setCtxPerson] = useState<PersonItem | null>(null)
+  /** 正在命名的人物。非 null 时弹输入框。 */
+  const [renaming, setRenaming] = useState<PersonItem | null>(null)
+  const ctx = useContextMenu()
   /**
    * 一屏能放几个头像：按窗口宽度估（每格 80 + 8 间距）。
    * ⛔ 不用 ResizeObserver 量自身宽度 —— 自身宽度又取决于显示几个头像，会互相牵制。
@@ -95,6 +102,41 @@ export function PersonStrip({ onOpenWall, onOpenPerson, visible, libraryId }: Pr
     })
   }, [visible, libraryId])
 
+  /**
+   * 右键头像的菜单项 —— **和照片墙里右键头像完全一致**（命名… / 取消命名）。
+   *
+   * ⛔ 别改回「右键就打开浮层」：原来就是这么做的，用户 2026-10-27 明确要求
+   * 两处行为一致（浮层里能改名、人像条里也能，不必绕一层）。
+   *
+   * ⚠️ 这个 `useMemo` **必须留在下面所有提前 `return null` 之前**。
+   * 曾经放在 `if (!visible) return null` 后面，`visible` 由 false 变 true 时
+   * hook 数量变了 → React 抛 "Rendered more hooks than during the previous render"
+   * → **整个应用白屏**（2026-10-27 踩过，差点去查渲染链路）。
+   */
+  const personMenuItems = useMemo<ContextMenuItem[]>(() => {
+    const p = ctxPerson
+    if (!p) return []
+    return [
+      {
+        id: 'rename',
+        label: '命名…',
+        onSelect: () => setRenaming(p),
+      },
+      {
+        id: 'unname',
+        label: '取消命名',
+        separatorBefore: true,
+        onSelect: () => {
+          /* 本地先改，别让用户等一个来回才看到效果 */
+          setPeople((prev) => prev.map((x) => (x.id === p.id ? { ...x, name: null } : x)))
+          void managerRenamePerson(p.id, null)
+            .then(notifyPeopleChanged)
+            .catch(() => undefined)
+        },
+      },
+    ]
+  }, [ctxPerson])
+
   if (!visible) return null
 
   /*
@@ -107,6 +149,23 @@ export function PersonStrip({ onOpenWall, onOpenPerson, visible, libraryId }: Pr
   const overflow = people.length > fit
   const shown = people.slice(0, overflow ? fit - 1 : fit)
   const rest = Math.max(0, persons - shown.length)
+
+
+  const closePersonMenu = () => {
+    setCtxPerson(null)
+    ctx.close()
+  }
+
+  /** 提交命名。名字没变或为空就什么都不做。 */
+  const commitName = (p: PersonItem, raw: string) => {
+    const name = raw.trim()
+    setRenaming(null)
+    if (!name || name === (p.name ?? '')) return
+    setPeople((prev) => prev.map((x) => (x.id === p.id ? { ...x, name } : x)))
+    void managerRenamePerson(p.id, name)
+      .then(notifyPeopleChanged)
+      .catch(() => undefined)
+  }
 
   /* 本图库一个人物都没有 → **整块不渲染**（连"开始识别"也不要，用户 2026-10-25 定） */
   if (persons === 0) return null
@@ -125,10 +184,9 @@ export function PersonStrip({ onOpenWall, onOpenPerson, visible, libraryId }: Pr
             )}px`}
             onClick={() => onOpenPerson(p.id, p.name ?? '未命名')}
             onContextMenu={(e) => {
-              /* 右键 = 打开人像墙浮层（命名/取消命名都在那里面，两处菜单保持一致） */
-              e.preventDefault()
-              const r = (e.currentTarget as HTMLElement).getBoundingClientRect()
-              onOpenWall({ left: r.left, right: r.right, bottom: r.bottom })
+              /* 右键 = 命名 / 取消命名，与照片墙里右键头像完全一致 */
+              setCtxPerson(p)
+              ctx.open(e)
             }}
           >
             <FaceAvatar face={p.cover} size={80} fallback={avatarText(p, i)} />
@@ -151,6 +209,28 @@ export function PersonStrip({ onOpenWall, onOpenPerson, visible, libraryId }: Pr
         )}
       </div>
 
+      {/* 右键头像的菜单（命名… / 取消命名），和照片墙那套一致 */}
+      {ctx.state && ctxPerson && (
+        <ContextMenu
+          key={`${ctx.state.x},${ctx.state.y}`}
+          position={{ x: ctx.state.x, y: ctx.state.y }}
+          items={personMenuItems}
+          onClose={closePersonMenu}
+        />
+      )}
+
+      {/* 命名输入框（PromptDialog 内部已 portal 到 body，不会被标题区的 overflow 裁掉） */}
+      {renaming && (
+        <PromptDialog
+          title="命名人物"
+          label={`这个人有 ${renaming.faceCount} 张脸。命名只写索引，不动任何照片。`}
+          placeholder="人物名称"
+          initial={renaming.name ?? ''}
+          okLabel="保存"
+          onOk={(name) => commitName(renaming, name)}
+          onCancel={() => setRenaming(null)}
+        />
+      )}
     </div>
   )
 }

@@ -14,6 +14,7 @@
  */
 
 import { useEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 
 interface Props {
   title: string
@@ -63,7 +64,7 @@ export function PromptDialog({
     if (trimmed) onOk(trimmed)
   }
 
-  return (
+  return createPortal(
     <div
       className="pv-modal-mask"
       // 点遮罩 = 取消（点卡片本身不关）
@@ -106,6 +107,7 @@ export function PromptDialog({
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   )
 }
