@@ -11,6 +11,7 @@ import { describe, expect, it } from 'vitest'
 import {
   ASPECT_VALUES,
   MIN_FRAME_SCALE,
+  canPanImage,
   activeFrameRect,
   aspectCenterCrop,
   computeFitFor,
@@ -1130,5 +1131,48 @@ describe('裁剪坐标系 = 旋转后的图（换算法钉死，含 90°）', ()
       expect(back.width, `${rot * 90}° width`).toBeCloseTo(rect.width, 6)
       expect(back.height, `${rot * 90}° height`).toBeCloseTo(rect.height, 6)
     }
+  })
+})
+
+/**
+ * 拖拽平移的启用条件。
+ *
+ * 2026-10-27 用户报「图片大于窗口时不能用鼠标左键拖拽移动」——
+ * `useImageView` 里早就写好了拖拽的 effect，但**从来没人调 `setDragging(true)`**，
+ * 等于功能只写了一半。补上入口的同时把「什么时候允许拖」钉死在这里。
+ */
+describe('canPanImage（能否拖拽平移）', () => {
+  it('图片大于容器 → 可以拖', () => {
+    expect(canPanImage(1000, 1000, 0, 1, 800, 800)).toBe(true)
+  })
+
+  it('图片缩到比容器小 → 不可以拖', () => {
+    expect(canPanImage(1000, 1000, 0, 0.5, 800, 800)).toBe(false)
+  })
+
+  it('宽度超出但高度没超 → 仍可以拖（任一方向超就算）', () => {
+    expect(canPanImage(2000, 400, 0, 1, 800, 800)).toBe(true)
+  })
+
+  it('90° 旋转后按**旋转后**的尺寸判断', () => {
+    // 900×300 横图放在 800×950 的窗口里：不旋转时宽超出 → 可拖
+    expect(canPanImage(900, 300, 0, 1, 800, 950)).toBe(true)
+    // 旋转 90° 变成 300×900 → 宽高都放得下 → 不可拖
+    expect(canPanImage(900, 300, 90, 1, 800, 950)).toBe(false)
+    // 旋转 180° 视同不旋转
+    expect(canPanImage(900, 300, 180, 1, 800, 950)).toBe(true)
+  })
+
+  it('小图旋转后仍放得下 → 不可拖', () => {
+    expect(canPanImage(400, 700, 0, 1, 800, 800)).toBe(false)
+    expect(canPanImage(400, 700, 90, 1, 800, 800)).toBe(false)
+  })
+
+  it('容器尺寸还没量出来（0）→ 不可以拖', () => {
+    expect(canPanImage(4000, 4000, 0, 1, 0, 0)).toBe(false)
+  })
+
+  it('恰好等于容器 → 不可以拖（1px 容差内算放得下）', () => {
+    expect(canPanImage(800, 800, 0, 1, 800, 800)).toBe(false)
   })
 })

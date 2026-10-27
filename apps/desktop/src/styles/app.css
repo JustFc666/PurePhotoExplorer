@@ -219,9 +219,16 @@
   position: relative;
   overflow: hidden;
   background: var(--pv-bg-canvas);
-  cursor: grab;
+  /* 默认不是抓手：只有图片真的超出容器才换成 grab（见 [data-draggable]）。
+     否则画面完整可见时也显示抓手，用户会以为能拖、拖了却没反应。 */
+  cursor: default;
   /* 阻止浏览器的图片拖拽默认行为 */
   -webkit-user-drag: none;
+}
+
+/* 图片超出容器（有内容被裁掉）→ 可以左键拖拽平移 */
+.pv-canvas[data-draggable='true'] {
+  cursor: grab;
 }
 
 .pv-canvas[data-dragging='true'] {

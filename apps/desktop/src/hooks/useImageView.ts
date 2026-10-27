@@ -822,6 +822,15 @@ export interface UseImageView {
   view: ViewState
   /** 拖拽平移中（用于切换光标） */
   dragging: boolean
+  /** 图片当前是否超出容器（只有超出才允许拖拽平移，也才显示 grab 光标） */
+  canPan: boolean
+  /**
+   * 左键按下开始拖拽平移。
+   *
+   * 绑定到画布容器上即可；**裁剪语境内不要绑**（那时左键归裁剪框，
+   * 画面必须保持不动）。是否真的会生效由 `canPan` 决定。
+   */
+  startPan: (e: React.MouseEvent) => void
   /**
    * 裁剪框的屏幕矩形（容器 CSS 像素）；无图 / 尺寸未就绪时为 `null`。
    *
@@ -864,6 +873,28 @@ export interface UseImageView {
   snapshotView: () => ViewState
   /** 用 [`snapshotView`] 的快照还原视图（含缩放平移，逐字段覆盖） */
   restoreView: (snap: ViewState) => void
+}
+
+/**
+ * 图片在容器里是否**超出**（任一方向有内容被裁掉）—— 决定能不能拖拽平移。
+ *
+ * 只在超出时才允许拖，和 Windows 照片 / FastStone 一致：适应窗口时图片完整可见，
+ * 能拖反而会把它拖偏，看着像「图跑偏了」。
+ *
+ * @param rotation 90° 粗旋转角（度，会被四舍五入到整 90）
+ */
+export function canPanImage(
+  imageW: number,
+  imageH: number,
+  rotation: number,
+  scale: number,
+  containerW: number,
+  containerH: number,
+): boolean {
+  if (containerW <= 0 || containerH <= 0) return false
+  const rs = rotatedImageSize(imageW, imageH, Math.round(rotation / 90))
+  /* 1px 容差：浮点算下来 0.9999 倍不算超出 */
+  return rs.w * scale > containerW + 1 || rs.h * scale > containerH + 1
 }
 
 /**
@@ -1235,6 +1266,46 @@ export function useImageView(image: DecodedImage | null): UseImageView {
     containerSize,
   ])
 
+  /**
+   * 图片在屏幕上是否**超出容器**（任一方向有内容被裁掉）。
+   *
+   * 只有超出时才允许拖拽平移 —— 适应窗口状态下图片完整可见，能拖反而会让它
+   * 偏离中心，观感像「图跑偏了」。这和 Windows 照片 / FastStone 的行为一致。
+   */
+  const canPan = useMemo(
+    () =>
+      !!image &&
+      canPanImage(
+        image.width,
+        image.height,
+        view.rotation,
+        view.scale,
+        containerSize.w,
+        containerSize.h,
+      ),
+    [image, view.rotation, view.scale, containerSize],
+  )
+
+  /**
+   * 左键按下 → 开始拖拽平移。
+   *
+   * ⚠️ 只在**非裁剪语境**绑定：裁剪时左键归裁剪框（拖内部平移框、拖四角改大小），
+   * 记忆里有硬规定「裁剪全程画面不动」。这个判断由 `ImageCanvas` 做，
+   * 因为 `cropUi` 是它的 prop，hook 里拿不到。
+   *
+   * ⚠️ 必须在 `mousedown` 里就 `preventDefault()`：否则 WebView2 会把这次拖拽
+   * 当成「拖拽图片」的原生行为（拖出一个半透明的图，鼠标松开就没了）。
+   */
+  const startPan = useCallback(
+    (e: React.MouseEvent) => {
+      if (!canPan || e.button !== 0) return
+      e.preventDefault()
+      dragState.current = { lastX: e.clientX, lastY: e.clientY }
+      setDragging(true)
+    },
+    [canPan],
+  )
+
   // 拖拽平移（rAF 节流）
   useEffect(() => {
     if (!dragging) return
@@ -1588,6 +1659,8 @@ export function useImageView(image: DecodedImage | null): UseImageView {
   return {
     view,
     dragging,
+    canPan,
+    startPan,
     frameBox,
     frameDragging,
     onFrameMouseDown,

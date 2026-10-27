@@ -102,8 +102,26 @@ export function ImageCanvas({
    */
   const pendingFx = useRef(false)
 
-  const { view, dragging, frameBox, frameDragging, onFrameMouseDown, isPixelated, containerRef, onWheel, onDoubleClick } =
-    controller
+  const {
+    view,
+    dragging,
+    canPan,
+    startPan,
+    frameBox,
+    frameDragging,
+    onFrameMouseDown,
+    isPixelated,
+    containerRef,
+    onWheel,
+    onDoubleClick,
+  } = controller
+
+  /**
+   * 是否处于**裁剪语境**：这时左键归裁剪框（拖内部平移、拖四角改大小），
+   * 画面必须保持不动 —— 记忆里的硬规定「裁剪全程画面不动，松手也不动」。
+   * 这个判断得在这里做，`cropUi` 是本组件的 prop，hook 里看不到。
+   */
+  const cropping = cropUi || view.aspect !== 'free' || view.frameRect !== null
 
   /**
    * `view.scale` 用 ref 读，**不能进 effect 依赖**。
@@ -286,6 +304,14 @@ export function ImageCanvas({
       className="pv-canvas"
       data-dragging={dragging}
       data-cropping={view.aspect !== 'free'}
+      /* 只有「能拖」时才给 grab 光标（CSS 靠它切换），否则画面明明没超出也显示抓手会误导 */
+      data-draggable={canPan && !cropping}
+      /*
+       * 左键拖拽平移。裁剪语境下不绑 —— 那时左键要留给裁剪框。
+       * ⛔ 别去掉 `startPan` 里的 preventDefault：WebView2 会把拖拽当成
+       * 「拖拽图片」的原生行为（拖出半透明幽灵图）。
+       */
+      onMouseDown={cropping ? undefined : startPan}
       onWheel={onWheel}
       onDoubleClick={onDoubleClick}
       role="img"
