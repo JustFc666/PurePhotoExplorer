@@ -44,6 +44,24 @@ const PAD = 0.06
 const DIAG_STRIP = false
 
 /**
+ * 位图尺寸是否跟随屏幕 DPI。
+ *
+ * ⭐ 正确做法是 `true`：`outPx = size × devicePixelRatio`。
+ *    100% 缩放的屏 → 位图 80；125% → 100；150% → 120。位图与设备像素始终 1:1，
+ *    这才是**发行版适配不同机器**的做法；写死 80 反而是「只按 100% 缩放的那台机器」。
+ *
+ * ⚠️ 置为 `false` 时位图恒为 `size`（80），在 125%/150% 屏上会被浏览器放大 1.25/1.5 倍 → 糊。
+ *    2026-10-27 实机对比过：false 版 lap_var 341，true 版 1127，肉眼一眼能看出差别。
+ *    **结论：保持 true**。
+ */
+const BITMAP_FOLLOW_DPR = true
+
+/** 位图边长：跟随 dpr 时按屏幕算，否则写死等于 CSS 尺寸。 */
+function bitmapPx(size: number, dpr: number): number {
+  return BITMAP_FOLLOW_DPR ? Math.max(1, Math.round(size * dpr)) : size
+}
+
+/**
  * 裁好的头像缓存（key = 脸 id + 输出尺寸）。
  *
  * 不进缓存的话：进一次人像专栏、滚一次列表，同一张脸会被反复解码
@@ -70,9 +88,9 @@ export function FaceAvatar({ face, size = 80, className, fallback }: Props) {
     const key = `${face.id}:${size}:${tier}`
     const hit = cropCache.get(key)
     if (hit) {
-      const dpr0 = window.devicePixelRatio || 1
-      canvas.width = Math.round(size * dpr0)
-      canvas.height = Math.round(size * dpr0)
+      const px0 = bitmapPx(size, window.devicePixelRatio || 1)
+      canvas.width = px0
+      canvas.height = px0
       const c0 = canvas.getContext('2d')
       if (c0) c0.drawImage(hit, 0, 0)
       return
@@ -118,8 +136,7 @@ export function FaceAvatar({ face, size = 80, className, fallback }: Props) {
         sw = side
         sh = side
 
-        const dpr = window.devicePixelRatio || 1
-        const outPx = Math.round(size * dpr)
+        const outPx = bitmapPx(size, window.devicePixelRatio || 1)
         canvas.width = outPx
         canvas.height = outPx
         const ctx = canvas.getContext('2d')
