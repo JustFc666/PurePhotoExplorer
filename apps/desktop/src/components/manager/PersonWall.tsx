@@ -33,7 +33,7 @@ interface Props {
 }
 
 /** 浮层宽度（要与 CSS 的 `.pv-pwp` 保持一致，锚点右对齐时要用） */
-export const PERSON_POP_W = 560
+export const PERSON_POP_W = 680
 
 export function PersonWall({ anchor, currentId, onClose, onSelect }: Props) {
   const [people, setPeople] = useState<PersonItem[]>([])
@@ -157,7 +157,7 @@ export function PersonWall({ anchor, currentId, onClose, onSelect }: Props) {
               ) : (
                 <FaceAvatar
                   face={p.cover}
-                  size={80}
+                  size={100}
                   fallback={p.name ? p.name.slice(0, 1) : String(i + 1)}
                 />
               )}

@@ -40,6 +40,9 @@ interface Props {
  */
 const PAD = 0.06
 
+/** 临时诊断：头像底部画 4px 色条（绿=走了 MKS，红=回退了）。定位完删掉。 */
+const DIAG_STRIP = false
+
 /**
  * 裁好的头像缓存（key = 脸 id + 输出尺寸）。
  *
@@ -157,10 +160,18 @@ export function FaceAvatar({ face, size = 80, className, fallback }: Props) {
           const out = ctx.createImageData(outPx, outPx)
           out.data.set(scaled.data)
           ctx.putImageData(out, 0, 0)
+          if (DIAG_STRIP) {
+            ctx.fillStyle = '#00c853'
+            ctx.fillRect(0, outPx - 4, outPx, 4)
+          }
         } catch {
           /* MKS 出问题不能让头像空着 —— 退回 canvas 原生缩放 */
           ctx.imageSmoothingQuality = 'high'
           ctx.drawImage(src, sx, sy, sw, sh, 0, 0, outPx, outPx)
+          if (DIAG_STRIP) {
+            ctx.fillStyle = '#d50000'
+            ctx.fillRect(0, outPx - 4, outPx, 4)
+          }
         }
         /* 存一份裁剪结果（尺寸很小，39 人也就几百 KB） */
         const keep = document.createElement('canvas')

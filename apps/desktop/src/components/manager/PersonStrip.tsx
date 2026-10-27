@@ -41,24 +41,20 @@ function avatarText(p: PersonItem, index: number): string {
 export function PersonStrip({ onOpenWall, onOpenPerson, visible, libraryId }: Props) {
   const [people, setPeople] = useState<PersonItem[]>([])
   /**
-   * 一屏能放几个头像：按窗口宽度估（每格 80 + 8 间距）。
+   * 一屏能放几个头像：按窗口宽度估（每格 100 + 8 间距）。
    * ⛔ 不用 ResizeObserver 量自身宽度 —— 自身宽度又取决于显示几个头像，会互相牵制。
    */
   const [fit, setFit] = useState(3)
   useEffect(() => {
     const calc = () => {
       const w = window.innerWidth
-      /* 宽屏多放几个，别让标签和人像之间空一大片（用户 2026-10-25 反馈） */
-      setFit(
-        w >= 2000 ? 10
-        : w >= 1900 ? 9
-        : w >= 1800 ? 8
-        : w >= 1700 ? 7
-        : w >= 1600 ? 6
-        : w >= 1500 ? 5
-        : w >= 1400 ? 4
-        : 3,
-      )
+      /*
+       * ⭐ 2026-10-27 头像 80 → 100 后按公式算，不再硬编码档位。
+       * 给左侧（标题 + 标签条）留 780px，剩下按格子宽 108 均分，上限 8 个
+       * —— 上限压到 8 是为了别把标签条挤窄（原来 10 个 × 88 ≈ 880，现在 8 × 108 = 864，接近）。
+       */
+      const n = Math.floor((w - 780) / 108)
+      setFit(Math.max(3, Math.min(8, n)))
     }
     calc()
     window.addEventListener('resize', calc)
@@ -128,7 +124,7 @@ export function PersonStrip({ onOpenWall, onOpenPerson, visible, libraryId }: Pr
               onOpenWall({ left: r.left, right: r.right, bottom: r.bottom })
             }}
           >
-            <FaceAvatar face={p.cover} size={80} fallback={avatarText(p, i)} />
+            <FaceAvatar face={p.cover} size={100} fallback={avatarText(p, i)} />
           </button>
         ))}
         {/* 「…」点开浮层列出剩余人物（用户 2026-10-25 要求） */}
