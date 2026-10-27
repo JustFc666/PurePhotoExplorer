@@ -16,6 +16,7 @@
 
 import { useEffect, useRef } from 'react'
 import { managerThumbnail } from '../../ipc/manager'
+import { resampleMks } from '../../lib/mksResample'
 import type { FaceBox } from '../../ipc/people'
 
 interface Props {
@@ -115,12 +116,52 @@ export function FaceAvatar({ face, size = 80, className, fallback }: Props) {
         sh = side
 
         const dpr = window.devicePixelRatio || 1
-        canvas.width = Math.round(size * dpr)
-        canvas.height = Math.round(size * dpr)
+        const outPx = Math.round(size * dpr)
+        canvas.width = outPx
+        canvas.height = outPx
         const ctx = canvas.getContext('2d')
         if (!ctx) return
-        ctx.imageSmoothingQuality = 'high'
-        ctx.drawImage(src, sx, sy, sw, sh, 0, 0, canvas.width, canvas.height)
+
+        /*
+         * 缩放走 Magic Kernel Sharp 2013（见 `lib/mksResample.ts`）。
+         * ⛔ 别换回 `ctx.drawImage` + `imageSmoothingQuality='high'`：Skia 的 high
+         *    是双三次且缩小时不做预滤波，3:1 这种幅度会有明显锯齿
+         *    （Skia issue #500117356）。
+         * 走 MKS 时这条路是 3:1 左右，正好是它最擅长的区间。
+         */
+        const rx = Math.max(0, Math.round(sx))
+        const ry = Math.max(0, Math.round(sy))
+        const rw = Math.max(1, Math.min(W - rx, Math.round(sw)))
+        const rh = Math.max(1, Math.min(H - ry, Math.round(sh)))
+
+        try {
+          /* 直接从已解码的 RGBA 里裁子矩形，省一次 getImageData（那条路要回读 GPU） */
+          const sub = new Uint8ClampedArray(rw * rh * 4)
+          const stride = W * 4
+          for (let y = 0; y < rh; y++) {
+            const from = (ry + y) * stride + rx * 4
+            sub.set(data.data.subarray(from, from + rw * 4), y * rw * 4)
+          }
+          /*
+           * 强度 1.5：标准 MKS2013 是 s=1，但 100px 头像上偏软；
+           * s=1.5 在「清晰」和「无白边」之间平衡最好（s=2 起嘴唇/牙齿边缘开始发硬）。
+           * 实测 lap_var：s=0→182，s=1→662，s=1.5→1127，s=2→1706。
+           */
+          const scaled = resampleMks(
+            { data: sub, width: rw, height: rh },
+            outPx,
+            outPx,
+            true,
+            1.5,
+          )
+          const out = ctx.createImageData(outPx, outPx)
+          out.data.set(scaled.data)
+          ctx.putImageData(out, 0, 0)
+        } catch {
+          /* MKS 出问题不能让头像空着 —— 退回 canvas 原生缩放 */
+          ctx.imageSmoothingQuality = 'high'
+          ctx.drawImage(src, sx, sy, sw, sh, 0, 0, outPx, outPx)
+        }
         /* 存一份裁剪结果（尺寸很小，39 人也就几百 KB） */
         const keep = document.createElement('canvas')
         keep.width = canvas.width
