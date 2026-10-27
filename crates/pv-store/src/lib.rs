@@ -1224,9 +1224,17 @@ impl Store {
 
         // L2：磁盘字节 → 解回位图
         if let Some(bytes) = self.l2.get(&key)? {
+            /*
+             * ⛔⛔ 必须 `exact(Thumbnail, None)`，**不能** `new(Thumbnail)`。
+             *     `DecodePurpose::Thumbnail` 的 `suggested_max_edge()` 是 **256**，
+             *     用它解码会把缓存里的 720×1280 又缩成 144×256 —— 所有 L2 命中的档位
+             *     一律退化成 256 长边（md/lg/xl 全废），表现为「缩略图和头像都比预期糊」。
+             *     2026-10-27 实测：xl 档缓存文件 720×1280，`thumbnail()` 返回 144×256。
+             *     缓存文件本身就是该档位的目标尺寸，直接按原始大小解码即可。
+             */
             let img = pv_decode::decode_jpeg_from_bytes(
                 &bytes,
-                DecodeTarget::new(DecodePurpose::Thumbnail),
+                DecodeTarget::exact(DecodePurpose::Thumbnail, None),
             )?;
             let t = Thumb {
                 width: img.width,
