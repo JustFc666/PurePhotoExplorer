@@ -121,6 +121,7 @@ pub fn run() {
             commands::manager_people,
             commands::manager_person_faces,
             commands::manager_rename_person,
+            commands::manager_set_person_cover,
             commands::manager_merge_persons,
             commands::manager_split_faces,
             commands::manager_delete_person,

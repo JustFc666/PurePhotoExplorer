@@ -58,8 +58,18 @@ export async function managerRenamePerson(personId: number, name: string | null)
   return invoke<void>('manager_rename_person', { personId, name })
 }
 
-/** 把人脸从若干人物合并到 `into`，返回被并过去的脸数。 */
-export async function managerMergePersons(from: number[], into: number): Promise<number> {
+/**
+ * 把这个人的头像换成「`imageId` 这张图里该人的脸」（同图多张脸取面积最大的）。
+ * 返回新封面；`null` = 这张图里没有这个人的脸。
+ */
+export async function managerSetPersonCover(
+  personId: number,
+  imageId: number,
+): Promise<FaceBox | null> {
+  return invoke<FaceBox | null>('manager_set_person_cover', { personId, imageId })
+}
+
+/** 把人脸从若干人物合并到 `into`，返回被并过去的脸数。 */export async function managerMergePersons(from: number[], into: number): Promise<number> {
   return invoke<number>('manager_merge_persons', { from, into })
 }
 

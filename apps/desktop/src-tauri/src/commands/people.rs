@@ -188,6 +188,42 @@ pub async fn manager_split_faces(
         .map_err(merr)
 }
 
+/// 把某个人的封面换成「这张图里该人的那张脸」。
+///
+/// 同一张图里同一个人可能被检出多张脸（合影、浮雕、海报），取**面积最大**的那张。
+/// 返回新封面；`None` = 这张图里没有这个人的脸 —— 前端要提示，不能静默成功。
+///
+/// ⚠️ 只动 `persons.cover_face_id`，不碰 `faces` 与聚类结果。
+#[tauri::command]
+pub async fn manager_set_person_cover(
+    state: State<'_, AppState>,
+    person_id: i64,
+    image_id: i64,
+) -> Result<Option<FaceBoxDto>, ErrorDto> {
+    state
+        .with_manager(|s| {
+            let faces =
+                faces_repo::list_by_person(s.conn(), person_id).map_err(|e| e.to_string())?;
+            let best = faces
+                .into_iter()
+                .filter(|f| f.image_id == image_id)
+                .max_by(|a, b| {
+                    (a.w * a.h)
+                        .partial_cmp(&(b.w * b.h))
+                        .unwrap_or(std::cmp::Ordering::Equal)
+                });
+            match best {
+                Some(f) => {
+                    persons_repo::set_cover(s.conn(), person_id, Some(f.id))
+                        .map_err(|e| e.to_string())?;
+                    Ok(Some(FaceBoxDto::from(&f)))
+                }
+                None => Ok(None),
+            }
+        })
+        .map_err(merr)
+}
+
 /// 删除人物：**只解绑人脸，不删人脸本身**（识别结果不属于人物）。
 #[tauri::command]
 pub async fn manager_delete_person(

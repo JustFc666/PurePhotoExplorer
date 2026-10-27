@@ -70,6 +70,7 @@ import {
   aiVocab,
   type VocabTerm,
 } from '../../ipc/manager'
+import { managerSetPersonCover } from '../../ipc/people'
 import { PhotoCard } from './PhotoCard'
 import '../../styles/manager.css'
 
@@ -1473,6 +1474,24 @@ export function ManagerView(props: Props) {
     [mgr],
   )
 
+  /**
+   * 把当前人物的头像换成「这张图里他的脸」。
+   *
+   * 成功后广播 `pv:person-renamed` —— 人像条与人像墙都在监听它重拉列表，
+   * 语义上是「人物数据变了」，改名和换封面共用同一个事件。
+   * 头像位图不用手动清：`cropCache` 的 key 含 `face.id`，换封面后 face.id 变了，
+   * 旧缓存天然不会被命中。
+   */
+  const doSetPersonCover = useCallback(async (personId: number, imageId: number) => {
+    const cover = await managerSetPersonCover(personId, imageId)
+    if (!cover) {
+      /* 理论上不该发生：按人筛选出来的图必然有这个人的脸 */
+      console.warn('[person] 这张图里没有该人物的脸', { personId, imageId })
+      return
+    }
+    window.dispatchEvent(new CustomEvent('pv:person-renamed'))
+  }, [])
+
   const cardMenuItems = useMemo<ContextMenuItem[]>(() => {
     const withPath = cardCtxItems.filter((i) => !!i.path)
     /**
@@ -1490,7 +1509,21 @@ export function ManagerView(props: Props) {
       oneRating < 0 ? '混合' : oneRating === 0 ? undefined : '★'.repeat(oneRating)
     const allFlagged = cardCtxItems.length > 0 && cardCtxItems.every((i) => i.flag > 0)
 
+    /** 按人浏览时才出现的专属项：把这张图里的脸设成该人物的头像 */
+    const pf = mgr.personFilter
+    const coverTarget = pf && n === 1 && rateable.length === 1 ? rateable[0] : null
+
     return [
+      ...(coverTarget != null
+        ? [
+            {
+              id: 'person-cover',
+              label: '设为头像',
+              hint: pf?.name ?? undefined,
+              onSelect: () => void doSetPersonCover(pf!.id, coverTarget),
+            },
+          ]
+        : []),
       {
         id: 'rating',
         label: n > 1 ? `评分（${n} 张）` : '评分',
@@ -1681,6 +1714,7 @@ export function ManagerView(props: Props) {
   }, [
     cardCtxItems,
     copyPaths,
+    doSetPersonCover,
     doAutoOrient,
     doConvert,
     doCopyTo,
