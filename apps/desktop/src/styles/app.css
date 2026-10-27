@@ -1966,6 +1966,30 @@
   box-shadow: 0 0 0 3px var(--pv-accent-soft);
 }
 
+/* 确认框正文（ConfirmDialog）。`pre-line` 让文案里的 \n 换行生效，
+   不用在 JSX 里拆行 —— 拆了每行都会吃一份 flex 间距，越长越散。 */
+.pv-modal-text {
+  margin-top: 8px;
+  font-size: 12px;
+  line-height: 1.65;
+  white-space: pre-line;
+  color: var(--pv-text-secondary, var(--pv-text-tertiary));
+}
+
+/* 破坏性操作的确认按钮（移除 / 删除）。⛔ 别用主色，否则和「保存」长得一样 */
+.pv-btn-danger {
+  color: #fff;
+  background: var(--pv-danger, #c0504d);
+}
+.pv-btn-danger:hover:not(:disabled) {
+  color: #fff;
+  filter: brightness(1.08);
+}
+.pv-btn-danger:active:not(:disabled) {
+  color: #fff;
+  filter: brightness(0.94);
+}
+
 /* 提交失败的原因（如「已经有同名图库了」）。放在输入框下面，弹窗不关。 */
 .pv-modal-err {
   margin-top: 8px;

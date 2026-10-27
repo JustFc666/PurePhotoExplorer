@@ -102,6 +102,20 @@ pub fn remove_folder(conn: &Connection, library_id: i64, folder_id: i64) -> Resu
     Ok(())
 }
 
+/// 断开**某个目录**在**所有图库**里的成员关系。
+///
+/// `Store::remove_folder` 删目录行时必须调它：`library_folders` 的外键是
+/// `NO ACTION` 且 SQLite 默认不开 `foreign_keys`，不显式删就会留下指向已删目录的
+/// 脏行（界面靠 `byId.get(folderId)` 找不到而"看不见"，但库会一直变脏，
+/// 且万一哪天目录 id 被复用就会串库）。
+pub fn detach_folder(conn: &Connection, folder_id: i64) -> Result<usize> {
+    let n = conn.execute(
+        "DELETE FROM library_folders WHERE folder_id = ?1",
+        params![folder_id],
+    )?;
+    Ok(n)
+}
+
 /// 列出图库的成员文件夹 id。
 pub fn list_folder_ids(conn: &Connection, library_id: i64) -> Result<Vec<i64>> {
     let mut stmt = conn.prepare(

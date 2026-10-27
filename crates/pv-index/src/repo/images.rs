@@ -224,6 +224,10 @@ pub fn delete(conn: &Connection, id: i64) -> Result<()> {
         "DELETE FROM image_places WHERE image_id = ?1",
         "DELETE FROM ai_results  WHERE image_id = ?1",
         "DELETE FROM image_exif  WHERE image_id = ?1",
+        // ⚠️ 人脸也必须清：留着就是指向已删图片的孤儿行 —— 人像条会拿着不存在的
+        //    `image_id` 去取缩略图（永远失败），人物 `face_count` 也会虚高。
+        //    调用方删完一批图后要再跑一次 `persons::refresh_all` 同步人物。
+        "DELETE FROM faces       WHERE image_id = ?1",
         "DELETE FROM fts_images  WHERE rowid    = ?1",
         "DELETE FROM images      WHERE id       = ?1",
     ] {

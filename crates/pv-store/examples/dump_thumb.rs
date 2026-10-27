@@ -21,7 +21,7 @@ fn main() {
     let data: PathBuf = dirs_localappdata().join("PurePhotoExplorer");
     println!("数据目录：{}", data.display());
 
-    let mut store = Store::open(&data, Box::new(WindowsVolumeResolver)).expect("打开服务层失败");
+    let store = Store::open(&data, Box::new(WindowsVolumeResolver)).expect("打开服务层失败");
     let conn = store.conn();
 
     let mut stmt = conn

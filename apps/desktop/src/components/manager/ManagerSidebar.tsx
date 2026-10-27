@@ -16,8 +16,8 @@
 
 import { useEffect, useState } from 'react'
 import type { MouseEvent as ReactMouseEvent } from 'react'
-import { confirm } from '@tauri-apps/plugin-dialog'
 
+import { ConfirmDialog } from '../chrome/ConfirmDialog'
 import { ContextMenu, useContextMenu } from '../chrome/ContextMenu'
 import type { FolderNode, LibraryItem, PlaceItem, TagItem } from '../../ipc/manager'
 import { FS_COMPUTER_KEY, fsResolveDir, type FsNode, type TreeIcons } from '../../ipc/browse'
@@ -465,6 +465,8 @@ export function ManagerSidebar({
   /** 右键菜单：记下右键的是哪个节点（菜单项要按节点类型生成） */
   const ctx = useContextMenu()
   const [ctxTarget, setCtxTarget] = useState<CtxTarget | null>(null)
+  /** 待确认「从图库移除」的目录。非 null 时显示自绘确认框。 */
+  const [pendingRemove, setPendingRemove] = useState<FolderNode | null>(null)
   const openFsMenu = (e: ReactMouseEvent, node: FsNode) => {
     setCtxTarget({ kind: 'fs', node })
     ctx.open(e)
@@ -487,22 +489,18 @@ export function ManagerSidebar({
   }
 
   /**
-   * 「从图库移除」的确认框。
+   * 「从图库移除」的确认。
    *
    * ⚠️ 必须说清「只删索引与缓存、不删原图」—— 否则用户不敢点，
    * 或者反过来误以为照片被删了（这两个误解都很难受）。
+   *
+   * ⛔ 别再改回 `@tauri-apps/plugin-dialog` 的 `confirm`：它底层是
+   * `message` + 自定义按钮，靠「返回的按钮 label === okLabel」判断，任何一环对不上
+   * 就**静默返回 false**，而且 Promise 的 rejection 被 `void` 吞掉 —— 用户点了菜单
+   * 什么都不会发生、也没有任何报错。2026-10-27「从图库移除一直不生效」正是这个原因
+   * （改用自绘 `ConfirmDialog`）。
    */
-  const confirmRemove = async (f: FolderNode) => {
-    const ok = await confirm(
-      `从图库移除「${f.name}」？\n\n` +
-        '· 删除它在索引里的记录与对应的缩略图缓存\n' +
-        '· 如果它下面还有子目录的记录，会一起移除\n' +
-        '· 不会删除任何原始图片文件（磁盘上的照片原封不动）\n\n' +
-        '以后随时可以右键「加入图库」再加回来。',
-      { title: '从图库移除', kind: 'warning', okLabel: '移除', cancelLabel: '取消' },
-    )
-    if (ok) onRemoveFromLibrary(f)
-  }
+  const askRemove = (f: FolderNode) => setPendingRemove(f)
 
   const ctxPath = ctxTarget?.kind === 'fs' ? ctxTarget.node.path : null
 
@@ -803,7 +801,7 @@ export function ManagerSidebar({
                       label: '从图库移除…',
                       hint: '不删原图',
                       separatorBefore: true,
-                      onSelect: () => void confirmRemove(ctxTarget.node),
+                      onSelect: () => askRemove(ctxTarget.node),
                     },
                   ]
                 : ctxTarget.kind === 'library'
@@ -897,6 +895,29 @@ export function ManagerSidebar({
                   ]
           }
           onClose={closeMenu}
+        />
+      )}
+
+      {/* 「从图库移除」确认框（自绘）。⛔ 别换回 plugin-dialog 的 confirm，见 askRemove 的注释 */}
+      {pendingRemove && (
+        <ConfirmDialog
+          title="从图库移除"
+          message={
+            `从图库移除「${pendingRemove.name}」？\n\n` +
+            '· 删除它在索引里的记录与对应的缩略图缓存\n' +
+            '· 如果它下面还有子目录的记录，会一起移除\n' +
+            '· 不会删除任何原始图片文件（磁盘上的照片原封不动）\n\n' +
+            '以后随时可以右键「加入图库」再加回来。'
+          }
+          okLabel="移除"
+          cancelLabel="取消"
+          danger
+          onOk={() => {
+            const target = pendingRemove
+            setPendingRemove(null)
+            onRemoveFromLibrary(target)
+          }}
+          onCancel={() => setPendingRemove(null)}
         />
       )}
     </aside>

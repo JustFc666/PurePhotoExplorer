@@ -699,13 +699,19 @@ impl Store {
         out.folders = dirs.len() as u64;
 
         // 3) 删索引行。`images::delete` 会连带清 thumbs / image_tags / ai_results /
-        //    image_exif / fts_images —— 所以必须走它，不能自己写 DELETE。
+        //    image_exif / faces / fts_images —— 所以必须走它，不能自己写 DELETE。
         index_conn::with_tx(&mut self.conn, |tx| {
             for id in &victims {
                 repo::images::delete(tx, *id)?;
             }
+            // 脸被删了，人物的 face_count / 封面得跟着重算（空人物一并清掉），
+            // 否则人像条会停在「457 张脸」而实际只剩几百张，封面还可能指向已删的脸。
+            repo::persons::refresh_all(tx)?;
             // 反序：先子后父（`folders.parent_id` 指着父行）
             for id in dirs.iter().rev() {
+                // ⚠️ 先断图库成员关系再删目录行：`library_folders` 是 NO ACTION 外键且
+                //    SQLite 默认不开 foreign_keys，不显式删就留下指向已删目录的脏行。
+                repo::libraries::detach_folder(tx, *id)?;
                 repo::folders::delete(tx, *id)?;
             }
             Ok(())
@@ -1565,6 +1571,15 @@ mod tests {
             0,
             "移除目录后图库条目数应归零"
         );
+        // ⭐ 直接看 `library_folders`：`count_of` 是 JOIN images 算的，删了图它自然为 0，
+        //    证明不了成员行被删。这里必须查表 —— 2026-10-27 之前 `remove_folder`
+        //    只在删 images，`library_folders` 的脏行一直留着（NO ACTION 外键 +
+        //    SQLite 默认不开 foreign_keys）。
+        let members = repo::libraries::list_members(store.conn()).unwrap();
+        assert!(
+            !members.iter().any(|(_, fid)| *fid == root_id || *fid == sub_id),
+            "被移除的目录不能还挂在任何图库里，实际 {members:?}"
+        );
         // 缓存文件删干净
         assert_eq!(snapshot(&thumbs_dir).len(), 0, "对应的缩略图缓存要一起清掉");
 
@@ -1574,6 +1589,79 @@ mod tests {
 
         // 幂等：重复移除不报错、返回全 0
         assert_eq!(store.remove_folder(root_id).unwrap(), Removed::default());
+
+        drop(store);
+        let _ = std::fs::remove_dir_all(&data);
+        let _ = std::fs::remove_dir_all(&src);
+    }
+
+    /// ⭐⭐ 移除目录时**人脸与被删图片必须一起走**，人物的脸数/封面要跟着重算。
+    ///
+    /// 2026-10-27 之前 `images::delete` 只清了 7 张关联表、**漏了 `faces`**：
+    /// 移除目录后留下孤儿人脸，人像条会拿着不存在的 `image_id` 取缩略图（永远失败），
+    /// 人物 `face_count` 虚高。
+    #[test]
+    fn 移除目录不留孤儿人脸且人物脸数同步() {
+        use pv_index::models::{Face, Person};
+
+        let Some((src, _sub)) = nested_source("rmface") else {
+            eprintln!("跳过：找不到样本");
+            return;
+        };
+        let data = temp_dir("data_rmface");
+        let resolver = Box::new(FakeResolver {
+            mount: src.clone(),
+            guid: r"\?\Volume{rmface}\".into(),
+        });
+        let mut store = Store::open(&data, resolver).unwrap();
+        store.scan_tree(&src).unwrap();
+
+        let imgs = store.query(&ImageQuery::default()).unwrap();
+        assert_eq!(imgs.len(), 2);
+
+        // 给根目录那张图插两张脸，归到同一个人物
+        let pid = repo::persons::insert(
+            store.conn(),
+            &Person::new(Some("测试人物".into()), Some("t".into())),
+        )
+        .unwrap();
+        let mk = |image_id: i64, w: f32| Face {
+            id: 0,
+            image_id,
+            person_id: Some(pid),
+            x: 0.1,
+            y: 0.1,
+            w,
+            h: w,
+            tier: Some(0),
+            model: "test".into(),
+            score: Some(0.9),
+            quality: Some(w * 100.0),
+            embedding: vec![0u8; 128],
+        };
+        repo::faces::replace_for_image(store.conn(), imgs[0].id, &[mk(imgs[0].id, 0.2), mk(imgs[0].id, 0.3)])
+            .unwrap();
+        repo::persons::refresh_count(store.conn(), pid).unwrap();
+        assert_eq!(repo::faces::count_for_person(store.conn(), pid).unwrap(), 2);
+
+        let vid = repo::volumes::list(store.conn()).unwrap()[0].id;
+        let root_id = repo::folders::find(store.conn(), vid, "").unwrap().unwrap().id;
+
+        store.remove_folder(root_id).unwrap();
+
+        // 孤儿脸一个都不许剩
+        let orphans: i64 = store
+            .conn()
+            .query_row(
+                "SELECT COUNT(*) FROM faces f LEFT JOIN images i ON i.id = f.image_id
+                  WHERE i.id IS NULL",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(orphans, 0, "移除目录后不能留下孤儿人脸");
+        // 脸随图走，人物没脸了就连人物一起清掉
+        assert_eq!(repo::persons::list(store.conn(), 0).unwrap().len(), 0, "没有脸的人物要清掉");
 
         drop(store);
         let _ = std::fs::remove_dir_all(&data);
