@@ -1337,7 +1337,14 @@ export function App() {
         active={mode === 'manager'}
         onExit={() => setMode('viewer')}
         onOpenSettings={openSettings}
-        onOpenImage={(p) => {
+        onOpenImage={(p, siblings) => {
+          /*
+           * ⭐ 把主区当前显示的列表交给单图浏览，让「下一张 / 上一张」在这份列表里翻。
+           * 不传的话 `useImageLoader` 会走「列当前文件所在目录」那条路 ——
+           * 按人像/标签筛出来的图散落在不同目录，翻一张就跳出筛选结果了。
+           * 列表里含当前路径时才用（理论上必然含，防御一下脏数据）。
+           */
+          setPlaylist(siblings.includes(p) ? siblings : null)
           setMode('viewer')
           void load(p)
         }}

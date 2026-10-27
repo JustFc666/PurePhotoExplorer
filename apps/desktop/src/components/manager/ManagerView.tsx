@@ -171,8 +171,14 @@ interface Props {
    * 2026-10-24 起齿轮不再弹自己的小面板（设置统一到设置窗口，避免两份）。
    */
   onOpenSettings: (page?: 'ai') => void
-  /** 双击缩略图：用单图浏览打开该绝对路径 */
-  onOpenImage: (path: string) => void
+  /**
+   * 双击缩略图：用单图浏览打开该绝对路径。
+   *
+   * `siblings` 是**主区当前显示的图片路径列表**（顺序一致）。交给单图浏览后，
+   * 「下一张」就在这份列表里翻 —— 按标签/人像筛过之后也只在筛出来的图里走。
+   * 不传的话单图模式会退回「按文件所在目录翻页」，一翻就跳出筛选结果。
+   */
+  onOpenImage: (path: string, siblings: string[]) => void
   /**
    * 用**当前范围的图片列表**放幻灯片（右键「幻灯片放映」）。
    *
@@ -414,16 +420,22 @@ export function ManagerView(props: Props) {
     [mgr, tree],
   )
 
-  /** 网格共用的「打开」：文件夹 → 进入；图片 → 单图查看 */
+  /**
+   * 网格共用的「打开」：文件夹 → 进入；图片 → 单图查看。
+   *
+   * ⭐ 图片必须把 `playPaths`（当前筛选结果的路径列表）一起传出去，
+   * 否则单图模式的「下一张」只在**当前文件所在目录**里翻 ——
+   * 按人像/标签筛出来的图散落在各目录，翻到第 2 张就跳出筛选结果了。
+   */
   const openItem = useCallback(
     (item: GridItem) => {
       if (item.kind === 'dir' && item.path) {
         gotoWithReveal(item.path, item.name)
         return
       }
-      if (item.path) onOpenImage(item.path)
+      if (item.path) onOpenImage(item.path, playPaths)
     },
-    [gotoWithReveal, onOpenImage],
+    [gotoWithReveal, onOpenImage, playPaths],
   )
 
   /**
