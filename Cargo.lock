@@ -3440,11 +3440,14 @@ checksum = "1d8f70e07b9c3962945a74e59ca1c511bba65b6419468acc217c457d93f3c740"
 name = "pv-ai"
 version = "0.2.0"
 dependencies = [
+ "fast_image_resize",
  "half",
  "ort",
  "pv-core",
+ "pv-decode",
  "pv-index",
  "serde",
+ "serde_json",
  "tracing",
 ]
 

@@ -10,6 +10,9 @@ description = "PurePhotoExplorer AI 打标与语义检索客户端"
 half = "2.4.1"
 ort = { version = "2.0.0-rc.15", features = ["directml", "half"] }
 pv-core.workspace = true
+pv-decode.workspace = true
 pv-index.workspace = true
 serde.workspace = true
+serde_json.workspace = true
 tracing.workspace = true
+fast_image_resize.workspace = true
