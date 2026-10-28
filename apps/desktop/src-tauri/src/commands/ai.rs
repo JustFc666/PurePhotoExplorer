@@ -16,10 +16,10 @@
 use std::collections::VecDeque;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 use serde::Serialize;
-use tauri::State;
+use tauri::{Manager, State};
 
 use crate::commands::dto::ErrorDto;
 use crate::state::AppState;
@@ -465,14 +465,19 @@ struct Running {
     ok: bool,
     python: PathBuf,
     root: PathBuf,
+    /// `Some` = 这次是 **Rust 打标**（不走子进程），`ai_task_status` 据此分流
+    tag: Option<TagProgress>,
 }
 
 /// 全局只允许一个 AI 任务：两个脚本同时写索引库会互相打架。
-pub struct AiRunner(pub Mutex<Option<Running>>);
+///
+/// ⚠️ 用 `Arc<Mutex<…>>` 而不是裸 `Mutex`：Rust 打标在 `spawn_blocking` 里跑，
+/// 线程拿不到 `State<'_, _>`（生命周期绑在调用栈上），必须 clone 出一个 Arc 进线程。
+pub struct AiRunner(pub Arc<Mutex<Option<Running>>>);
 
 impl Default for AiRunner {
     fn default() -> Self {
-        Self(Mutex::new(None))
+        Self(Arc::new(Mutex::new(None)))
     }
 }
 
@@ -583,12 +588,251 @@ fn tail_lines(path: &Path, max: usize) -> Vec<String> {
     all[start..].iter().map(|l| (*l).to_string()).collect()
 }
 
+// Rust 打标的进度（与 Python 子进程共用 `Running`，靠 `tag` 字段区分走哪条路）。
+struct TagProgress {
+    total: usize,
+    done: usize,
+    /// 日志尾部（前端直接显示，最多 200 行）
+    lines: VecDeque<String>,
+    finished: bool,
+    ok: bool,
+}
+
+impl Running {
+    /// 造一个「Rust 打标」会话占位 —— 复用 `Running` 但 `child` 为 None、
+    /// `steps` 为空，`ai_task_status` 看到 `tag.is_some()` 就走 Rust 分支。
+    fn tag_session(log: PathBuf) -> Self {
+        Self {
+            steps: VecDeque::new(),
+            child: None,
+            log,
+            ok: true,
+            python: PathBuf::new(),
+            root: PathBuf::new(),
+            tag: Some(TagProgress {
+                total: 0,
+                done: 0,
+                lines: VecDeque::new(),
+                finished: false,
+                ok: true,
+            }),
+        }
+    }
+}
+
+/// 往打标进度里追加一行日志（同时落盘，方便事后查）。
+fn tag_log(runner: &Mutex<Option<Running>>, line: String) {
+    if let Ok(mut g) = runner.lock() {
+        if let Some(r) = g.as_mut() {
+            if let Some(t) = r.tag.as_mut() {
+                t.lines.push_back(line.clone());
+                while t.lines.len() > 200 {
+                    t.lines.pop_front();
+                }
+            }
+            // 日志文件也写一份：用户报问题时能直接把尾部贴过来
+            if let Ok(mut f) = std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(&r.log)
+            {
+                use std::io::Write;
+                let _ = writeln!(f, "{line}");
+            }
+        }
+    }
+}
+
+/// 跑一次 Rust 打标（在 `spawn_blocking` 里执行，不占 UI 线程）。
+///
+/// 三阶段，索引锁只在两头各占一下：
+/// 1. 锁内查图列表（毫秒级）
+/// 2. **锁外**逐张解码 + 推理（1~2 秒/张，期间图库滚动不受影响）
+/// 3. 回调里逐张写库（锁粒度 = 一张图，毫秒级）
+fn run_tag_batch_blocking(app: tauri::AppHandle, library: String) {
+    use pv_ai::batch::{tag_batch, Progress, TagOptions};
+
+    // ⚠️ 先在**一条语句**里把 Arc 拷出来：`State<'_, T>` 借用 `app`，
+    // 直接 `let runner = app.state::<AiRunner>()` 会把借用带到整个函数体，
+    // 和下面 `state.with_manager_mut(…)` 的借用叠加后编译器判定生命周期不足。
+    let runner: Arc<Mutex<Option<Running>>> = app.state::<AiRunner>().0.clone();
+    let state = app.state::<AppState>();
+
+    let t_start = std::time::Instant::now();
+    tag_log(&runner, format!("开始打标：{library}"));
+
+    // ── 1. 查图列表 ──
+    let images: Vec<(i64, PathBuf)> = match state.with_manager(|s| {
+        let libs = pv_index::repo::libraries::list(&s.conn()).map_err(|e| e.to_string())?;
+        let Some(lib) = libs.into_iter().find(|l| l.name == library) else {
+            return Err(format!("找不到图库「{library}」"));
+        };
+        let q = pv_store::ImageQuery::default();
+        let imgs = s.query_in_library(&q, lib.id).map_err(|e| e.to_string())?;
+        let mut out = Vec::with_capacity(imgs.len());
+        for img in imgs {
+            if let Ok(Some(p)) = s.abs_path(&img) {
+                out.push((img.id, p));
+            }
+        }
+        Ok(out)
+    }) {
+        Ok(v) => v,
+        Err(e) => {
+            tag_log(&runner, format!("失败：{e}"));
+            if let Ok(mut g) = runner.lock() {
+                if let Some(r) = g.as_mut() {
+                    if let Some(t) = r.tag.as_mut() {
+                        t.finished = true;
+                        t.ok = false;
+                    }
+                    r.ok = false;
+                }
+            }
+            return;
+        }
+    };
+
+    let total = images.len();
+    if let Ok(mut g) = runner.lock() {
+        if let Some(r) = g.as_mut() {
+            if let Some(t) = r.tag.as_mut() {
+                t.total = total;
+            }
+        }
+    }
+    tag_log(&runner, format!("待处理 {total} 张"));
+
+    // ── 2. 加载模型（165MB，只做一次）──
+    let dir = tagger_dir();
+    let mut tagger = match pv_ai::tagger::Tagger::load(&dir) {
+        Ok(t) => t,
+        Err(e) => {
+            tag_log(&runner, format!("模型加载失败：{e}"));
+            if let Ok(mut g) = runner.lock() {
+                if let Some(r) = g.as_mut() {
+                    if let Some(t) = r.tag.as_mut() {
+                        t.finished = true;
+                        t.ok = false;
+                    }
+                    r.ok = false;
+                }
+            }
+            return;
+        }
+    };
+    tag_log(
+        &runner,
+        format!("模型就绪 · 词表 {} 条 · {} 条 prompt", tagger.vocab().len(), tagger.prompts_len()),
+    );
+
+    // ── 3. 跑批 + 逐张写库 ──
+    let opts = TagOptions {
+        threshold: read_f32(&state, "ai.threshold", 0.39),
+        threshold_l1: read_f32(&state, "ai.l1Threshold", 0.35),
+        max_tags: read_f32(&state, "ai.max_tags", 6.0) as usize,
+        long_side: 1024,
+    };
+    tag_log(
+        &runner,
+        format!(
+            "阈值：二级 ≥{:.2} · 一级 ≥{:.2} · 每张最多 {} 个",
+            opts.threshold, opts.threshold_l1, opts.max_tags
+        ),
+    );
+
+    let mut last_log = 0usize;
+    let stats = tag_batch(
+        &images,
+        &mut tagger,
+        &opts,
+        |p: &Progress| {
+            if let Ok(mut g) = runner.lock() {
+                if let Some(r) = g.as_mut() {
+                    if let Some(t) = r.tag.as_mut() {
+                        t.done = p.done;
+                    }
+                }
+            }
+            // 每 10 张刷一行，避免日志被 371 行「正在处理」淹没
+            if p.done == p.total || p.done - last_log >= 10 {
+                last_log = p.done;
+                tag_log(
+                    &runner,
+                    format!("{}/{} · {}", p.done, p.total, p.name),
+                );
+            }
+        },
+        |done| {
+            let _ = state.with_manager_mut(|s| {
+                s.replace_ai_tags(done.image_id, &done.tags)
+                    .map_err(|e| e.to_string())
+            });
+        },
+    );
+
+    for e in &stats.errors {
+        tag_log(&runner, format!("跳过 {e}"));
+    }
+    let secs = t_start.elapsed().as_secs_f64();
+    tag_log(
+        &runner,
+        format!(
+            "完成：成功 {} 张 · 失败 {} 张 · 用时 {:.1} 秒（{:.0} ms/张）",
+            stats.ok,
+            stats.failed,
+            secs,
+            if stats.ok + stats.failed > 0 {
+                secs * 1000.0 / (stats.ok + stats.failed) as f64
+            } else {
+                0.0
+            }
+        ),
+    );
+
+    // ⚠️ 末尾这个分号不能省：`if let` 作为尾表达式时，它内部的临时 `Result<MutexGuard>`
+    // 会活到函数返回之后（比 `runner` 还久），编译器会报
+    // "`runner` dropped here while still borrowed"。
+    if let Ok(mut g) = runner.lock() {
+        if let Some(r) = g.as_mut() {
+            if let Some(t) = r.tag.as_mut() {
+                t.finished = true;
+                t.ok = stats.failed == 0;
+            }
+            r.ok = stats.failed == 0;
+        }
+    };
+}
+
+/// 打标模型目录：优先 exe 同级 `assets/ai/tag`，退回编译期路径（开发机）。
+fn tagger_dir() -> PathBuf {
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(dir) = exe.parent() {
+            let p = dir.join("assets/ai/tag");
+            if p.join("tag_meta.json").is_file() {
+                return p;
+            }
+        }
+    }
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../assets/ai/tag")
+}
+
+fn read_f32(state: &AppState, key: &str, def: f32) -> f32 {
+    state
+        .with_manager(|s| Ok(s.setting(key).ok().flatten()))
+        .ok()
+        .flatten()
+        .and_then(|v| v.parse::<f32>().ok())
+        .unwrap_or(def)
+}
+
 /// 启动一键任务。`task` 只有两种：`tag` / `face`。
 ///
 /// 阈值等参数从设置里读，保证和界面上看到的一致 —— 别让用户改了滑块、
 /// 跑起来却是旧参数。
 #[tauri::command]
 pub async fn ai_run_task(
+    app: tauri::AppHandle,
     state: State<'_, AppState>,
     runner: State<'_, AiRunner>,
     task: String,
@@ -621,20 +865,30 @@ pub async fn ai_run_task(
         })
         .map_err(|e| err(e.to_string()))?;
 
+    /*
+     * ⭐ `tag` 走 **Rust**（ort + DirectML），不再 spawn Python ——
+     * 这是发行版的关键一步：用户机器上不需要装 Python/torch。
+     * `face` 暂时还是 Python（S3 再换）。
+     */
+    if task == "tag" {
+        let stamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
+        let log = std::env::temp_dir().join(format!("pve-ai-tag-{stamp}.log"));
+        let _ = std::fs::write(&log, b"");
+        let path = log.display().to_string();
+        *guard = Some(Running::tag_session(log));
+        // ⚠️ 必须在放锁之后起线程：批处理里要反复拿这把锁更新进度
+        drop(guard);
+
+        let app2 = app.clone();
+        let lib2 = library.clone();
+        tauri::async_runtime::spawn_blocking(move || run_tag_batch_blocking(app2, lib2));
+        return Ok(path);
+    }
+
     let steps: Vec<Step> = match task.as_str() {
-        "tag" => vec![Step {
-            script: "auto_tag.py",
-            args: vec![
-                "--library".into(),
-                library,
-                "--l1-threshold".into(),
-                format!("{th_l1:.2}"),
-                "--threshold".into(),
-                format!("{th:.2}"),
-                "--write".into(),
-                "--reset".into(),
-            ],
-        }],
         "face" => vec![
             Step {
                 script: "face_probe.py",
@@ -673,6 +927,7 @@ pub async fn ai_run_task(
         ok: true,
         python,
         root,
+        tag: None,
     };
     spawn_next(&mut running).map_err(err)?;
     let path = running.log.display().to_string();
@@ -695,6 +950,16 @@ pub async fn ai_task_status(runner: State<'_, AiRunner>) -> Result<AiTaskStatus,
             lines: Vec::new(),
         });
     };
+
+    // Rust 打标：进度在 `tag` 里，和子进程那套完全分开
+    if let Some(t) = run.tag.as_ref() {
+        return Ok(AiTaskStatus {
+            running: !t.finished,
+            done: t.finished,
+            ok: t.ok,
+            lines: t.lines.iter().cloned().collect(),
+        });
+    }
 
     let mut finished = false;
     if let Some(child) = run.child.as_mut() {

@@ -931,6 +931,27 @@ impl Store {
         Ok(n)
     }
 
+    /// **覆盖**一张图的 AI 标签（先删该图所有 `source='ai'` 的挂载，再写新的）。
+    ///
+    /// ⭐ 用「按图覆盖」而不是「全库先删再写」：中途崩溃/断电时，
+    /// 全库先删会让**所有**图的 AI 标签都没了，而按图覆盖最多丢失正在处理的那张。
+    ///
+    /// `tags` 里是 `(词条, 分数)`；分数写进 `confidence`，前端可用来排序/调试。
+    pub fn replace_ai_tags(&mut self, image_id: i64, tags: &[(String, f32)]) -> Result<()> {
+        repo::tags::clear_image_source(&self.conn, image_id, "ai")?;
+        for (name, score) in tags {
+            let tag_id = repo::tags::ensure(&self.conn, name, Some("ai"))?;
+            repo::tags::add_image_tag(
+                &self.conn,
+                image_id,
+                tag_id,
+                "ai",
+                Some(*score as f64),
+            )?;
+        }
+        Ok(())
+    }
+
     /// 从一批图**移除**某个标签（按 id）。返回受影响的张数。
     pub fn remove_tag(&mut self, ids: &[i64], tag_id: i64) -> Result<usize> {
         let mut n = 0usize;

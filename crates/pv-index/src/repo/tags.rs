@@ -13,6 +13,17 @@ pub fn ensure(conn: &Connection, name: &str, kind: Option<&str>) -> Result<i64> 
     Ok(conn.query_row("SELECT id FROM tags WHERE name = ?1", params![name], |r| r.get(0))?)
 }
 
+/// 清掉某张图在某个来源下的全部标签挂载（AI 重跑前用）。
+///
+/// 按 `source` 过滤是必须的：`image_tags` 里同时有 user / ai / exif / ocr / face，
+/// 清 ai 时不能把用户手动打的标签一起删了。
+pub fn clear_image_source(conn: &Connection, image_id: i64, source: &str) -> Result<usize> {
+    Ok(conn.execute(
+        "DELETE FROM image_tags WHERE image_id = ?1 AND source = ?2",
+        params![image_id, source],
+    )?)
+}
+
 /// 列出全部标签。
 pub fn list_all(conn: &Connection) -> Result<Vec<Tag>> {
     let mut stmt = conn.prepare("SELECT id, name, kind, color FROM tags ORDER BY name")?;

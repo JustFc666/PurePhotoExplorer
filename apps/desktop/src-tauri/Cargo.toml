@@ -25,6 +25,7 @@ tracing-subscriber.workspace = true
 pv-core.workspace = true
 pv-decode.workspace = true
 pv-index.workspace = true
+pv-ai.workspace = true
 pv-store.workspace = true
 # 侧栏系统图标：HICON → RGBA → PNG（BMP 不支持 alpha，透明区会变黑块）
 png.workspace = true
