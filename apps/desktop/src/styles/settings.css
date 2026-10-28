@@ -512,3 +512,21 @@
 .pv-set-grip[data-dragging='true'] {
   opacity: 0.9;
 }
+
+/* ── AI 任务的实时日志（2026-10-28：打标/人像改成一键跑）──
+ * 等宽字体 + 固定高度，跑批时看最后几行在干什么；不设高度会让设置页疯狂变长。 */
+.pv-set-log {
+  margin: 8px 0 0;
+  max-height: 180px;
+  overflow: auto;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--pv-bg-canvas);
+  border: 1px solid var(--pv-border-subtle);
+  font-family: ui-monospace, Consolas, 'Cascadia Mono', monospace;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--pv-text-secondary);
+  white-space: pre-wrap;
+  word-break: break-all;
+}

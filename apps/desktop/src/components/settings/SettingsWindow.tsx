@@ -20,6 +20,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { MouseEvent as ReactMouseEvent } from 'react'
 import { ASSOCIATION_FORMATS } from '../../constants/formats'
+import { AiRunPanel } from './AiRunPanel'
 import type { AssociationState } from '../../ipc'
 import { open as openDialog, save as saveDialog } from '@tauri-apps/plugin-dialog'
 import {
@@ -29,11 +30,9 @@ import {
   aiVocabExport,
   aiVocabImport,
   aiVocabToggle,
-  managerLibraries,
   appDataDir,
   managerCacheStats,
   managerClearCache,
-  type LibraryItem,
   revealInExplorer,
   type AiConfig,
   type CacheStats,
@@ -749,7 +748,7 @@ function TagPage() {
           </div>
           {msg && <div className="pv-set-hint">{msg}</div>}
 
-          <TagRerun l1={thL1} l2={thL2} />
+          <TagRerun />
         </>
       )}
     </>
@@ -765,52 +764,13 @@ function TagPage() {
  *
  * `--reset` 会先清掉该图库里的 AI/EXIF 标签再写，否则新旧标签会累加。
  */
-function TagRerun({ l1, l2 }: { l1: number; l2: number }) {
-  const [libs, setLibs] = useState<LibraryItem[]>([])
-  const [picked, setPicked] = useState('')
-
-  useEffect(() => {
-    void managerLibraries()
-      .then((list) => {
-        setLibs(list)
-        const first = list[0]
-        if (first) setPicked(first.name)
-      })
-      .catch(() => undefined)
-  }, [])
-
-  const buildCmd = (name: string) =>
-    `J:/ai/tts/.venv/Scripts/python.exe tools/ai/auto_tag.py --library "${name}" ` +
-    `--l1-threshold ${l1.toFixed(2)} --threshold ${l2.toFixed(2)} --write --reset`
-
+function TagRerun() {
   return (
-    <div className="pv-set-row" style={{ marginTop: 18 }}>
-      <div className="pv-set-label">重新打标</div>
-      <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-        <div style={{ minWidth: 220 }}>
-          {libs.map((l) => (
-            <Choice
-              key={l.id}
-              on={picked === l.name}
-              label={`${l.name}（${l.count} 张）`}
-              onClick={() => setPicked(l.name)}
-            />
-          ))}
-          {libs.length === 0 && <div className="pv-set-hint">还没有图库</div>}
-        </div>
-        <button
-          className="pv-set-btn"
-          disabled={!picked}
-          onClick={() => void navigator.clipboard.writeText(buildCmd(picked)).catch(() => undefined)}
-        >
-          复制打标命令
-        </button>
-      </div>
-      <div className="pv-set-hint">
-        打标在本机脚本里跑（不进主进程）：复制命令到项目目录执行。命令会带上当前两级阈值；
-        `--reset` 先清掉该图库已有的 AI 标签再重写。
-      </div>
-    </div>
+    <AiRunPanel
+      task="tag"
+      title="重新打标"
+      hint="按当前两级阈值重跑这个图库：会先清掉它已有的 AI 标签再写，所以不会越跑越多。跑批期间可以关掉设置窗口，任务照常进行。"
+    />
   )
 }
 
@@ -854,48 +814,12 @@ function FacePage() {
 }
 
 function FaceRerun() {
-  const [libs, setLibs] = useState<LibraryItem[]>([])
-  const [picked, setPicked] = useState<string>('')
-
-  useEffect(() => {
-    void managerLibraries()
-      .then((list) => {
-        setLibs(list)
-        const first = list[0]
-        if (first) setPicked(first.name)
-      })
-      .catch(() => undefined)
-  }, [])
-
-  const cmd =
-    `J:/ai/tts/.venv/Scripts/python.exe tools/ai/face_probe.py --library "${picked}" ` +
-    `--long-side 2048 --min-face 56 --only-person-tags --write-db
-` +
-    `J:/ai/tts/.venv/Scripts/python.exe tools/ai/face_cluster.py --reset`
-
   return (
-    <div className="pv-set-row" style={{ marginTop: 18 }}>
-      <div className="pv-set-label">重新识别人像</div>
-      <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-        <div style={{ minWidth: 220 }}>
-          {libs.map((l) => (
-            <Choice key={l.id} on={picked === l.name} label={`${l.name}（${l.count} 张）`} onClick={() => setPicked(l.name)} />
-          ))}
-          {libs.length === 0 && <div className="pv-set-hint">还没有图库</div>}
-        </div>
-        <button
-          className="pv-set-btn"
-          disabled={!picked}
-          onClick={() => void navigator.clipboard.writeText(cmd).catch(() => undefined)}
-        >
-          复制识别命令
-        </button>
-      </div>
-      <div className="pv-set-hint">
-        识别在本机脚本里跑（不进主进程）：复制上面的命令到项目目录执行即可。
-        只处理带「人像 / 证件」标签的图，同一张图里同一个人只算一次。
-      </div>
-    </div>
+    <AiRunPanel
+      task="face"
+      title="重新识别人像"
+      hint="先检测人脸并写向量，再重新聚类（两步自动串行）。只处理带「人像 / 证件」标签的图；同一张图里同一个人只算一次。"
+    />
   )
 }
 

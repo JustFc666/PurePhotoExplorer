@@ -747,3 +747,30 @@ export interface VocabImportResult {
 export function aiVocabImport(path: string): Promise<VocabImportResult> {
   return invoke<VocabImportResult>('ai_vocab_import', { path })
 }
+
+/** 一键任务的状态快照（每 500ms 轮询）。 */
+export interface AiTaskStatus {
+  running: boolean
+  done: boolean
+  ok: boolean
+  /** 日志尾部（最多 200 行） */
+  lines: string[]
+}
+
+/**
+ * 启动一键 AI 任务（`tag` = 打标，`face` = 人像识别 + 聚类）。
+ *
+ * ⚠️ 现阶段是**过渡实现**：后端 spawn `tools/ai/*.py`，需要本机有 Python。
+ * 返回的是日志文件路径（调试用，界面上不显示）。
+ */
+export function aiRunTask(task: 'tag' | 'face', library: string): Promise<string> {
+  return invoke<string>('ai_run_task', { task, library })
+}
+
+export function aiTaskStatus(): Promise<AiTaskStatus> {
+  return invoke<AiTaskStatus>('ai_task_status')
+}
+
+export function aiTaskStop(): Promise<void> {
+  return invoke<void>('ai_task_stop')
+}
