@@ -1147,7 +1147,13 @@ export function App() {
   })
 
   return (
-    <div className="pv-app" data-dragging={dragging} data-fullscreen={isFullscreen} {...html5DropProps}>
+    <div
+      className="pv-app"
+      data-mode={mode}
+      data-dragging={dragging}
+      data-fullscreen={isFullscreen}
+      {...html5DropProps}
+    >
       {/* 自绘窗口边缘 resize 热区（decorations: false 后系统边框失效） */}
       <ResizeHandles enabled={!isFullscreen} onResize={startResize} />
 

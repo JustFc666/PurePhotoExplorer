@@ -62,7 +62,10 @@
   height: 30px;
   margin-right: 8px;
   color: #fff;
-  background: var(--pv-bg-surface);
+  /* ⛔ 不要给底色：`.pv-logo` 是 40×30 的实心块，底色一旦和顶栏不一致，
+     这块的边（尤其下边缘）在深色顶栏上就会显出一条横线 —— 2026-10-28 用户报的
+     「logo 下面多了一条横线」。透明最稳：永远跟着顶栏背景走。 */
+  background: transparent;
 }
 
 .pv-logo svg {
@@ -145,6 +148,20 @@
  * 用户 2026-10-08 截图指出「只有上面是圆角」—— 按钮虽然撑满栏高，
  * 但它比栏矮 1px（栏有 border-bottom），底边仍然看得见）。
  */
+/*
+ * 图库模式下**隐藏单图浏览的工具栏**。
+ *
+ * 图库视图（`.pv-mg`）是 `position:absolute; inset:0` 盖在工具栏上的，本来什么都看不到 ——
+ * 但 `.pv-logo` 带 `z-index: 100`（为了盖住窗口拖拽热区好让用户拖 logo 移动窗口），
+ * 它跑出了工具栏的层叠上下文，**穿透到 `.pv-mg`（z-index: 30）之上**。
+ * 结果：图库里同时出现两个 logo，差几个像素叠在一起，看起来像「logo 下面多了一条横线」。
+ *
+ * ⛔ 别改成提高 `.pv-mg` 的 z-index：那会盖住 portal 到 body 的弹窗（modal 是 z-index 60）。
+ */
+.pv-app[data-mode='manager'] .pv-toolbar {
+  visibility: hidden;
+}
+
 .pv-toolbar .pv-btn {
   height: auto;
   align-self: stretch;
