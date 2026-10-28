@@ -772,9 +772,23 @@ export function App() {
       setShowSettings(false)
       return true
     }
-    if (viewController.view.frameRect === null) return false
-    viewController.clearCrop()
-    return true
+    /*
+     * 裁剪 / 角度调整：**一次撤销干净**。
+     *
+     * ⭐ 2026-10-28 用户要求「角度调整也按裁剪的逻辑」—— 原来这里只判断
+     * `frameRect`，于是**只拖了角度滑块**（没碰裁剪框）时按 Esc 会直接往下走
+     * （退全屏 / 回图库），用户想撤销刚调的角度却撤不掉。
+     *
+     * 用 `resetAdjust()` 而不是 `clearCrop()`：后者刻意「不动角度与比例」，
+     * 正好少了用户要的那一半。`resetAdjust` 会把旋转 / 细调角 / 比例 / 框选
+     * 一并复位并回到整图适应 —— 语义就是「放弃这次调整」，和关闭调整面板一致。
+     */
+    const v = viewController.view
+    if (v.frameRect !== null || v.fineAngle !== 0 || v.rotation !== 0) {
+      viewController.resetAdjust()
+      return true
+    }
+    return false
   }, [contextMenu, showPrintPreview, showHelp, showSettings, viewController])
 
   /**

@@ -58,7 +58,7 @@ const SHORTCUTS: ReadonlyArray<readonly [string, ReadonlyArray<readonly [string,
       ['拖框四角', '改裁剪框大小（固定比例时锁死宽高比）'],
       ['拖框内部', '平移裁剪框（画面不动）'],
       ['画布比例 1:1 / 16:9 …', '按比例裁剪，预置框居中'],
-      ['Esc', '取消裁剪 → 退出全屏 → 适应窗口'],
+      ['Esc', '撤销调整（裁剪 / 角度）→ 退出全屏 → 回图库'],
     ],
   ],
   [
