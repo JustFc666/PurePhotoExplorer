@@ -277,5 +277,10 @@ export function useShortcuts({
 
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
-  }, [onOpen, onPrint, onAction, hasImage, onNext, onPrev, onToggleFullscreen, onToggleSlideshow, onToggleMaximize, onToggleInfo, onToggleAdjust, onToggleHelp, onEscape, isFullscreen, onRefresh, enabled])
+    /*
+     * ⚠️ `onExitToManager` 必须在依赖里：它按 `image` 是否为空决定「回图库」还是
+     * 「适应窗口」。漏了它，闭包会永远停在**首次渲染**（那时还没有图）——
+     * 于是每次 Esc 都被当成本「空画面回图库」，正常看图时按 Esc 也会被弹走。
+     */
+  }, [onOpen, onPrint, onAction, hasImage, onNext, onPrev, onToggleFullscreen, onToggleSlideshow, onToggleMaximize, onToggleInfo, onToggleAdjust, onToggleHelp, onEscape, onExitToManager, isFullscreen, onRefresh, enabled])
 }

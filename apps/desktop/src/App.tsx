@@ -1160,6 +1160,17 @@ export function App() {
      * 只消费一次：退出后标记清零，再按 Esc 就落到「适应窗口」，不会来回弹。
      */
     onExitToManager: () => {
+      /*
+       * 单图模式**没有图片**（空状态 / 加载失败）时，Esc 直接回图库 ——
+       * 空画面没什么可看的，而这是用户唯一的键盘出口：
+       * 「适应窗口」对一个空画布毫无意义，按下去看着像卡死了（2026-10-28 用户报
+       * 「图库按 Esc 切到单图，单图没图就切不回来」）。
+       */
+      if (!image) {
+        cameFromManagerRef.current = false
+        setMode('manager')
+        return true
+      }
       if (!cameFromManagerRef.current) return false
       cameFromManagerRef.current = false
       setMode('manager')
@@ -1396,7 +1407,12 @@ export function App() {
           /*
            * 图库自己按 Esc 退回单图（既有行为）。这里把「来自图库」的标记清掉 ——
            * 否则紧接着再按 Esc 又会跳回图库，两个模式来回弹。
+           *
+           * ⚠️ 但**没有任何图片时不要切**：那会落到一个空的单图视图，
+           * 用户按 Esc 想回图库，结果卡在空画面里（2026-10-28 用户报的正是这个）。
+           * 图库里按 Esc 本来就是「退出图库视图」，没图可退就保持原样。
            */
+          if (!image) return
           cameFromManagerRef.current = false
           setMode('viewer')
         }}
