@@ -71,6 +71,16 @@ interface ShortcutsProps {
    * 否则 `Esc` 会变成哑键。
    */
   onEscape: () => boolean
+  /**
+   * `Esc` 的**次优先级**：从「图库双击进来的单图」退回图库（多图浏览）。
+   *
+   * 返回 `true` = 已消费。**只有本次单图确实来自图库时才该返回 true** ——
+   * 直接打开文件 / 拖放进来时没有图库上下文，必须返回 false，
+   * 让 Esc 继续落到「适应窗口」。
+   *
+   * 位置在**全屏之后**：全屏看图的 Esc 直觉是退全屏，不是一下跳回图库。
+   */
+  onExitToManager?: () => boolean
   /** 当前是否全屏（决定 Esc 是退出全屏还是适应窗口） */
   isFullscreen: boolean
   /** 关掉键盘监听（图库模式下由管理器接管，避免快捷键串台） */
@@ -91,6 +101,7 @@ export function useShortcuts({
   onToggleAdjust,
   onToggleHelp,
   onEscape,
+  onExitToManager,
   isFullscreen,
   onRefresh,
   enabled = true,
@@ -171,10 +182,11 @@ export function useShortcuts({
         return
       }
 
-      // ── Esc 的优先级（2026-10-08 更新）──
+      // ── Esc 的优先级（2026-10-28 更新）──
       // ① 浮层打开中 → 关掉浮层 / 裁剪框已定 → 取消裁剪
       // ② 全屏 → 退出全屏
-      // ③ 其余情况落到下面的 switch：适应窗口
+      // ③ 从图库进来的单图 → 退回图库（多图浏览）
+      // ④ 其余情况落到下面的 switch：适应窗口
       // 必须把 ① 放在最前，否则用户在「框选放大」里按 Esc 会先去动全屏，
       // 画面反而更乱，而他真正想要的是「取消这次裁剪」。
       if (e.key === 'Escape' && onEscape()) {
@@ -185,6 +197,15 @@ export function useShortcuts({
       if (e.key === 'Escape' && isFullscreen) {
         e.preventDefault()
         onToggleFullscreen()
+        return
+      }
+
+      /*
+       * ③ 从图库进来的单图 → 退回图库（多图浏览）。
+       *    放在全屏之后、适应窗口之前：全屏时 Esc 先退全屏，再按一次才回图库。
+       */
+      if (e.key === 'Escape' && onExitToManager?.()) {
+        e.preventDefault()
         return
       }
 

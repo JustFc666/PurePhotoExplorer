@@ -151,6 +151,17 @@ export function App() {
    * 这个应用的主要用途是**管理**照片，看图是从图库里双击进去的动作。
    */
   const [mode, setMode] = useState<'viewer' | 'manager'>('manager')
+  /**
+   * 当前这张单图是不是**从图库双击（或放映）进来的**。
+   *
+   * 决定 `Esc` 是「退回图库」还是「适应窗口」：
+   * - `true`  → 有图库上下文，Esc 回多图浏览（用户 2026-10-28 要求）
+   * - `false` → 直接打开文件 / 拖放进来，没有「多图」可回，Esc 保持原行为
+   *
+   * ⛔ 别用「`playlist` 非空」来判断：退出列表模式时它会被清空，
+   *    而且从图库双击后再用「打开文件」打开别的图，playlist 也可能还留着。
+   */
+  const cameFromManagerRef = useRef(false)
   /** 图片信息浮层是否展开 */
   const [showInfo, setShowInfo] = useState(false)
   /** 画布调整浮层是否展开 */
@@ -292,6 +303,8 @@ export function App() {
        * 悬停标记在 `over` 阶段就置好了，所以先于这个回调可读。
        */
       if (getLibDropHover() !== null) return
+      /* 拖进来的文件没有图库上下文，Esc 保持「适应窗口」 */
+      cameFromManagerRef.current = false
       void load(path)
     },
     onError: (message) => fail(message),
@@ -312,6 +325,8 @@ export function App() {
     try {
       const selected = await openDialog({ multiple: false, filters: DIALOG_FILTERS })
       if (typeof selected === 'string') {
+        /* 直接打开一个文件 → 没有图库上下文，Esc 不该跳图库 */
+        cameFromManagerRef.current = false
         await load(selected)
       }
     } catch (err) {
@@ -489,6 +504,7 @@ export function App() {
     (paths: string[], startPath?: string) => {
       const list = paths.filter((p) => !!p)
       if (list.length === 0) return
+      cameFromManagerRef.current = true
       setPlaylist(list)
       setMode('viewer')
       const start = startPath && list.includes(startPath) ? startPath : list[0]!
@@ -1114,6 +1130,16 @@ export function App() {
     onToggleAdjust: onToggleAdjustPanel,
     onToggleHelp: toggleHelp,
     onEscape,
+    /*
+     * 从图库进来的单图，Esc 退回多图浏览。
+     * 只消费一次：退出后标记清零，再按 Esc 就落到「适应窗口」，不会来回弹。
+     */
+    onExitToManager: () => {
+      if (!cameFromManagerRef.current) return false
+      cameFromManagerRef.current = false
+      setMode('manager')
+      return true
+    },
     isFullscreen,
     onRefresh: handleRefresh,
     // 放映时整套快捷键让位给 `useSlideshow`（空格/方向键语义完全不同）
@@ -1335,7 +1361,14 @@ export function App() {
       */}
       <ManagerView
         active={mode === 'manager'}
-        onExit={() => setMode('viewer')}
+        onExit={() => {
+          /*
+           * 图库自己按 Esc 退回单图（既有行为）。这里把「来自图库」的标记清掉 ——
+           * 否则紧接着再按 Esc 又会跳回图库，两个模式来回弹。
+           */
+          cameFromManagerRef.current = false
+          setMode('viewer')
+        }}
         onOpenSettings={openSettings}
         onOpenImage={(p, siblings) => {
           /*
@@ -1344,6 +1377,7 @@ export function App() {
            * 按人像/标签筛出来的图散落在不同目录，翻一张就跳出筛选结果了。
            * 列表里含当前路径时才用（理论上必然含，防御一下脏数据）。
            */
+          cameFromManagerRef.current = true
           setPlaylist(siblings.includes(p) ? siblings : null)
           setMode('viewer')
           void load(p)
