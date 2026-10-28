@@ -34,8 +34,23 @@ Rust 侧用 `ort`（onnxruntime 的 Rust 绑定，动态链接 `onnxruntime.dll`
 - 同一份二进制在无独显机器上自动掉到 CPU EP（限 4 线程），不需要装第二套；
 - ⛔ 不引 torch / CUDA / ROCm —— 那条路对分发是灾难（CUDA 版 2.5 GB+，ROCm 版只认 gfx110x）。
 
-> ⚠️ **待验证（半天 spike）**：`ort` 2.x 的 `directml` feature 需要配套的 ORT-DML 动态库版本，
-> 且 `DirectML.dll` 要随包分发。第一步只跑一个 224×224 的空模型把 EP 打通，确认版本组合，再谈模型。
+> ✅ **S0 已验证（2026-10-28，本机 RX 7800 XT / Win10 22H2）**
+>
+> | 项 | 结果 |
+> |---|---|
+> | `ort` | **2.0.0-rc.15**（`cargo add ort --features directml`） |
+> | ORT API 版本 | 31 |
+> | DirectML 编译期支持 | `DirectML::is_available() == Ok(true)` |
+> | 真模型推理 | YuNet 640×640，**稳态 4.6 ms/次**（首次 6.7ms 含预热） |
+> | 结论 | **不需要退 CPU EP** —— 4.6ms 只可能是 GPU |
+>
+> 三条实测要点：
+> 1. `directml` feature 会让 `download-binaries` 自动下 **DirectML 版** ORT（不用手动找 dll）；
+> 2. **ORT 是静态链接**（`target/debug` 里没有 `onnxruntime.dll`），so 发行版 exe 会大 ~50MB；
+> 3. `DirectML.dll` 被自动软链进 target（来自 `%LOCALAPPDATA%/ort.pyke.io/dfbin/`）——
+>    ⚠️ **发行版必须真正拷一份进安装包**，软链只在开发机有效。
+>
+> 探测程序：`cargo run -p pv-ai --example dml_probe`。
 
 ### 1.2 自动标签模型
 
@@ -330,7 +345,7 @@ CREATE TABLE persons (
 
 | 阶段 | 内容 | 验收 |
 |---|---|---|
-| **S0**（0.5 天） | `ort` + DirectML 打通：空模型 224×224 跑通，确认 DLL 版本组合 | 三种机器（核显/独显/纯 CPU）各出一次推理 |
+| **S0**（0.5 天） | ✅ **已完成 2026-10-28**：`ort 2.0.0-rc.15` + DirectML，YuNet 640×640 稳态 4.6ms | 独显已验；核显/纯 CPU 待别的机器验证 |
 | **S1**（3 天） | CN-CLIP 导出 ONNX + 词表向量 + 打标签批处理（暂停/续跑） | 500 张真实照片，标签命中肉眼判断 ≥80% 合理 |
 | **S2**（2 天） | 写库 `tags(source='ai')` + 标题区标签条接真数据 + 搜索/侧栏联动 | 点 AI 标签能筛出图；重跑不产生重复标签 |
 | **S3**（3 天） | 人脸检测 + embedding 入库 + 聚类 | 20 人小库，聚类正确率 ≥85% |
