@@ -33,8 +33,13 @@ interface Props {
   onSelect: (id: number, name: string) => void
 }
 
-/** 浮层宽度（要与 CSS 的 `.pv-pwp` 保持一致，锚点右对齐时要用） */
-export const PERSON_POP_W = 560
+/**
+ * 浮层宽度（**必须与 CSS `.pv-pwp` 的 `width` 一致**）。
+ *
+ * 锚点右对齐时用它算 `x = right - 宽度`，两边不一致浮层就偏出去（右边被窗口裁掉）。
+ * ⛔ 改列数/卡片尺寸时，这里和 `manager.css` 的 `.pv-pwp { width }` 要一起改。
+ */
+export const PERSON_POP_W = 494
 
 export function PersonWall({ anchor, currentId, onClose, onSelect }: Props) {
   const [people, setPeople] = useState<PersonItem[]>([])

@@ -37,12 +37,23 @@ describe('右键菜单不引起侧栏布局跳变', () => {
     expect(sidebarSrc).toContain('pv-mg-sec pv-mg-sec-lib')
   })
 
-  it('分区 flex 不再依赖 :first-child / :last-child', () => {
-    // 不能再出现「结构选择器定 flex」的写法
+  it('分区高度用显式 class，不依赖 :first-child / :last-child', () => {
+    // 核心不变量：不能再出现「结构选择器定 flex」的写法
+    // （右键菜单一旦挂进侧栏，wrapper 就会变成 `:last-child`，布局会瞬移）
     expect(cssSrc).not.toMatch(/\.pv-mg-sec:(first|last)-child/)
-    // 显式规则必须在位
-    expect(cssSrc).toMatch(/\.pv-mg-sec-tree\s*\{[^}]*flex:\s*1 1 58%/)
-    expect(cssSrc).toMatch(/\.pv-mg-sec-lib\s*\{[^}]*flex:\s*1 1 42%/)
+
+    /*
+     * 两个分区都必须有自己的规则块。
+     *
+     * ⚠️ 2026-10-28 起**不再断言具体百分比**：上下比例改成用户可拖拽
+     * （`pv.set.sideTreePct`，tree 区由内联 `flex: 0 0 X%` 控制），
+     * lib 区改成 `flex: 1 1 auto` 吃剩余。绑死 58%/42% 会挡住这个需求，
+     * 而真正要防的回归是「有人图省事改回 :first-child」—— 上一行已经守住了。
+     */
+    expect(cssSrc).toMatch(/\.pv-mg-sec-tree\s*\{/)
+    expect(cssSrc).toMatch(/\.pv-mg-sec-lib\s*\{[^}]*flex:\s*1 1 auto/)
+    // 分隔条必须存在，否则用户没法拖
+    expect(cssSrc).toMatch(/\.pv-mg-hsplit\s*\{/)
   })
 
   it('菜单定位靠坐标 key 重挂载，不靠 position 同步 effect', () => {

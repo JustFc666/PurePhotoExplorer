@@ -241,6 +241,32 @@ body.is-col-resizing {
   cursor: col-resize !important;
   user-select: none !important;
 }
+
+/* ── 侧栏内部的「文件夹 / 图库」上下分隔条（2026-10-28 用户要求可调）──
+ * 和左右那条 `.pv-mg-split` 一个套路：平时透明，悬停/拖动时亮起来。
+ * 高度占 5px 当热区；视觉上的分隔线仍用 `.pv-mg-sec-lib` 的 border-top。 */
+.pv-mg-hsplit {
+  /* 本体就是那条 1px 分隔线（`.pv-mg-sec-lib` 的 border-top 已去掉）*/
+  flex: 0 0 1px;
+  position: relative;
+  background: var(--pv-border-subtle);
+  cursor: row-resize;
+  z-index: 1;
+}
+/* 热区往上往下各扩 4px —— 1px 的线太难抓 */
+.pv-mg-hsplit::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: -4px;
+  bottom: -4px;
+}
+.pv-mg-hsplit:hover,
+.pv-mg-hsplit[data-dragging='true'] {
+  background: var(--pv-accent);
+}
+
 .pv-mg-sec {
   display: flex;
   flex-direction: column;
@@ -257,8 +283,9 @@ body.is-col-resizing {
   flex: 1 1 58%;
 }
 .pv-mg-sec-lib {
-  flex: 1 1 42%;
-  border-top: 1px solid var(--pv-border-subtle);
+  /* 高度吃剩余（上方 tree 区用内联 flex 百分比控制）；分隔线由 `.pv-mg-hsplit` 画 */
+  flex: 1 1 auto;
+  min-height: 0;
 }
 .pv-mg-sech {
   flex: 0 0 auto;
@@ -1603,15 +1630,22 @@ body.is-col-resizing {
 }
 
 /* ── 人像墙浮层（替代原来的整页人像专栏，2026-10-25）────────────
- * 固定宽 560（与 PERSON_POP_W 一致）、6 列、80px 头像、只显张数。
- * 多了滚轮滚动；高度上限 400 保证不超出一屏。 */
+ * ⭐ 2026-10-28 起默认 **5 列 × 2 行**、宽 494（与 `PERSON_POP_W` 一致）、80px 头像、只显张数。
+ * 超过 10 个人物就纵向滚动；横向一律不滚（宽度按列数精确算过）。 */
 .pv-pwp {
   position: fixed;
   z-index: 95;
-  /* 6 列 × 80px + 5×10 间距 + 24 内边距 ≈ 554；取 560 留一点余量 */
-  width: 560px;
-  /* 默认露三行：头部 40 + 上下内边距 24 + 3×80 + 2×10 间距 ≈ 324 */
-  max-height: 324px;
+  /*
+   * ⭐ 5 列 × **86** + 4×10 间距 + 24 内边距 = 494（2026-10-28 用户要求默认 5×2）。
+   * 86 = 头像 80 + 卡片左右 padding 各 3 —— 少算这 6px 头像就会被列宽挤出去，
+   * 于是出现横向滚动条（正是用户要避免的）。改列数时这条算式必须跟着改。
+   */
+  width: 494px;
+  /*
+   * 默认露**两行**：头部 38 + 上下内边距 24 + 2×(80 头像 + 3 间距 + 14 张数 + 6 padding)
+   * + 1×10 行间距 ≈ 282。取 282 —— 再小第三行就露半截，再大就浪费。
+   */
+  max-height: 282px;
   display: flex;
   flex-direction: column;
   border-radius: 10px;
@@ -1659,8 +1693,11 @@ body.is-col-resizing {
 .pv-pwp-grid {
   flex: 1 1 auto;
   overflow-y: auto;
+  /* ⛔ 列宽已经按「5 列 + 间距 + 内边距」精确算过，任何横向溢出都是 bug（用户 2026-10-28
+     明确不要横向滚动条）。这里兜底藏掉，宁可裁 1px 也不出滚动条。 */
+  overflow-x: hidden;
   display: grid;
-  grid-template-columns: repeat(6, 1fr);
+  grid-template-columns: repeat(5, 1fr);
   gap: 10px;
   padding: 12px;
   align-content: start;

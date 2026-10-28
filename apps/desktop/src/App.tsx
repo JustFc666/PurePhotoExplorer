@@ -604,6 +604,31 @@ export function App() {
   }, [])
 
   /**
+   * `Ctrl + ,` 开关设置窗口。
+   *
+   * ⭐ 挂在这里而不是 `useShortcuts` / `ManagerView`：那两套都**按 mode 门控**
+   * （单图浏览 / 图库各自接管），而设置窗口两种模式下都要能开 ——
+   * 菜单里标着这个快捷键却按不出来，就是这么漏的（2026-10-28 用户报）。
+   *
+   * ⚠️ 必须 `preventDefault()`：Chromium 里 `Ctrl+,` 没有默认行为，
+   * 但 WebView2 的某些版本会把它当成打开开发者工具/设置的入口。
+   */
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (!(e.ctrlKey || e.metaKey)) return
+      /*
+       * 同时认 `code` 和 `key`：中文输入法下 `e.key` 可能是全角「，」，
+       * 而 `e.code === 'Comma'` 指的是**物理键位**，不受输入法影响。
+       */
+      if (e.code !== 'Comma' && e.key !== ',') return
+      e.preventDefault()
+      toggleSettings()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [toggleSettings])
+
+  /**
    * 打开调整面板时的视图快照。
    *
    * 用户诉求（2026-10-07）：「如果调整没有覆盖原图，退出调整后应恢复调整前的显示」。

@@ -14,7 +14,7 @@
  * 一次性递归枚举会在网络盘上卡死。展开哪个节点才拉哪个节点的直接子目录。
  */
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { MouseEvent as ReactMouseEvent } from 'react'
 
 import { ConfirmDialog } from '../chrome/ConfirmDialog'
@@ -301,6 +301,27 @@ function LibraryRow({
 }
 
 
+/**
+ * 「文件夹 / 图库」上下分区的比例（0..1，`tree` 占多少）。
+ *
+ * ⭐ 存**比例**不存像素：窗口一改大小，像素值就失效了（要么把图库区挤成 0，
+ * 要么留一大片空白）。比例天然自适应。
+ */
+const TREE_PCT_KEY = 'pv.mg.sideTreePct'
+const TREE_MIN = 0.2
+const TREE_MAX = 0.8
+const TREE_DEFAULT = 0.58
+
+function readTreePct(): number {
+  try {
+    const v = Number(localStorage.getItem(TREE_PCT_KEY))
+    if (Number.isFinite(v) && v >= TREE_MIN && v <= TREE_MAX) return v
+  } catch {
+    /* 隐私模式等读不到就用默认 */
+  }
+  return TREE_DEFAULT
+}
+
 interface Props {
   /**
    * 树状态 —— 由 [`ManagerView`] 持有并传下来。
@@ -464,6 +485,49 @@ export function ManagerSidebar({
 
   /** 右键菜单：记下右键的是哪个节点（菜单项要按节点类型生成） */
   const ctx = useContextMenu()
+  /**
+   * 「文件夹 / 图库」分区的上下拖拽（2026-10-28 用户要求可调）。
+   *
+   * 存比例、不存像素：窗口缩放时比例天然自适应，不会把某一边挤成 0。
+   * 拖动中直接 setState（每帧一次重渲染，两个分区都很轻，不需要 rAF 节流）。
+   */
+  const asideRef = useRef<HTMLElement>(null)
+  const [treePct, setTreePct] = useState<number>(readTreePct)
+  const [vResizing, setVResizing] = useState(false)
+  const vDrag = useRef({ startY: 0, startPct: TREE_DEFAULT })
+  const treePctRef = useRef(treePct)
+  treePctRef.current = treePct
+
+  const onHSplitDown = useCallback((e: ReactMouseEvent) => {
+    e.preventDefault()
+    vDrag.current = { startY: e.clientY, startPct: treePctRef.current }
+    setVResizing(true)
+  }, [])
+
+  useEffect(() => {
+    if (!vResizing) return
+    const onMove = (e: MouseEvent) => {
+      const h = asideRef.current?.clientHeight ?? 0
+      if (h <= 0) return
+      const next = vDrag.current.startPct + (e.clientY - vDrag.current.startY) / h
+      setTreePct(Math.min(TREE_MAX, Math.max(TREE_MIN, next)))
+    }
+    const onUp = () => {
+      setVResizing(false)
+      try {
+        localStorage.setItem(TREE_PCT_KEY, String(treePctRef.current))
+      } catch {
+        /* 存不进去就只对本会话生效 */
+      }
+    }
+    window.addEventListener('mousemove', onMove)
+    window.addEventListener('mouseup', onUp)
+    return () => {
+      window.removeEventListener('mousemove', onMove)
+      window.removeEventListener('mouseup', onUp)
+    }
+  }, [vResizing])
+
   const [ctxTarget, setCtxTarget] = useState<CtxTarget | null>(null)
   /** 待确认「从图库移除」的目录。非 null 时显示自绘确认框。 */
   const [pendingRemove, setPendingRemove] = useState<FolderNode | null>(null)
@@ -506,11 +570,12 @@ export function ManagerSidebar({
 
   return (
     <aside
+      ref={asideRef}
       className="pv-mg-side"
       // 宽度由主视图的拖拽条控制（拖动时实时变，松手记进 localStorage）
       style={{ flex: `0 0 ${width}px` }}
     >
-      <div className="pv-mg-sec pv-mg-sec-tree">
+      <div className="pv-mg-sec pv-mg-sec-tree" style={{ flex: `0 0 ${treePct * 100}%` }}>
         {/*
           地址栏（取代原来的「文件夹」分区标题）。照资源管理器那样：
           直接敲路径回车就到。原来的「右键可加入图库」提示移到 title 里 ——
@@ -564,6 +629,17 @@ export function ManagerSidebar({
           )}
         </div>
       </div>
+
+      {/* 上下分区的拖拽条：平时几乎隐形，悬停/拖动时亮起来 */}
+      <div
+        className="pv-mg-hsplit"
+        data-dragging={vResizing}
+        onMouseDown={onHSplitDown}
+        role="separator"
+        aria-orientation="horizontal"
+        aria-label="调整文件夹与图库的高度"
+        title="拖动调整上下比例"
+      />
 
       <div className="pv-mg-sec pv-mg-sec-lib">
         <div className="pv-mg-sech">

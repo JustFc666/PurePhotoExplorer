@@ -23,10 +23,13 @@
 }
 
 .pv-set-window {
+  /* 宽高由组件内联 style 给（可拖拽调整，存 localStorage）；这里只留兜底 */
   width: 780px;
   max-width: calc(100vw - 32px);
   height: 620px;
   max-height: calc(100vh - 32px);
+  /* 右下角手柄要绝对定位在里面 */
+  position: relative;
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -483,4 +486,29 @@
   background: var(--pv-bg-surface);
   font-size: 11px;
   color: var(--pv-text-tertiary);
+}
+
+/* ── 右下角拖拽手柄（2026-10-28：设置窗口可调大小）──
+ * 用两条斜线画「可拖」的暗示，不抢视觉；热区比图形大一点，好抓。 */
+.pv-set-grip {
+  position: absolute;
+  right: 1px;
+  bottom: 1px;
+  width: 16px;
+  height: 16px;
+  cursor: nwse-resize;
+  opacity: 0.35;
+  transition: opacity 0.12s ease;
+  background-image: linear-gradient(
+    135deg,
+    transparent 0 45%,
+    var(--pv-text-tertiary) 45% 55%,
+    transparent 55% 72%,
+    var(--pv-text-tertiary) 72% 82%,
+    transparent 82%
+  );
+}
+.pv-set-grip:hover,
+.pv-set-grip[data-dragging='true'] {
+  opacity: 0.9;
 }

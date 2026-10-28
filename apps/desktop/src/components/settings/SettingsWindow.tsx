@@ -17,7 +17,8 @@
  * 不弹对话框：设置窗口里再叠一层模态，容易点错。
  */
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import type { MouseEvent as ReactMouseEvent } from 'react'
 import { ASSOCIATION_FORMATS } from '../../constants/formats'
 import type { AssociationState } from '../../ipc'
 import { open as openDialog, save as saveDialog } from '@tauri-apps/plugin-dialog'
@@ -63,6 +64,35 @@ import {
 import type { ThumbTier } from '../../ipc/manager'
 
 /* ── 页面表：组分隔，组内页按顺序 ─────────────────────────── */
+/**
+ * 设置窗口的尺寸（2026-10-28 用户要求可调）。
+ *
+ * 存像素不存比例：这是主窗口里的**浮层**，不是跟随窗口的东西 —— 拖多大就是多大。
+ * 但要夹到视口内，否则换到小屏（或缩小主窗口）后会有一半在屏幕外。
+ */
+const SIZE_KEY = 'pv.set.winSize'
+const SIZE_MIN_W = 560
+const SIZE_MIN_H = 380
+const SIZE_DEFAULT = { w: 780, h: 620 }
+
+function readWinSize(): { w: number; h: number } {
+  try {
+    const raw = localStorage.getItem(SIZE_KEY)
+    if (raw) {
+      const p = JSON.parse(raw) as { w?: number; h?: number }
+      if (typeof p.w === 'number' && typeof p.h === 'number') {
+        return {
+          w: Math.max(SIZE_MIN_W, Math.min(window.innerWidth - 32, p.w)),
+          h: Math.max(SIZE_MIN_H, Math.min(window.innerHeight - 32, p.h)),
+        }
+      }
+    }
+  } catch {
+    /* 读不到就用默认 */
+  }
+  return SIZE_DEFAULT
+}
+
 const PAGES = [
   { id: 'data', group: '常规', label: '数据位置' },
   { id: 'thumb', group: '外观', label: '缩略图' },
@@ -108,6 +138,45 @@ export function SettingsWindow({
   initialPage = 'data',
 }: SettingsWindowProps) {
   const [page, setPage] = useState<PageId>(initialPage)
+  /** 设置窗口尺寸（右下手柄拖拽，松手记进 localStorage） */
+  const [winSize, setWinSize] = useState(readWinSize)
+  const [rResizing, setRResizing] = useState(false)
+  const rDrag = useRef({ x: 0, y: 0, w: SIZE_DEFAULT.w, h: SIZE_DEFAULT.h })
+  const winSizeRef = useRef(winSize)
+  winSizeRef.current = winSize
+
+  const onResizeDown = useCallback((e: ReactMouseEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    rDrag.current = { x: e.clientX, y: e.clientY, w: winSizeRef.current.w, h: winSizeRef.current.h }
+    setRResizing(true)
+  }, [])
+
+  useEffect(() => {
+    if (!rResizing) return
+    const onMove = (e: MouseEvent) => {
+      const { x, y, w, h } = rDrag.current
+      setWinSize({
+        w: Math.max(SIZE_MIN_W, Math.min(window.innerWidth - 32, w + (e.clientX - x))),
+        h: Math.max(SIZE_MIN_H, Math.min(window.innerHeight - 32, h + (e.clientY - y))),
+      })
+    }
+    const onUp = () => {
+      setRResizing(false)
+      try {
+        localStorage.setItem(SIZE_KEY, JSON.stringify(winSizeRef.current))
+      } catch {
+        /* 存不进去就只对本会话生效 */
+      }
+    }
+    window.addEventListener('mousemove', onMove)
+    window.addEventListener('mouseup', onUp)
+    return () => {
+      window.removeEventListener('mousemove', onMove)
+      window.removeEventListener('mouseup', onUp)
+    }
+  }, [rResizing])
+
   const [query, setQuery] = useState('')
 
   /**
@@ -142,7 +211,11 @@ export function SettingsWindow({
       aria-modal="true"
       aria-label="设置"
     >
-      <div className="pv-set-window" onClick={(e) => e.stopPropagation()}>
+      <div
+        className="pv-set-window"
+        style={{ width: winSize.w, height: winSize.h }}
+        onClick={(e) => e.stopPropagation()}
+      >
         <div className="pv-set-head">
           <span className="pv-set-head-title">设置</span>
           <span className="pv-set-head-spacer" />
@@ -205,6 +278,14 @@ export function SettingsWindow({
           <span className="pv-set-head-spacer" />
           <span>Esc 关闭</span>
         </div>
+        {/* 右下角拖拽手柄（2026-10-28：设置窗口可以调大小） */}
+        <div
+          className="pv-set-grip"
+          data-dragging={rResizing}
+          onMouseDown={onResizeDown}
+          title="拖动调整大小"
+          aria-hidden
+        />
       </div>
     </div>
   )
