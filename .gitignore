@@ -35,6 +35,12 @@ assets/ai/chinese-clip-h14/
 assets/ai/tag_result.json
 # 人脸模型与探针产物（模型几十 MB、拼图含私人照片，一律不入仓库）
 assets/ai/face/*.onnx
+
+# CN-CLIP 导出产物（165MB onnx + 448KB 词向量）——
+# 用 `python tools/ai/export_clip_onnx.py` 重新生成，别进版本库。
+# ⚠️ tag_meta.json 要留着：它记录「prompt ↔ 词条」的映射，是导出产物的契约。
+assets/ai/tag/*.onnx
+assets/ai/tag/*.bin
 assets/ai/face/*.caffemodel
 assets/ai/clusters/
 assets/ai/face_emb.json
