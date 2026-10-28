@@ -32,6 +32,8 @@ fn err(msg: String) -> ErrorDto {
 }
 
 const KEY_THRESHOLD: &str = "ai.threshold";
+/// **一级类目**的准入门槛（比二级低：粗分类更容易命中）。
+const KEY_THRESHOLD_L1: &str = "ai.l1Threshold";
 const KEY_MAX_TAGS: &str = "ai.max_tags";
 const KEY_FACES: &str = "ai.faces";
 const KEY_DISABLED: &str = "ai.disabled_terms";
@@ -41,6 +43,8 @@ const KEY_DISABLED: &str = "ai.disabled_terms";
 /// ⭐ 2026-10-22：取消「每张必须凑满 N 个」之后，阈值就是**唯一**准入门槛，
 /// 因此从 0.35 提到 0.40 —— 实测节日误判 17→5、泛词 91→50。
 const DEF_THRESHOLD: f64 = 0.40;
+/// 一级类目默认门槛。与 `tools/ai/auto_tag.py` 的 `--l1-threshold` 缺省值保持一致（0.36）。
+const DEF_THRESHOLD_L1: f64 = 0.36;
 /// 每张标签数的**上限**（不是目标）：够格几个就几个，认不出就空着
 const DEF_MAX_TAGS: i64 = 6;
 
@@ -55,7 +59,10 @@ pub struct AiConfigDto {
     pub vocab_count: usize,
     /// 被用户禁用的条数
     pub disabled_count: usize,
+    /// 二级（具体词）门槛
     pub threshold: f64,
+    /// 一级（类目）门槛，通常低于 `threshold`
+    pub threshold_l1: f64,
     pub max_tags: i64,
     pub faces: bool,
 }
@@ -143,7 +150,7 @@ fn disabled_terms(state: &AppState) -> Vec<String> {
 pub async fn ai_config(state: State<'_, AppState>) -> Result<AiConfigDto, ErrorDto> {
     let vocab = parse_vocab();
     let disabled = disabled_terms(&state);
-    let (threshold, max_tags, faces) = state
+    let (threshold, threshold_l1, max_tags, faces) = state
         .with_manager(|s| {
             let get = |k: &str| s.setting(k).map_err(|e| e.to_string());
             Ok((
@@ -152,6 +159,11 @@ pub async fn ai_config(state: State<'_, AppState>) -> Result<AiConfigDto, ErrorD
                     .flatten()
                     .and_then(|v| v.parse::<f64>().ok())
                     .unwrap_or(DEF_THRESHOLD),
+                get(KEY_THRESHOLD_L1)
+                    .ok()
+                    .flatten()
+                    .and_then(|v| v.parse::<f64>().ok())
+                    .unwrap_or(DEF_THRESHOLD_L1),
                 get(KEY_MAX_TAGS)
                     .ok()
                     .flatten()
@@ -171,6 +183,7 @@ pub async fn ai_config(state: State<'_, AppState>) -> Result<AiConfigDto, ErrorD
         vocab_count: vocab.len(),
         disabled_count: disabled.len(),
         threshold,
+        threshold_l1,
         max_tags,
         faces,
     })
@@ -181,12 +194,16 @@ pub async fn ai_config(state: State<'_, AppState>) -> Result<AiConfigDto, ErrorD
 pub async fn ai_save_config(
     state: State<'_, AppState>,
     threshold: Option<f64>,
+    threshold_l1: Option<f64>,
     max_tags: Option<i64>,
     faces: Option<bool>,
 ) -> Result<(), ErrorDto> {
     state.with_manager(|s| {
         if let Some(v) = threshold {
             s.set_setting(KEY_THRESHOLD, &format!("{v:.2}")).map_err(|e| e.to_string())?;
+        }
+        if let Some(v) = threshold_l1 {
+            s.set_setting(KEY_THRESHOLD_L1, &format!("{v:.2}")).map_err(|e| e.to_string())?;
         }
         if let Some(v) = max_tags {
             s.set_setting(KEY_MAX_TAGS, &v.to_string()).map_err(|e| e.to_string())?;
@@ -303,8 +320,141 @@ pub async fn ai_vocab_export(state: State<'_, AppState>, path: String) -> Result
     Ok(path)
 }
 
+/// 导入词表 CSV 的结果。
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VocabImportDto {
+    /// 状态真的变了的行数
+    pub updated: usize,
+    /// CSV 里有、但当前词表里查不到的词条（旧文件、手改错字）
+    pub unknown: Vec<String>,
+}
+
+/// 拆一行 CSV（只处理双引号包裹与 `""` 转义 —— 词表就这么点复杂度）。
+fn split_csv(line: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut cur = String::new();
+    let mut in_q = false;
+    let mut chars = line.chars().peekable();
+    while let Some(c) = chars.next() {
+        match c {
+            '"' => {
+                if in_q && chars.peek() == Some(&'"') {
+                    cur.push('"');
+                    chars.next();
+                } else {
+                    in_q = !in_q;
+                }
+            }
+            ',' if !in_q => out.push(std::mem::take(&mut cur)),
+            _ => cur.push(c),
+        }
+    }
+    out.push(cur);
+    out
+}
+
+/// 「启用」列的取值：是/否，也容忍 Excel 改出来的 1/0、true/false、y/n。
+fn csv_bool(s: &str) -> bool {
+    matches!(
+        s.trim().to_ascii_lowercase().as_str(),
+        "是" | "1" | "true" | "y" | "yes" | "on"
+    )
+}
+
+/// 导入词表 CSV：**只更新启用 / 停用状态**。
+///
+/// 词条本身来自编译期词表（`crates/pv-ai/vocab/zh_tags.csv`），运行时改不了它 ——
+/// 所以「导入」的语义就是「按 CSV 的『启用』列重设哪些词参与打标」，
+/// 和 [`ai_vocab_export`] 正好闭环：导出 → Excel 里勾 → 导回来。
+///
+/// ⭐ 只处理**列出来的**词条：CSV 里没出现的词保持原状（部分文件也能用）。
+#[tauri::command]
+pub async fn ai_vocab_import(
+    state: State<'_, AppState>,
+    path: String,
+) -> Result<VocabImportDto, ErrorDto> {
+    let raw = std::fs::read_to_string(&path).map_err(|e| err(format!("读文件失败：{e}")))?;
+    // Excel 存出来的 UTF-8 常带 BOM，不去掉的话第一列表头会变成「\u{feff}编码」
+    let text = raw.trim_start_matches('\u{feff}');
+    let mut lines = text.lines();
+    let header = lines.next().ok_or_else(|| err("文件是空的".into()))?;
+    let cols = split_csv(header);
+
+    let find = |keys: &[&str]| cols.iter().position(|c| keys.iter().any(|k| c.contains(k)));
+    let term_idx = find(&["主题词", "term"])
+        .ok_or_else(|| err("找不到「主题词」列 —— 请用「导出词表」得到的 CSV 作模板".into()))?;
+    let en_idx = find(&["启用", "enabled"])
+        .ok_or_else(|| err("找不到「启用」列 —— 请用「导出词表」得到的 CSV 作模板".into()))?;
+
+    let known: Vec<String> = parse_vocab().into_iter().map(|r| r.term).collect();
+
+    state
+        .with_manager(|s| {
+            let mut disabled: Vec<String> = s
+                .setting(KEY_DISABLED)
+                .map_err(|e| e.to_string())?
+                .and_then(|v| serde_json::from_str(&v).ok())
+                .unwrap_or_default();
+
+            let mut updated = 0usize;
+            let mut unknown: Vec<String> = Vec::new();
+            for line in lines {
+                if line.trim().is_empty() {
+                    continue;
+                }
+                let f = split_csv(line);
+                let Some(cell) = f.get(term_idx) else { continue };
+                let term = cell.trim();
+                if term.is_empty() {
+                    continue;
+                }
+                if !known.iter().any(|k| k == term) {
+                    unknown.push(term.to_string());
+                    continue;
+                }
+                let want_enabled = f.get(en_idx).map(|v| csv_bool(v)).unwrap_or(true);
+                let is_disabled = disabled.iter().any(|t| t == term);
+                if want_enabled && is_disabled {
+                    disabled.retain(|t| t != term);
+                    updated += 1;
+                } else if !want_enabled && !is_disabled {
+                    disabled.push(term.to_string());
+                    updated += 1;
+                }
+            }
+
+            let json = serde_json::to_string(&disabled).map_err(|e| e.to_string())?;
+            s.set_setting(KEY_DISABLED, &json).map_err(|e| e.to_string())?;
+            Ok(VocabImportDto { updated, unknown })
+        })
+        .map_err(err)
+}
+
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn csv拆分处理引号与转义() {
+        assert_eq!(split_csv("a,b,c"), vec!["a", "b", "c"]);
+        // 引号里的逗号不算分隔
+        assert_eq!(split_csv(r#""a,b",c"#), vec!["a,b", "c"]);
+        // "" 转义成一个引号（注意末尾还要有一个闭引号）
+        assert_eq!(split_csv("\"他说\"\"好\"\"\",x"), vec!["他说\"好\"", "x"]);
+        // 空字段要保留，否则后面的列全错位
+        assert_eq!(split_csv("a,,c"), vec!["a", "", "c"]);
+    }
+
+    #[test]
+    fn 启用列取值宽容() {
+        for yes in ["是", "1", "true", "y", "YES", " 是 "] {
+            assert!(csv_bool(yes), "{yes} 应视为启用");
+        }
+        for no in ["否", "0", "false", "n", "", "停用"] {
+            assert!(!csv_bool(no), "{no} 应视为停用");
+        }
+    }
+
+
     use super::*;
 
     #[test]
@@ -339,11 +489,12 @@ mod tests {
             vocab_count: 385,
             disabled_count: 0,
             threshold: 0.35,
+            threshold_l1: 0.36,
             max_tags: 8,
             faces: true,
         };
         let j = serde_json::to_string(&dto).unwrap();
-        for k in ["vocabCount", "disabledCount", "maxTags"] {
+        for k in ["vocabCount", "disabledCount", "thresholdL1", "maxTags"] {
             assert!(j.contains(k), "缺字段 {k}：{j}");
         }
     }

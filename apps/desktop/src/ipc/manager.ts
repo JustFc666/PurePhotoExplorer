@@ -690,7 +690,10 @@ export interface AiConfig {
   model: string
   vocabCount: number
   disabledCount: number
+  /** 二级（具体词）门槛 */
   threshold: number
+  /** 一级（类目）门槛，通常低于 `threshold` */
+  thresholdL1: number
   maxTags: number
   faces: boolean
 }
@@ -710,6 +713,7 @@ export function aiConfig(): Promise<AiConfig> {
 
 export function aiSaveConfig(p: {
   threshold?: number
+  thresholdL1?: number
   maxTags?: number
   faces?: boolean
 }): Promise<void> {
@@ -726,4 +730,20 @@ export function aiVocabToggle(term: string, enabled: boolean): Promise<void> {
 
 export function aiVocabExport(path: string): Promise<string> {
   return invoke<string>('ai_vocab_export', { path })
+}
+
+/** 导入结果：`updated` = 真的改了状态的行数，`unknown` = 词表里查不到的词条。 */
+export interface VocabImportResult {
+  updated: number
+  unknown: string[]
+}
+
+/**
+ * 从 CSV 导入词表**启用状态**（词条本身是编译期固定的，运行时改不了）。
+ *
+ * 和 [`aiVocabExport`] 闭环：导出 → 在 Excel 里勾「启用」列 → 导回来。
+ * ⚠️ CSV 里没出现的词条保持原状，所以只交一部分也行。
+ */
+export function aiVocabImport(path: string): Promise<VocabImportResult> {
+  return invoke<VocabImportResult>('ai_vocab_import', { path })
 }

@@ -167,10 +167,10 @@ interface Props {
   /**
    * 打开设置窗口。
    *
-   * `page = 'ai'` 时直接落到「AI 分析」页 —— 标签条右侧那个齿轮用它，
+   * `page = 'tag'` 时直接落到「AI 分析 · 打标」页 —— 标签条右侧那个齿轮用它，
    * 2026-10-24 起齿轮不再弹自己的小面板（设置统一到设置窗口，避免两份）。
    */
-  onOpenSettings: (page?: 'ai') => void
+  onOpenSettings: (page?: 'tag') => void
   /**
    * 双击缩略图：用单图浏览打开该绝对路径。
    *

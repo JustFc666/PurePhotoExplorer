@@ -17,15 +17,16 @@
  * 不弹对话框：设置窗口里再叠一层模态，容易点错。
  */
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { ASSOCIATION_FORMATS } from '../../constants/formats'
 import type { AssociationState } from '../../ipc'
-import { save as saveDialog } from '@tauri-apps/plugin-dialog'
+import { open as openDialog, save as saveDialog } from '@tauri-apps/plugin-dialog'
 import {
   aiConfig,
   aiSaveConfig,
   aiVocab,
   aiVocabExport,
+  aiVocabImport,
   aiVocabToggle,
   managerLibraries,
   appDataDir,
@@ -68,8 +69,8 @@ const PAGES = [
   { id: 'sort', group: '浏览', label: '排序' },
   { id: 'slide', group: '浏览', label: '幻灯片' },
   { id: 'assoc', group: '文件类型', label: '打开方式' },
-  { id: 'ai', group: 'AI 分析', label: '打标与人脸' },
-  { id: 'vocab', group: 'AI 分析', label: '词表' },
+  { id: 'tag', group: 'AI 分析', label: '打标' },
+  { id: 'face', group: 'AI 分析', label: '人脸' },
   { id: 'faces', group: '隐私与数据', label: '人脸数据' },
   { id: 'cache', group: '隐私与数据', label: '缓存与目录' },
   { id: 'about', group: '关于', label: '关于' },
@@ -191,8 +192,8 @@ export function SettingsWindow({
                 error={associationError}
               />
             )}
-            {page === 'ai' && <AiPage />}
-            {page === 'vocab' && <VocabPage />}
+            {page === 'tag' && <TagPage />}
+            {page === 'face' && <FacePage />}
             {page === 'faces' && <FacesPage />}
             {page === 'cache' && <CachePage />}
             {page === 'about' && <AboutPage />}
@@ -471,53 +472,147 @@ function AssocPage({
   )
 }
 
-function AiPage() {
+/**
+ * 「打标」页：CLIP 打标的全部配置 —— 两级阈值、每张上限、词表、重新打标。
+ *
+ * ⭐ 2026-10-28 用户要求：把「打标」和「人脸」拆成两页（原来挤在一页叫「打标与人脸」），
+ * 并把「词表」也并进来 —— 词表本来就是打标的配置，分开放要来回跳。
+ */
+function TagPage() {
   const [cfg, setCfg] = useState<AiConfig | null>(null)
-  const [threshold, setThreshold] = useState(0.4)
+  /** 二级（具体词）门槛 */
+  const [thL2, setThL2] = useState(0.4)
+  /** 一级（类目）门槛 */
+  const [thL1, setThL1] = useState(0.36)
   const [maxTags, setMaxTags] = useState(6)
-  const timer = useRef<number | undefined>(undefined)
 
-  useEffect(() => {
+  const [terms, setTerms] = useState<VocabTerm[] | null>(null)
+  const [q, setQ] = useState('')
+  const [msg, setMsg] = useState<string | null>(null)
+
+  const reloadCfg = useCallback(() => {
     void aiConfig()
       .then((c) => {
         setCfg(c)
-        setThreshold(c.threshold)
+        setThL2(c.threshold)
+        setThL1(c.thresholdL1)
         setMaxTags(c.maxTags)
       })
       .catch(() => undefined)
   }, [])
+  const reloadVocab = useCallback(() => {
+    void aiVocab()
+      .then(setTerms)
+      .catch(() => setTerms([]))
+  }, [])
 
-  /** 滑块拖动结束才写库：拖动过程中每帧都写会把 SQLite 打满 */
-  const commitThreshold = (v: number) => {
-    setThreshold(v)
+  useEffect(reloadCfg, [reloadCfg])
+  useEffect(reloadVocab, [reloadVocab])
+
+  /** 滑块只有松手才写库：拖动中每帧都写会把 SQLite 打满 */
+  const commitL2 = (v: number) => {
+    setThL2(v)
     void aiSaveConfig({ threshold: v }).catch(() => undefined)
+  }
+  const commitL1 = (v: number) => {
+    setThL1(v)
+    void aiSaveConfig({ thresholdL1: v }).catch(() => undefined)
   }
   const pickMax = (n: number) => {
     setMaxTags(n)
     void aiSaveConfig({ maxTags: n }).catch(() => undefined)
   }
-  const setFaces = (on: boolean) => {
-    setCfg((c) => (c ? { ...c, faces: on } : c))
-    void aiSaveConfig({ faces: on }).catch(() => undefined)
+
+  const list = useMemo(() => {
+    if (!terms) return []
+    const kw = q.trim()
+    if (!kw) return terms
+    return terms.filter((t) => t.term.includes(kw) || t.l2.includes(kw) || t.syn.includes(kw))
+  }, [terms, q])
+  const onCount = terms?.filter((t) => t.enabled).length ?? 0
+
+  const toggle = (t: VocabTerm) => {
+    const next = !t.enabled
+    setTerms((prev) => prev?.map((x) => (x.term === t.term ? { ...x, enabled: next } : x)) ?? prev)
+    void aiVocabToggle(t.term, next).catch(() => undefined)
   }
 
-  useEffect(() => () => window.clearTimeout(timer.current), [])
+  /** 导出：走系统保存对话框（用户要能自己选目录） */
+  const exportVocab = async () => {
+    try {
+      const path = await saveDialog({
+        title: '导出主题词表',
+        defaultPath: 'photo_tags.csv',
+        filters: [{ name: 'CSV', extensions: ['csv'] }],
+      })
+      if (!path) return
+      await aiVocabExport(path)
+      setMsg(`已导出：${path}`)
+    } catch (e) {
+      setMsg(`导出失败：${e instanceof Error ? e.message : String(e)}`)
+    }
+  }
+
+  /**
+   * 导入：按 CSV 的「启用」列重设哪些词参与打标。
+   *
+   * ⚠️ 只改启用状态 —— 词条本身来自编译期词表（`crates/pv-ai/vocab/zh_tags.csv`），
+   * 运行时增删词条要改源码重新编译。这条必须写在界面上，否则用户会以为能加新词。
+   */
+  const importVocab = async () => {
+    try {
+      const path = await openDialog({
+        title: '导入主题词表',
+        multiple: false,
+        filters: [{ name: 'CSV', extensions: ['csv'] }],
+      })
+      if (typeof path !== 'string') return
+      const r = await aiVocabImport(path)
+      reloadVocab()
+      reloadCfg()
+      const tail3 = r.unknown.length > 3 ? '…' : ''
+      const un =
+        r.unknown.length > 0
+          ? `；${r.unknown.length} 个词条不在词表里（已跳过）：${r.unknown.slice(0, 3).join('、')}${tail3}`
+          : ''
+      setMsg(`已导入：${r.updated} 个词条的启用状态变了${un}`)
+    } catch (e) {
+      setMsg(`导入失败：${e instanceof Error ? e.message : String(e)}`)
+    }
+  }
 
   return (
     <>
-      <h2 className="pv-set-h1">打标与人脸</h2>
+      <h2 className="pv-set-h1">打标</h2>
       {!cfg ? (
         <div className="pv-set-hint">读取中…</div>
       ) : (
         <>
-          <Row label="置信度阈值" hint="调高更严：只保留把握大的标签，宁少勿错。改完需要「重新分析」才会应用到已打的标签。">
+          <Row
+            label="一级类目阈值"
+            hint="粗分类（人像 / 建筑 / 动物…）的准入门槛。通常比二级低一点：类目容易命中，具体词才需要更严。"
+          >
             <Slider
-              value={threshold}
+              value={thL1}
               min={0.3}
               max={0.6}
               step={0.01}
-              onInput={setThreshold}
-              onCommit={commitThreshold}
+              onInput={setThL1}
+              onCommit={commitL1}
+              format={(v) => v.toFixed(2)}
+            />
+          </Row>
+          <Row
+            label="二级词阈值"
+            hint="具体词（单人 / 汽车 / 樱花…）的准入门槛。调高更严、宁少勿错。改完要「重新打标」才会应用到已打的标签。"
+          >
+            <Slider
+              value={thL2}
+              min={0.3}
+              max={0.6}
+              step={0.01}
+              onInput={setThL2}
+              onCommit={commitL2}
               format={(v) => v.toFixed(2)}
             />
           </Row>
@@ -526,13 +621,54 @@ function AiPage() {
               <Choice key={n} on={maxTags === n} label={`${n} 个`} onClick={() => pickMax(n)} />
             ))}
           </Row>
-          <Row label="人脸识别" hint="只在本机运行，不上传；embedding 属于生物特征，可随时在「人脸数据」里清空">
-            <Switch on={cfg.faces} onChange={setFaces} label="人脸识别" />
-          </Row>
           <div className="pv-set-info">
             模型 {cfg.model} · 词表 {cfg.vocabCount} 条（停用 {cfg.disabledCount}）
           </div>
-          <FaceRerun />
+
+          <Row
+            label={`词表 · ${terms?.length ?? 0} 条 · 启用 ${onCount}`}
+            hint="停用的词不参与打标。改完同样要「重新打标」才会影响已打的标签。"
+          >
+            <input
+              className="pv-set-search"
+              style={{ width: '100%', marginBottom: 8 }}
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+              placeholder="搜索词条 / 同义词"
+            />
+            <div className="pv-set-vocab">
+              {list.map((t) => (
+                <div className={`pv-set-vocab-row${t.enabled ? '' : ' is-off'}`} key={t.term}>
+                  <button
+                    className={`pv-set-check${t.enabled ? ' is-on' : ''}`}
+                    onClick={() => toggle(t)}
+                    role="checkbox"
+                    aria-checked={t.enabled}
+                    aria-label={t.term}
+                  >
+                    ✓
+                  </button>
+                  <span className="pv-set-vocab-l1">{t.l1}</span>
+                  <span style={{ flex: 1 }}>{t.term}</span>
+                </div>
+              ))}
+              {list.length === 0 && <div className="pv-set-hint">没有匹配的词条</div>}
+            </div>
+          </Row>
+          <div className="pv-set-btnrow">
+            <button className="pv-set-btn" onClick={() => void importVocab()}>
+              导入词表…
+            </button>
+            <button className="pv-set-btn" onClick={() => void exportVocab()}>
+              导出词表…
+            </button>
+            <span className="pv-set-hint">
+              导出为 CSV，在 Excel 里勾「启用」列后导回来。导入只改启用状态，不会新增词条。
+            </span>
+          </div>
+          {msg && <div className="pv-set-hint">{msg}</div>}
+
+          <TagRerun l1={thL1} l2={thL2} />
         </>
       )}
     </>
@@ -540,12 +676,102 @@ function AiPage() {
 }
 
 /**
- * 人像重新识别（2026-10-25 用户要求：从图库标题行搬进设置，且能选图库）。
+ * 重新打标（2026-10-28 用户要求：打标也要像人像那样能重跑）。
  *
- * ⚠️ 识别由本地 Python 脚本执行（`tools/ai/face_probe.py` + `face_cluster.py`），
- * 这里只负责"选目标图库 + 生成可直接粘贴的命令"，不假装能一键跑完 ——
- * 一句"已重新识别"然后什么都没发生，比给命令更糟。
+ * ⚠️ 和人像同一个思路：打标跑在本机 Python 脚本里（`tools/ai/auto_tag.py`），
+ * 设置窗口只负责「选图库 + 生成可粘贴的命令」，**不假装一键跑完** ——
+ * 弹个「已重新打标」然后什么都没发生，比给命令更糟。
+ *
+ * `--reset` 会先清掉该图库里的 AI/EXIF 标签再写，否则新旧标签会累加。
  */
+function TagRerun({ l1, l2 }: { l1: number; l2: number }) {
+  const [libs, setLibs] = useState<LibraryItem[]>([])
+  const [picked, setPicked] = useState('')
+
+  useEffect(() => {
+    void managerLibraries()
+      .then((list) => {
+        setLibs(list)
+        const first = list[0]
+        if (first) setPicked(first.name)
+      })
+      .catch(() => undefined)
+  }, [])
+
+  const buildCmd = (name: string) =>
+    `J:/ai/tts/.venv/Scripts/python.exe tools/ai/auto_tag.py --library "${name}" ` +
+    `--l1-threshold ${l1.toFixed(2)} --threshold ${l2.toFixed(2)} --write --reset`
+
+  return (
+    <div className="pv-set-row" style={{ marginTop: 18 }}>
+      <div className="pv-set-label">重新打标</div>
+      <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+        <div style={{ minWidth: 220 }}>
+          {libs.map((l) => (
+            <Choice
+              key={l.id}
+              on={picked === l.name}
+              label={`${l.name}（${l.count} 张）`}
+              onClick={() => setPicked(l.name)}
+            />
+          ))}
+          {libs.length === 0 && <div className="pv-set-hint">还没有图库</div>}
+        </div>
+        <button
+          className="pv-set-btn"
+          disabled={!picked}
+          onClick={() => void navigator.clipboard.writeText(buildCmd(picked)).catch(() => undefined)}
+        >
+          复制打标命令
+        </button>
+      </div>
+      <div className="pv-set-hint">
+        打标在本机脚本里跑（不进主进程）：复制命令到项目目录执行。命令会带上当前两级阈值；
+        `--reset` 先清掉该图库已有的 AI 标签再重写。
+      </div>
+    </div>
+  )
+}
+
+/**
+ * 「人脸」页：只放人脸识别的开关与重跑入口。
+ *
+ * 原来和打标挤在一页（「打标与人脸」），2026-10-28 用户要求拆开 ——
+ * 两者本来就是独立的模型和执行脚本，混在一页容易以为改阈值会影响人脸。
+ */
+function FacePage() {
+  const [cfg, setCfg] = useState<AiConfig | null>(null)
+
+  useEffect(() => {
+    void aiConfig().then(setCfg).catch(() => undefined)
+  }, [])
+
+  const setFaces = (on: boolean) => {
+    setCfg((c) => (c ? { ...c, faces: on } : c))
+    void aiSaveConfig({ faces: on }).catch(() => undefined)
+  }
+
+  return (
+    <>
+      <h2 className="pv-set-h1">人脸</h2>
+      {!cfg ? (
+        <div className="pv-set-hint">读取中…</div>
+      ) : (
+        <>
+          <Row
+            label="人脸识别"
+            hint="只在本机运行，不上传；embedding 属于生物特征，可随时在「人脸数据」里清空"
+          >
+            <Switch on={cfg.faces} onChange={setFaces} label="人脸识别" />
+          </Row>
+          <div className="pv-set-info">模型 YuNet（检测）+ SFace（128 维特征）</div>
+          <FaceRerun />
+        </>
+      )}
+    </>
+  )
+}
+
 function FaceRerun() {
   const [libs, setLibs] = useState<LibraryItem[]>([])
   const [picked, setPicked] = useState<string>('')
@@ -589,94 +815,6 @@ function FaceRerun() {
         只处理带「人像 / 证件」标签的图，同一张图里同一个人只算一次。
       </div>
     </div>
-  )
-}
-
-function VocabPage() {
-  const [terms, setTerms] = useState<VocabTerm[] | null>(null)
-  const [q, setQ] = useState('')
-  useEffect(() => {
-    void aiVocab()
-      .then(setTerms)
-      .catch(() => setTerms([]))
-  }, [])
-
-  const list = useMemo(() => {
-    if (!terms) return []
-    const kw = q.trim()
-    if (!kw) return terms
-    return terms.filter((t) => t.term.includes(kw) || t.l2.includes(kw) || t.syn.includes(kw))
-  }, [terms, q])
-
-  const onCount = terms?.filter((t) => t.enabled).length ?? 0
-  const [exportMsg, setExportMsg] = useState<string | null>(null)
-
-  /**
-   * 导出词表：走**系统保存对话框**（不能自己拼路径 —— 用户要能选目录）。
-   * 旧的那个 AI 弹层里有这个入口，搬到设置窗口后必须补上，否则功能丢一块。
-   */
-  const exportVocab = async () => {
-    try {
-      const path = await saveDialog({
-        title: '导出主题词表',
-        defaultPath: 'photo_tags.csv',
-        filters: [{ name: 'CSV', extensions: ['csv'] }],
-      })
-      if (!path) return
-      await aiVocabExport(path)
-      setExportMsg(`已导出：${path}`)
-    } catch (e) {
-      setExportMsg(`导出失败：${e instanceof Error ? e.message : String(e)}`)
-    }
-  }
-
-  const toggle = (t: VocabTerm) => {
-    const next = !t.enabled
-    setTerms((prev) => prev?.map((x) => (x.term === t.term ? { ...x, enabled: next } : x)) ?? prev)
-    void aiVocabToggle(t.term, next).catch(() => undefined)
-  }
-
-  return (
-    <>
-      <h2 className="pv-set-h1">词表</h2>
-      <Row
-        label={`${terms?.length ?? 0} 条 · 启用 ${onCount}`}
-        hint="停用的词不会参与打标；改完同样要重新分析才会影响已打的标签。"
-      >
-        <input
-          className="pv-set-search"
-          style={{ width: '100%', marginBottom: 8 }}
-          value={q}
-          onChange={(e) => setQ(e.target.value)}
-          placeholder="搜索词条 / 同义词"
-        />
-        <div className="pv-set-vocab">
-          {list.map((t) => (
-            <div className={`pv-set-vocab-row${t.enabled ? '' : ' is-off'}`} key={t.term}>
-              <button
-                className={`pv-set-check${t.enabled ? ' is-on' : ''}`}
-                onClick={() => toggle(t)}
-                role="checkbox"
-                aria-checked={t.enabled}
-                aria-label={t.term}
-              >
-                ✓
-              </button>
-              <span className="pv-set-vocab-l1">{t.l1}</span>
-              <span style={{ flex: 1 }}>{t.term}</span>
-            </div>
-          ))}
-          {list.length === 0 && <div className="pv-set-hint">没有匹配的词条</div>}
-        </div>
-      </Row>
-      <div className="pv-set-btnrow">
-        <button className="pv-set-btn" onClick={() => void exportVocab()}>
-          导出词表…
-        </button>
-        <span className="pv-set-hint">导出为 CSV，可在 Excel 里改完再导回来</span>
-      </div>
-      {exportMsg && <div className="pv-set-hint">{exportMsg}</div>}
-    </>
   )
 }
 

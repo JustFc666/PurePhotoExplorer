@@ -686,6 +686,9 @@ def main():
     # 命令行没显式指定时，跟随 UI 里保存的阈值 / 每张最多
     if cfg.get("ai.threshold") and args.threshold is None:
         args.threshold = float(cfg["ai.threshold"])
+    # 一级类目门槛：UI 里单独可调（比二级宽松，粗分类更容易命中）
+    if cfg.get("ai.l1Threshold") and args.l1_threshold is None:
+        args.l1_threshold = float(cfg["ai.l1Threshold"])
     if cfg.get("ai.max_tags") and args.max_tags is None:
         args.max_tags = int(cfg["ai.max_tags"])
     # ⚠️ UI 里没存过配置 / 命令行也没给 → 必须有兜底，否则 None 会一路传到比较运算里

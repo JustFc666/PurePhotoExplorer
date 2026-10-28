@@ -265,7 +265,13 @@ export function ManagerTopBar(props: Props) {
         <button
           type="button"
           className="pv-mg-menubtn"
-          onClick={onOpenSettings}
+          /*
+           * ⛔ 必须包一层 `() => ...`：直接写 `onClick={onOpenSettings}` 会把
+           * MouseEvent 当成 `page` 传进去（签名是 `(page?: SettingsPage) => void`），
+           * 于是设置窗口拿到的 page 是个对象 → 右栏一个页面都不匹配 → **整片空白**，
+           * 左栏也没有任何一项高亮（2026-10-28 踩过）。
+           */
+          onClick={() => onOpenSettings()}
           title="设置（Ctrl+,）"
           aria-label="设置"
         >

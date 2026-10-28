@@ -135,6 +135,7 @@ pub fn run() {
             commands::ai_vocab,
             commands::ai_vocab_toggle,
             commands::ai_vocab_export,
+            commands::ai_vocab_import,
             commands::manager_create_smart_library,
             commands::manager_cache_stats,
             commands::manager_clear_cache,
