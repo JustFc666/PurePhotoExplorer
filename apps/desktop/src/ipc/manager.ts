@@ -510,9 +510,15 @@ export interface PlaceItem {
   count: number
 }
 
-/** 全部地点 + 张数（多的在前）。 */
-export async function managerPlaces(): Promise<PlaceItem[]> {
-  return invoke<PlaceItem[]>('manager_places')
+/**
+ * 地点 + 张数（多的在前）。
+ *
+ * ⭐ 和 [`managerTags`] 一样**必须带范围**：`libraryId` = 只数这个图库，
+ * `dirId` = 只数这个目录，都不传 = 全库。不带范围的话标签会跟着图库切换、
+ * 地点却一直显示全库数字（2026-10-28 用户报的 bug）。
+ */
+export async function managerPlaces(libraryId?: number, dirId?: number): Promise<PlaceItem[]> {
+  return invoke<PlaceItem[]>('manager_places', { libraryId, dirId })
 }
 
 /**

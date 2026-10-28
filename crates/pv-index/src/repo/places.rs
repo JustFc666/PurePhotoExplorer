@@ -27,14 +27,40 @@ pub fn upsert(
     Ok(())
 }
 
-/// 一个地点的照片数（侧栏「地点」分区用）。**只统计有地点的行**。
+/// 一个地点的照片数（全库；侧栏「地点」分区用）。**只统计有地点的行**。
 pub fn list_counts(conn: &Connection) -> Result<Vec<(String, i64)>> {
+    list_counts_scoped(conn, None, None)
+}
+
+/// 一个地点的照片数（**限定范围**）。
+///
+/// 和 [`tags::counts_scoped`](crate::repo::tags::counts_scoped) 同一套语义：
+/// - `library_id = Some(id)` → 只数这个图库成员目录里的图
+/// - `dir_id = Some(id)` → 只数这个目录（单层，不含子目录）
+/// - 两者都 `None` → 全库
+///
+/// ⚠️ 没有 scope 时数字会和标签对不上：11 张的「二次元」跟 372 张的「测试图库」
+/// 显示同一份地点列表（2026-10-28 用户报的 bug —— 标签会跟着图库切换，地点不会）。
+pub fn list_counts_scoped(
+    conn: &Connection,
+    library_id: Option<i64>,
+    dir_id: Option<i64>,
+) -> Result<Vec<(String, i64)>> {
     let mut stmt = conn.prepare(
-        "SELECT place, COUNT(*) AS n FROM image_places
-          WHERE place IS NOT NULL AND place <> ''
-          GROUP BY place ORDER BY n DESC, place",
+        "SELECT p.place, COUNT(DISTINCT p.image_id) AS n
+           FROM image_places p
+           JOIN images i ON i.id = p.image_id
+          WHERE p.place IS NOT NULL AND p.place <> ''
+            AND (?1 IS NULL OR EXISTS (
+                    SELECT 1 FROM library_folders lf
+                     WHERE lf.library_id = ?1 AND lf.folder_id = i.dir_id))
+            AND (?2 IS NULL OR i.dir_id = ?2)
+          GROUP BY p.place
+          ORDER BY n DESC, p.place",
     )?;
-    let rows = stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?;
+    let rows = stmt.query_map(rusqlite::params![library_id, dir_id], |r| {
+        Ok((r.get(0)?, r.get(1)?))
+    })?;
     Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
 }
 

@@ -396,6 +396,44 @@ mod tests {
     const SIZES: [i64; 4] = [1000, 2000, 3000, 4000];
 
     /// 造 4 张图：d1 下 a1/a2/a3，d2 下 b1；带格式/大小/时间/评分/RAW，i1 有标签+GPS。
+    /// 地点计数必须**跟着图库/目录切换**，和标签一个口径。
+    ///
+    /// 2026-10-28 用户报：「切图库时标签会变，地理标签不变」——
+    /// `manager_places` 当时压根没有 scope 参数，永远统计全库。
+    #[test]
+    fn 地点计数按图库与目录限定范围() {
+        use crate::models::{Library, LibraryKind};
+        let (c, d1, d2) = setup();
+
+        // setup 里 i1/i2 在 d1、i4 在 d2（按创建顺序递增）
+        repo::places::upsert(&c, 1, Some("北京"), Some(39.9), Some(116.4)).unwrap();
+        repo::places::upsert(&c, 2, Some("北京"), Some(39.9), Some(116.4)).unwrap();
+        repo::places::upsert(&c, 4, Some("上海"), Some(31.2), Some(121.4)).unwrap();
+
+        // 全库：北京 2、上海 1，按张数降序
+        assert_eq!(
+            repo::places::list_counts_scoped(&c, None, None).unwrap(),
+            vec![("北京".to_string(), 2), ("上海".to_string(), 1)]
+        );
+
+        // 目录 scope：d1 里只有北京
+        assert_eq!(
+            repo::places::list_counts_scoped(&c, None, Some(d1)).unwrap(),
+            vec![("北京".to_string(), 2)]
+        );
+
+        // 图库 scope：只把 d2 挂进去 → 只剩上海
+        let lib = repo::libraries::insert(&c, &Library::new("库A", LibraryKind::Normal)).unwrap();
+        repo::libraries::add_folder(&c, lib, d2).unwrap();
+        assert_eq!(
+            repo::places::list_counts_scoped(&c, Some(lib), None).unwrap(),
+            vec![("上海".to_string(), 1)]
+        );
+
+        // 老的全库接口行为不变
+        assert_eq!(repo::places::list_counts(&c).unwrap().len(), 2);
+    }
+
     fn setup() -> (rusqlite::Connection, i64, i64) {
         let c = open_test_db().unwrap();
         let v = repo::volumes::insert(&c, &Volume::new("v")).unwrap();

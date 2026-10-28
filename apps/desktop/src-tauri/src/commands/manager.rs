@@ -811,10 +811,14 @@ pub struct PlaceDto {
 /// ⚠️ 必须在查询列表**之前**调一次：地点是启动回填写进 `image_places` 的，
 /// 第一次启动时这一轮还没跑完，列表会是空的。
 #[tauri::command]
-pub async fn manager_places(state: State<'_, AppState>) -> Result<Vec<PlaceDto>, ErrorDto> {
+pub async fn manager_places(
+    state: State<'_, AppState>,
+    library_id: Option<i64>,
+    dir_id: Option<i64>,
+) -> Result<Vec<PlaceDto>, ErrorDto> {
     state
         .with_manager(|s| {
-            Ok(s.places()
+            Ok(s.places_scoped(library_id, dir_id)
                 .map_err(|e| e.to_string())?
                 .into_iter()
                 .map(|p| PlaceDto {

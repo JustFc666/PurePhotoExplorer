@@ -1055,9 +1055,21 @@ impl Store {
      * 所以没 GPS 的图不会被反复重算——它们压根不进待办列表。
      */
 
-    /// 侧栏「地点」分区：城市名 + 各自张数（多的在前）。
+    /// 侧栏「地点」分区：城市名 + 各自张数（多的在前），**全库**。
     pub fn places(&self) -> Result<Vec<PlaceCount>> {
-        Ok(repo::places::list_counts(&self.conn)?
+        self.places_scoped(None, None)
+    }
+
+    /// 侧栏「地点」分区（**限定范围**）。
+    ///
+    /// ⭐ 必须和 [`tags_scoped`](Self::tags_scoped) 传同一对 `(library_id, dir_id)`，
+    /// 否则标签跟着图库切换、地点却一直是全库数字（2026-10-28 用户报的 bug）。
+    pub fn places_scoped(
+        &self,
+        library_id: Option<i64>,
+        dir_id: Option<i64>,
+    ) -> Result<Vec<PlaceCount>> {
+        Ok(repo::places::list_counts_scoped(&self.conn, library_id, dir_id)?
             .into_iter()
             .map(|(name, count)| PlaceCount { name, count })
             .collect())

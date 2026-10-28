@@ -1169,6 +1169,15 @@ export function useManager(): ManagerApi {
         if (alive) setTagList(list)
       })
       .catch(() => {})
+    /*
+     * 地点同理：标签会跟着图库切换、地点却一直是全库数字，看着就是「切了图库没反应」。
+     * ⭐ 必须传**同一对** (lib, dir)，否则两份计数口径不一致。
+     */
+    managerPlaces(lib, dir)
+      .then((list) => {
+        if (alive) setPlaceList(list)
+      })
+      .catch(() => {})
     // 一级类目的去重张数（后端 SQL 算，前端加不出来）
     managerTagGroups(lib, dir)
       .then((list) => {
@@ -1181,7 +1190,14 @@ export function useManager(): ManagerApi {
     return () => {
       alive = false
     }
-  }, [ready, scopeKey])
+    /*
+     * ⚠️ `queryVersion` 必须在依赖里：`refreshMeta`（移除目录、重扫之后）用的是
+     * **无 scope** 的 `managerTags()` / `managerPlaces()`，会把侧栏数字写成全库值。
+     * 那之后 `scopeKey` 往往没变，不重跑这个 effect 的话数字就**永远停在全库**上
+     * （2026-10-28「切图库后地点不变」的另一半原因）。
+     * `refreshMeta` 末尾递增 `queryVersion`，正好当作「重算一次」的信号。
+     */
+  }, [ready, scopeKey, queryVersion])
 
   const formatKey = useMemo(() => [...formats].sort().join(','), [formats])
   const cameraKey = useMemo(() => [...camera].sort().join(','), [camera])
