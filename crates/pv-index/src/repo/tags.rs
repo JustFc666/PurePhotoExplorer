@@ -2,7 +2,7 @@
 
 use crate::error::Result;
 use crate::models::Tag;
-use rusqlite::{params, Connection};
+use rusqlite::{params, params_from_iter, Connection};
 
 /// 取（必要时创建）同名标签，返回其 id。**同名幂等**（依赖 `tags.name UNIQUE`）。
 pub fn ensure(conn: &Connection, name: &str, kind: Option<&str>) -> Result<i64> {
@@ -11,6 +11,53 @@ pub fn ensure(conn: &Connection, name: &str, kind: Option<&str>) -> Result<i64> 
         params![name, kind],
     )?;
     Ok(conn.query_row("SELECT id FROM tags WHERE name = ?1", params![name], |r| r.get(0))?)
+}
+
+/// 在一批图里挑出「明显不是人像」的（人脸检测可跳过，省时间）。
+///
+/// ## 判据（保守，宁可多跑不可漏检）
+/// 该图**有 AI 标签**、命中了「明确不可能有真人脸」的标签（截图/图表/扫描件/文档…），
+/// **同时**没有任何「人像类」标签。
+///
+/// ⭐ 只对打过标的图做减法 —— 没标签的图不会出现在结果里（照常检测），
+/// 所以这**不是硬依赖**：新装的库、打标失败的图都不会被漏掉。
+pub fn non_portrait_ids(conn: &Connection, ids: &[i64]) -> Result<Vec<i64>> {
+    const NON_PORTRAIT: &str = "'软件截图','图表','扫描','白板','文档','PPT','思维导图'";
+    const PORTRAIT: &str = "'人像','单人','合照','儿童','婴儿','证件','自拍','全家福'";
+
+    let mut out = Vec::new();
+    for chunk in ids.chunks(500) {
+        let ph = vec!["?"; chunk.len()].join(",");
+        let sql = format!(
+            "SELECT it.image_id
+               FROM image_tags it JOIN tags t ON t.id = it.tag_id
+              WHERE it.source = 'ai' AND it.image_id IN ({ph})
+              GROUP BY it.image_id
+             HAVING SUM(CASE WHEN t.name IN ({NON_PORTRAIT}) THEN 1 ELSE 0 END) > 0
+                AND SUM(CASE WHEN t.name IN ({PORTRAIT}) THEN 1 ELSE 0 END) = 0"
+        );
+        let mut stmt = conn.prepare(&sql)?;
+        let rows = stmt.query_map(params_from_iter(chunk.iter().copied()), |r| r.get::<_, i64>(0))?;
+        for v in rows {
+            out.push(v?);
+        }
+    }
+    Ok(out)
+}
+
+/// 一批图里有多少张打过 AI 标签。
+pub fn count_tagged(conn: &Connection, ids: &[i64]) -> Result<usize> {
+    let mut n = 0usize;
+    for chunk in ids.chunks(500) {
+        let ph = vec!["?"; chunk.len()].join(",");
+        let sql = format!(
+            "SELECT COUNT(DISTINCT image_id) FROM image_tags
+              WHERE source = 'ai' AND image_id IN ({ph})"
+        );
+        let c: i64 = conn.query_row(&sql, params_from_iter(chunk.iter().copied()), |r| r.get(0))?;
+        n += c.max(0) as usize;
+    }
+    Ok(n)
 }
 
 /// 清掉某张图在某个来源下的全部标签挂载（AI 重跑前用）。

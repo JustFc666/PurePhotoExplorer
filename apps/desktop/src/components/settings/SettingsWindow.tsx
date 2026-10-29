@@ -22,6 +22,7 @@ import type { MouseEvent as ReactMouseEvent } from 'react'
 import { ASSOCIATION_FORMATS } from '../../constants/formats'
 import { managerLibraries, type LibraryItem } from '../../ipc/manager'
 import { AiRunPanel } from './AiRunPanel'
+import { ContextMenu } from '../chrome/ContextMenu'
 import type { AssociationState } from '../../ipc'
 import { open as openDialog, save as saveDialog } from '@tauri-apps/plugin-dialog'
 import {
@@ -663,6 +664,8 @@ function TagPage() {
   return (
     <>
       <h2 className="pv-set-h1">打标</h2>
+      {/* 跑批放在最上面（用户 2026-10-29 要求）：这是这页的主要操作 */}
+      <TagRerun />
       {!cfg ? (
         <div className="pv-set-hint">读取中…</div>
       ) : (
@@ -746,8 +749,6 @@ function TagPage() {
             </span>
           </div>
           {msg && <div className="pv-set-hint">{msg}</div>}
-
-          <TagRerun />
         </>
       )}
     </>
@@ -767,7 +768,7 @@ function TagRerun() {
   return (
     <AiRunPanel
       task="tag"
-      title="重新打标"
+      title="打标"
       hint="按当前两级阈值重跑这个图库：会先清掉它已有的 AI 标签再写，所以不会越跑越多。跑批期间可以关掉设置窗口，任务照常进行。"
     />
   )
@@ -787,6 +788,8 @@ function FacePage() {
   const [scope, setScope] = useState<string | null>(null)
   const [confirming, setConfirming] = useState(false)
   const [msg, setMsg] = useState<string | null>(null)
+  const [menu, setMenu] = useState<{ x: number; y: number } | null>(null)
+  const pickRef = useRef<HTMLButtonElement>(null)
 
   const load = useCallback(() => {
     void aiConfig().then(setCfg).catch(() => undefined)
@@ -854,18 +857,44 @@ function FacePage() {
           这些是人脸识别的**结果**，不在照片文件里，也不会被导出
         </div>
 
-        {/* 清空范围：全部 / 单个图库 */}
-        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', margin: '10px 0 8px' }}>
-          <Choice on={scope === null} label="全部图库" onClick={() => setScope(null)} />
-          {libs.map((l) => (
-            <Choice
-              key={l.id}
-              on={scope === l.name}
-              label={`${l.name}（${l.count} 张）`}
-              onClick={() => setScope(l.name)}
-            />
-          ))}
+        {/* 清空范围：全部 / 单个图库（下拉） */}
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center', margin: '10px 0 8px' }}>
+          <button
+            ref={pickRef}
+            type="button"
+            className="pv-set-btn"
+            style={{ minWidth: 180, display: 'flex', justifyContent: 'space-between', gap: 10 }}
+            onClick={() => {
+              const r = pickRef.current?.getBoundingClientRect()
+              if (r) setMenu({ x: r.left, y: r.bottom + 4 })
+            }}
+          >
+            <span>{scope ?? '全部图库'}</span>
+            <span style={{ opacity: 0.6 }}>▾</span>
+          </button>
         </div>
+        {menu && (
+          <ContextMenu
+            key={`${menu.x},${menu.y}`}
+            width={240}
+            position={menu}
+            onClose={() => setMenu(null)}
+            items={[
+              {
+                id: '__all__',
+                label: '全部图库',
+                checked: scope === null,
+                onSelect: () => setScope(null),
+              },
+              ...libs.map((l) => ({
+                id: String(l.id),
+                label: `${l.name}（${l.count} 张）`,
+                checked: scope === l.name,
+                onSelect: () => setScope(l.name),
+              })),
+            ]}
+          />
+        )}
 
         <div className="pv-set-btnrow">
           <button className="pv-set-btn pv-set-btn--danger" onClick={clear}>
@@ -885,8 +914,8 @@ function FaceRerun() {
   return (
     <AiRunPanel
       task="face"
-      title="重新识别人像"
-      hint="先检测人脸并写向量，再重新聚类（两步自动串行）。只处理带「人像 / 证件」标签的图；同一张图里同一个人只算一次。"
+      title="识别人像"
+      hint="先检测人脸并写向量，再聚类成人物（两步自动串行）。同一张图里相似的脸只算一次；打过标的图会跳过「截图 / 文档」这类。"
     />
   )
 }

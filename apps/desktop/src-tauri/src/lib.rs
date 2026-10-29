@@ -141,6 +141,7 @@ pub fn run() {
             commands::ai_run_task,
             commands::ai_task_status,
             commands::ai_task_stop,
+            commands::ai_library_status,
             commands::manager_create_smart_library,
             commands::manager_cache_stats,
             commands::manager_clear_cache,

@@ -661,22 +661,8 @@ fn run_tag_batch_blocking(app: tauri::AppHandle, library: String) {
     let t_start = std::time::Instant::now();
     tag_log(&runner, format!("开始打标：{library}"));
 
-    // ── 1. 查图列表 ──
-    let images: Vec<(i64, PathBuf)> = match state.with_manager(|s| {
-        let libs = pv_index::repo::libraries::list(&s.conn()).map_err(|e| e.to_string())?;
-        let Some(lib) = libs.into_iter().find(|l| l.name == library) else {
-            return Err(format!("找不到图库「{library}」"));
-        };
-        let q = pv_store::ImageQuery::default();
-        let imgs = s.query_in_library(&q, lib.id).map_err(|e| e.to_string())?;
-        let mut out = Vec::with_capacity(imgs.len());
-        for img in imgs {
-            if let Ok(Some(p)) = s.abs_path(&img) {
-                out.push((img.id, p));
-            }
-        }
-        Ok(out)
-    }) {
+    // ── 1. 查图列表（`library` 为空 = 全部图库）──
+    let images: Vec<(i64, PathBuf)> = match state.with_manager(|s| collect_images(s, &library)) {
         Ok(v) => v,
         Err(e) => {
             tag_log(&runner, format!("失败：{e}"));
@@ -701,7 +687,13 @@ fn run_tag_batch_blocking(app: tauri::AppHandle, library: String) {
             }
         }
     }
-    tag_log(&runner, format!("待处理 {total} 张"));
+    tag_log(
+        &runner,
+        format!(
+            "范围：{} · 待处理 {total} 张",
+            if library.is_empty() { "全部图库" } else { &library }
+        ),
+    );
 
     // ── 2. 加载模型（165MB，只做一次）──
     let dir = tagger_dir();
@@ -842,21 +834,21 @@ fn run_face_batch_blocking(app: tauri::AppHandle, library: String) {
         }
     };
 
-    // ── 1. 查图列表 ──
+    /*
+     * ── 1. 查图列表 ──
+     *
+     * **混合策略**：打过标的图按标签筛掉明显不是人像的（截图/图表/扫描件），
+     * 没打过标的图照常处理 —— 既不依赖打标，又能在打过标后少做无用功。
+     */
     let images: Vec<(i64, PathBuf)> = match state.with_manager(|s| {
-        let libs = pv_index::repo::libraries::list(s.conn()).map_err(|e| e.to_string())?;
-        let Some(lib) = libs.into_iter().find(|l| l.name == library) else {
-            return Err(format!("找不到图库「{library}」"));
-        };
-        let q = pv_store::ImageQuery::default();
-        let imgs = s.query_in_library(&q, lib.id).map_err(|e| e.to_string())?;
-        let mut out = Vec::with_capacity(imgs.len());
-        for img in imgs {
-            if let Ok(Some(p)) = s.abs_path(&img) {
-                out.push((img.id, p));
-            }
-        }
-        Ok(out)
+        let all = collect_images(s, &library)?;
+        let ids: Vec<i64> = all.iter().map(|(id, _)| *id).collect();
+        let skip = s.non_portrait_ids(&ids).map_err(|e| e.to_string())?;
+        let kept: Vec<(i64, PathBuf)> = all
+            .into_iter()
+            .filter(|(id, _)| !skip.contains(id))
+            .collect();
+        Ok(kept)
     }) {
         Ok(v) => v,
         Err(e) => return fail(e),
@@ -869,7 +861,14 @@ fn run_face_batch_blocking(app: tauri::AppHandle, library: String) {
             }
         }
     }
-    tag_log(&runner, format!("待处理 {} 张", images.len()));
+    tag_log(
+        &runner,
+        format!(
+            "范围：{} · 待处理 {} 张",
+            if library.is_empty() { "全部图库" } else { &library },
+            images.len()
+        ),
+    );
 
     // ── 2. 模型 ──
     let dir = face_dir();
@@ -1107,6 +1106,62 @@ fn asset_dir(sub: &str, marker: &str) -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../../../assets/ai")
         .join(sub)
+}
+
+/// 收集待处理的图（`library` 为空 = 全部图库）。
+fn collect_images(
+    s: &pv_store::Store,
+    library: &str,
+) -> Result<Vec<(i64, std::path::PathBuf)>, String> {
+    let q = pv_store::ImageQuery::default();
+    let imgs = if library.is_empty() {
+        s.query(&q).map_err(|e| e.to_string())?
+    } else {
+        let libs = pv_index::repo::libraries::list(s.conn()).map_err(|e| e.to_string())?;
+        let Some(lib) = libs.into_iter().find(|l| l.name == library) else {
+            return Err(format!("找不到图库「{library}」"));
+        };
+        s.query_in_library(&q, lib.id).map_err(|e| e.to_string())?
+    };
+    let mut out = Vec::with_capacity(imgs.len());
+    for img in imgs {
+        if let Ok(Some(p)) = s.abs_path(&img) {
+            out.push((img.id, p));
+        }
+    }
+    Ok(out)
+}
+
+/// 图库的 AI 处理状态（前端据此决定按钮文案与是否二次确认）。
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LibraryAiStatus {
+    /// 该范围内打过 AI 标签的图数
+    pub tagged: usize,
+    /// 该范围内已有人脸的图数
+    pub faced: usize,
+    /// 范围内的总图数
+    pub total: usize,
+}
+
+/// 查某个范围（空 = 全部）已经处理到什么程度。
+#[tauri::command]
+pub async fn ai_library_status(
+    state: State<'_, AppState>,
+    library: String,
+) -> Result<LibraryAiStatus, ErrorDto> {
+    state
+        .with_manager(|s| {
+            let imgs = collect_images(s, &library)?;
+            let ids: Vec<i64> = imgs.iter().map(|(id, _)| *id).collect();
+            let (tagged, faced) = s.ai_coverage(&ids).map_err(|e| e.to_string())?;
+            Ok(LibraryAiStatus {
+                tagged,
+                faced,
+                total: ids.len(),
+            })
+        })
+        .map_err(err)
 }
 
 /// 打标模型目录。

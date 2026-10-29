@@ -77,6 +77,20 @@ pub fn delete_for_images(conn: &Connection, image_ids: &[i64]) -> Result<usize> 
     Ok(stmt.execute(rusqlite::params_from_iter(image_ids.iter().copied()))?)
 }
 
+/// 一批图里有多少张已检测出人脸。
+pub fn count_images(conn: &Connection, image_ids: &[i64]) -> Result<usize> {
+    let mut n = 0usize;
+    for chunk in image_ids.chunks(500) {
+        let ph = vec!["?"; chunk.len()].join(",");
+        let sql = format!("SELECT COUNT(DISTINCT image_id) FROM faces WHERE image_id IN ({ph})");
+        let c: i64 = conn.query_row(&sql, rusqlite::params_from_iter(chunk.iter().copied()), |r| {
+            r.get(0)
+        })?;
+        n += c.max(0) as usize;
+    }
+    Ok(n)
+}
+
 const COLS: &str = "id, image_id, person_id, x, y, w, h, tier, model, score, quality, embedding";
 
 fn map_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<Face> {

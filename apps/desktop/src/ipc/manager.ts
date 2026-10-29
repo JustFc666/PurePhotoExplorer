@@ -767,6 +767,20 @@ export function aiRunTask(task: 'tag' | 'face', library: string): Promise<string
   return invoke<string>('ai_run_task', { task, library })
 }
 
+/** 某个范围（空 = 全部图库）的 AI 处理进度，用来决定按钮文案与是否二次确认。 */
+export interface LibraryAiStatus {
+  /** 打过 AI 标签的图数 */
+  tagged: number
+  /** 已检测出人脸的图数 */
+  faced: number
+  /** 范围内总图数 */
+  total: number
+}
+
+export function aiLibraryStatus(library: string): Promise<LibraryAiStatus> {
+  return invoke<LibraryAiStatus>('ai_library_status', { library })
+}
+
 export function aiTaskStatus(): Promise<AiTaskStatus> {
   return invoke<AiTaskStatus>('ai_task_status')
 }

@@ -1,32 +1,35 @@
 /**
- * AI 任务一键执行面板（打标 / 人像识别）。
+ * AI 任务一键执行面板（打标 / 人像识别共用）。
  *
- * ⭐ 2026-10-28 用户要求：不要「复制命令去终端粘」，按一下就跑。
+ * ## 2026-10-29 改造（用户要求）
+ * 1. 图库选择从「一排按钮」改成**下拉框**，并且多一项「全部图库」
+ * 2. 按钮文案随状态变：`打标` / `重新打标`、`识别人像` / `重新识别人像`
+ * 3. 已经跑过 → **二次确认**再动手
+ * 4. 识别人像时如果这个范围**还没打过标** → 提示，并可先打标再识别人像
  *
- * ## 这里是过渡实现
- * 现阶段后端 spawn `tools/ai/*.py`（需要本机 Python + 项目源码）。
- * 发行版会换成 Rust + `ort`（DirectML）直接推理 —— 那时**只换后端**，
- * 这个组件的按钮、状态、日志都不用动。
- *
- * ## 为什么用轮询而不是事件
- * 后端把 stdout/stderr 直接重定向到临时文件，这里 500ms 拉一次尾部。
- * 比「开两条线程读管道 + emit 事件」简单得多，也不会有管道写满卡死子进程的问题。
+ * ## 为什么按钮文案要从后端查
+ * 「有没有跑过」在前端不可信：换个图库就得重算，而且用户可能刚在别处跑过。
+ * 所以每次换范围都问一次 `ai_library_status`，按 `tagged` / `faced` 决定。
  */
 
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 
+import { ConfirmDialog } from '../chrome/ConfirmDialog'
+import { ContextMenu, type ContextMenuItem } from '../chrome/ContextMenu'
 import {
+  aiLibraryStatus,
   aiRunTask,
   aiTaskStatus,
   aiTaskStop,
   managerLibraries,
   type AiTaskStatus,
+  type LibraryAiStatus,
   type LibraryItem,
 } from '../../ipc/manager'
 
 interface Props {
   task: 'tag' | 'face'
-  /** 行标题，如「重新打标」 */
+  /** 行标题，如「打标」 */
   title: string
   /** 底部灰字说明 */
   hint: string
@@ -34,21 +37,39 @@ interface Props {
 
 export function AiRunPanel({ task, title, hint }: Props) {
   const [libs, setLibs] = useState<LibraryItem[]>([])
+  /** `''` = 全部图库 */
   const [picked, setPicked] = useState('')
+  const [cov, setCov] = useState<LibraryAiStatus | null>(null)
   const [busy, setBusy] = useState(false)
   const [status, setStatus] = useState<AiTaskStatus | null>(null)
   const [err, setErr] = useState<string | null>(null)
+  /** 下拉菜单位置（不为 null 表示展开） */
+  const [menu, setMenu] = useState<{ x: number; y: number } | null>(null)
+  /** 待确认的动作 */
+  const [ask, setAsk] = useState<null | 'rerun' | 'pretag'>(null)
+
+  const pickRef = useRef<HTMLButtonElement>(null)
   const logRef = useRef<HTMLPreElement>(null)
 
+  /* 图库列表 */
   useEffect(() => {
     void managerLibraries()
       .then((list) => {
         setLibs(list)
-        const first = list[0]
-        if (first) setPicked(first.name)
+        setPicked((cur) => cur || list[0]?.name || '')
       })
       .catch(() => undefined)
   }, [])
+
+  /* 换范围就重查「跑过没有」—— 按钮文案与二次确认都靠它 */
+  const refreshCov = useCallback((lib: string) => {
+    void aiLibraryStatus(lib)
+      .then(setCov)
+      .catch(() => setCov(null))
+  }, [])
+  useEffect(() => {
+    if (picked) refreshCov(picked)
+  }, [picked, refreshCov])
 
   /* 进页面时如果后台已经有任务在跑（切走再切回来），直接接上轮询 */
   useEffect(() => {
@@ -60,10 +81,7 @@ export function AiRunPanel({ task, title, hint }: Props) {
       .catch(() => undefined)
   }, [])
 
-  /*
-   * 轮询：500ms 一次。
-   * ⚠️ 只在 `busy` 时轮询 —— 空闲时不停请求会一直抢后端那把任务锁。
-   */
+  /* 轮询：500ms 一次，只在 busy 时跑（空闲时不停请求会一直抢后端那把任务锁） */
   useEffect(() => {
     if (!busy) return
     let alive = true
@@ -74,6 +92,7 @@ export function AiRunPanel({ task, title, hint }: Props) {
         setStatus(st)
         if (st.done) {
           setBusy(false)
+          refreshCov(picked)
           return
         }
         window.setTimeout(tick, 500)
@@ -88,23 +107,60 @@ export function AiRunPanel({ task, title, hint }: Props) {
     return () => {
       alive = false
     }
-  }, [busy])
+  }, [busy, picked, refreshCov])
 
-  /* 新日志出来就滚到底 —— 跑批时用户只关心「现在在干嘛」 */
+  /* 新日志出来就滚到底 */
   useEffect(() => {
     const el = logRef.current
     if (el) el.scrollTop = el.scrollHeight
   }, [status?.lines])
 
-  const start = async () => {
+  /** 等后台任务跑完（串行「先打标再识别人像」要用）。 */
+  const waitDone = async () => {
+    for (let i = 0; i < 4500; i++) {
+      await new Promise((r) => window.setTimeout(r, 800))
+      try {
+        const st = await aiTaskStatus()
+        setStatus(st)
+        if (st.done) return
+      } catch {
+        return
+      }
+    }
+  }
+
+  const run = async () => {
     setErr(null)
     try {
-      // 先启动成功再开轮询：反过来的话第一次轮询可能拿到「没有任务」直接收尾
+      // 识别人像但还没打标 → 先打标，跑完再检测
+      if (task === 'face' && cov && cov.tagged === 0 && cov.total > 0) {
+        await aiRunTask('tag', picked)
+        setBusy(true)
+        await waitDone()
+        await aiRunTask('face', picked)
+        setBusy(true)
+        return
+      }
       await aiRunTask(task, picked)
       setBusy(true)
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e))
+      setBusy(false)
     }
+  }
+
+  /** 点主按钮：先判断要不要确认 */
+  const onStart = () => {
+    if (task === 'face' && cov && cov.tagged === 0 && cov.total > 0) {
+      setAsk('pretag')
+      return
+    }
+    const doneBefore = task === 'tag' ? (cov?.tagged ?? 0) > 0 : (cov?.faced ?? 0) > 0
+    if (doneBefore) {
+      setAsk('rerun')
+      return
+    }
+    void run()
   }
 
   const stop = async () => {
@@ -115,6 +171,32 @@ export function AiRunPanel({ task, title, hint }: Props) {
     }
     setBusy(false)
   }
+
+  const openMenu = () => {
+    const r = pickRef.current?.getBoundingClientRect()
+    if (!r) return
+    setMenu({ x: r.left, y: r.bottom + 4 })
+  }
+
+  const items: ContextMenuItem[] = [
+    { id: '__all__', label: '全部图库', checked: picked === '', onSelect: () => setPicked('') },
+    ...libs.map((l) => ({
+      id: String(l.id),
+      label: `${l.name}（${l.count} 张）`,
+      checked: picked === l.name,
+      onSelect: () => setPicked(l.name),
+    })),
+  ]
+
+  const scopeLabel = picked || '全部图库'
+  const doneBefore = task === 'tag' ? (cov?.tagged ?? 0) > 0 : (cov?.faced ?? 0) > 0
+  const startLabel = doneBefore
+    ? task === 'tag'
+      ? '重新打标'
+      : '重新识别人像'
+    : task === 'tag'
+      ? '打标'
+      : '识别人像'
 
   const stateText = busy
     ? '运行中…'
@@ -128,28 +210,41 @@ export function AiRunPanel({ task, title, hint }: Props) {
     <div className="pv-set-row" style={{ marginTop: 18 }}>
       <div className="pv-set-label">{title}</div>
 
-      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 8 }}>
-        {libs.map((l) => {
-          const on = picked === l.name
-          return (
-            <button
-              key={l.id}
-              type="button"
-              className="pv-set-btn"
-              style={on ? { borderColor: 'var(--pv-accent)', color: 'var(--pv-accent)' } : undefined}
-              disabled={busy}
-              onClick={() => setPicked(l.name)}
-            >
-              {l.name}（{l.count} 张）
-            </button>
-          )
-        })}
-        {libs.length === 0 && <div className="pv-set-hint">还没有图库</div>}
+      {/* 范围下拉 */}
+      <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 8 }}>
+        <button
+          ref={pickRef}
+          type="button"
+          className="pv-set-btn"
+          disabled={busy}
+          onClick={openMenu}
+          style={{ minWidth: 180, display: 'flex', justifyContent: 'space-between', gap: 10 }}
+        >
+          <span>{scopeLabel}</span>
+          <span style={{ opacity: 0.6 }}>▾</span>
+        </button>
+        {cov && (
+          <span className="pv-set-hint">
+            {cov.total} 张
+            {task === 'tag'
+              ? cov.tagged > 0
+                ? ` · 已打标 ${cov.tagged}`
+                : ' · 未打标'
+              : cov.faced > 0
+                ? ` · 已识别 ${cov.faced}`
+                : ' · 未识别'}
+          </span>
+        )}
+        {libs.length === 0 && <span className="pv-set-hint">还没有图库</span>}
       </div>
 
       <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-        <button className="pv-set-btn" disabled={!picked || busy} onClick={() => void start()}>
-          开始
+        <button
+          className="pv-set-btn"
+          disabled={!picked || busy || (cov?.total ?? 0) === 0}
+          onClick={onStart}
+        >
+          {startLabel}
         </button>
         <button className="pv-set-btn" disabled={!busy} onClick={() => void stop()}>
           停止
@@ -175,6 +270,58 @@ export function AiRunPanel({ task, title, hint }: Props) {
         </div>
       )}
       <div className="pv-set-hint">{hint}</div>
+
+      {menu && (
+        <ContextMenu
+          key={`${menu.x},${menu.y}`}
+          items={items}
+          position={menu}
+          width={240}
+          onClose={() => setMenu(null)}
+        />
+      )}
+
+      {ask === 'rerun' && (
+        <ConfirmDialog
+          title={task === 'tag' ? '重新打标' : '重新识别人像'}
+          message={
+            task === 'tag'
+              ? `「${scopeLabel}」已经打过标（${cov?.tagged} 张）。重新打标会先清掉这些图的 AI 标签再写新的，不会越跑越多。`
+              : `「${scopeLabel}」已经识别过人像（${cov?.faced} 张）。重新识别会覆盖这些人脸并重建人物，已命名的人物名字会丢。`
+          }
+          okLabel="继续"
+          danger
+          onOk={() => {
+            setAsk(null)
+            void run()
+          }}
+          onCancel={() => setAsk(null)}
+        />
+      )}
+
+      {ask === 'pretag' && (
+        <ConfirmDialog
+          title="还没打标"
+          message={`「${scopeLabel}」还没有 AI 标签。识别人像本身用不到标签，但先打标能把「截图 / 文档」这类明显不是人像的图筛掉，少做无用功。是否先打标，再识别人像？`}
+          okLabel="先打标再识别"
+          cancelLabel="直接识别"
+          onOk={() => {
+            setAsk(null)
+            void run()
+          }}
+          onCancel={() => {
+            setAsk(null)
+            void (async () => {
+              try {
+                await aiRunTask('face', picked)
+                setBusy(true)
+              } catch (e) {
+                setErr(e instanceof Error ? e.message : String(e))
+              }
+            })()
+          }}
+        />
+      )}
     </div>
   )
 }

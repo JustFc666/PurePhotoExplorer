@@ -931,6 +931,27 @@ impl Store {
         Ok(n)
     }
 
+    /// 在一批图里挑出「明显不是人像」的（人脸检测可跳过，省时间）。
+    ///
+    /// 判据与取舍见 [`repo::tags::non_portrait_ids`] —— 只对**打过标**的图做减法，
+    /// 没标签的图不在此列（照常检测），所以这不构成对打标的硬依赖。
+    pub fn non_portrait_ids(
+        &self,
+        ids: &[i64],
+    ) -> Result<std::collections::HashSet<i64>> {
+        Ok(repo::tags::non_portrait_ids(&self.conn, ids)?
+            .into_iter()
+            .collect())
+    }
+
+    /// 一批图里「打过 AI 标签」和「已有人脸」的图数，返回 `(tagged, faced)`。
+    pub fn ai_coverage(&self, ids: &[i64]) -> Result<(usize, usize)> {
+        Ok((
+            repo::tags::count_tagged(&self.conn, ids)?,
+            repo::faces::count_images(&self.conn, ids)?,
+        ))
+    }
+
     /// **覆盖**一张图的 AI 标签（先删该图所有 `source='ai'` 的挂载，再写新的）。
     ///
     /// ⭐ 用「按图覆盖」而不是「全库先删再写」：中途崩溃/断电时，
