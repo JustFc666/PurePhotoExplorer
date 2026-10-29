@@ -103,8 +103,13 @@ export type Scope =
   | { kind: 'folder'; id: number; path: string; name: string }
   | { kind: 'library'; id: number; name: string }
   | { kind: 'browse'; path: string; name: string }
-  /** 按标签筛选（侧栏「标签」分区点进来） */
-  | { kind: 'tag'; name: string }
+  /**
+   * 按标签筛选（侧栏「标签」分区 / 标签条点一级类目）。
+   *
+   * `libraryId` = **在哪个图库的语境下筛的**。人像条要用它把人像限制在当前图库，
+   * 否则从「rednote」点进「人像」会看到全库 34 个人（2026-10-29 用户报的混合问题）。
+   */
+  | { kind: 'tag'; name: string; libraryId?: number }
   /** 按地点筛选（侧栏「地点」分区点进来，值是离线城市名） */
   | { kind: 'place'; name: string }
   /**
@@ -112,7 +117,7 @@ export type Scope =
    * 一个二级类目（如「花」）下有多个词条（樱花/荷花/玫瑰…），
    * 命中任一即可 —— 复用后端的 `tags_any`。
    */
-  | { kind: 'tagGroup'; label: string; names: string[] }
+  | { kind: 'tagGroup'; label: string; names: string[]; libraryId?: number }
 
 /**
  * 「加入图库」时把目录归到哪里。
@@ -874,7 +879,12 @@ export function useManager(): ManagerApi {
    */
 
   const selectTag = useCallback((name: string) => {
-    setScope({ kind: 'tag', name })
+    setScope((prev) => ({
+      kind: 'tag',
+      name,
+      // 只在「已进入某个图库」时把图库带过去；从「全部」点标签仍是全局
+      libraryId: prev.kind === 'library' ? prev.id : undefined,
+    }))
     setQueryVersion((v) => v + 1)
   }, [])
 
@@ -1228,10 +1238,18 @@ export function useManager(): ManagerApi {
     if (baseScope.kind === 'folder') q.dirIds = [baseScope.id]
     if (baseScope.kind === 'library') q.libraryId = baseScope.id
     // 标签筛选：后端按**标签名**过滤（`tags_any` = 命中任一即可）
-    if (scope.kind === 'tag') q.tagsAny = [scope.name]
+    // ⭐ 如果这个标签是**从某个图库点进去的**，图库范围要一起带上，
+    //    否则「rednote → 人像」会查出全库的人像图（2026-10-29 用户报的混合）。
+    if (scope.kind === 'tag') {
+      q.tagsAny = [scope.name]
+      if (scope.libraryId != null) q.libraryId = scope.libraryId
+    }
     // 地点筛选：城市名是后端离线解析好的，精确匹配
     if (scope.kind === 'place') q.places = [scope.name]
-    if (scope.kind === 'tagGroup') q.tagsAny = scope.names
+    if (scope.kind === 'tagGroup') {
+      q.tagsAny = scope.names
+      if (scope.libraryId != null) q.libraryId = scope.libraryId
+    }
     if (formats.length > 0) q.formats = formats
     if (camera.length > 0) q.camera = camera
     if (yearFilter.length > 0) q.years = yearFilter
@@ -1361,7 +1379,16 @@ export function useManager(): ManagerApi {
     if (names.length === 0) return
     setScope((prev) => {
       if (prev.kind !== 'tagGroup') scopeBeforeTag.current = prev
-      return { kind: 'tagGroup', label, names }
+      // 图库上下文：当前就在图库 → 用它；已经在标签筛选里 → 继承原来的；否则全局
+      const libId =
+        prev.kind === 'library'
+          ? prev.id
+          : prev.kind === 'tagGroup'
+            ? prev.libraryId
+            : scopeBeforeTag.current?.kind === 'library'
+              ? scopeBeforeTag.current.id
+              : undefined
+      return { kind: 'tagGroup', label, names, libraryId: libId }
     })
   }, [])
   const clearTagGroup = useCallback(() => {

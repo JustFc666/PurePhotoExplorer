@@ -28,6 +28,13 @@ interface Props {
   anchor: Anchor
   /** 当前正在筛的人物（高亮） */
   currentId?: number
+  /**
+   * 限定在哪个图库。`undefined` = 全部图库。
+   *
+   * ⚠️ 不传的话浮层列出的是**全库**人物 —— 在「rednote」里点开人像墙
+   * 会看到「测试图库」的人（2026-10-29 用户报的混合问题）。
+   */
+  libraryId?: number
   onClose: () => void
   /** 选中某人：调用方负责按这个人筛主区并关闭浮层 */
   onSelect: (id: number, name: string) => void
@@ -41,7 +48,8 @@ interface Props {
  */
 export const PERSON_POP_W = 494
 
-export function PersonWall({ anchor, currentId, onClose, onSelect }: Props) {
+export function PersonWall({
+  libraryId, anchor, currentId, onClose, onSelect }: Props) {
   const [people, setPeople] = useState<PersonItem[]>([])
   const [tip, setTip] = useState<{ x: number; y: number; text: string } | null>(null)
   const [menu, setMenu] = useState<{ x: number; y: number; p: PersonItem } | null>(null)
@@ -52,7 +60,7 @@ export function PersonWall({ anchor, currentId, onClose, onSelect }: Props) {
 
   useEffect(() => {
     let alive = true
-    managerPeople(1)
+    managerPeople(1, libraryId)
       .then((list) => {
         if (alive) setPeople(list)
       })

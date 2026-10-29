@@ -1913,6 +1913,13 @@ export function ManagerView(props: Props) {
             <PersonWall
               anchor={personPop}
               currentId={mgr.personFilter?.id}
+              libraryId={
+                mgr.scope.kind === 'library'
+                  ? mgr.scope.id
+                  : mgr.scope.kind === 'tag' || mgr.scope.kind === 'tagGroup'
+                    ? mgr.scope.libraryId
+                    : undefined
+              }
               onClose={() => setPersonPop(null)}
               onSelect={(id, name) => {
                 mgr.setPersonFilter({ id, name })
@@ -2152,7 +2159,13 @@ export function ManagerView(props: Props) {
             {/* 人像条：跨三行总高（标题 + 标签两行 + 筛选行） */}
             <PersonStrip
               visible={!mgr.isBrowsing && !mgr.isIdle}
-              libraryId={mgr.scope.kind === 'library' ? mgr.scope.id : undefined}
+              libraryId={
+                mgr.scope.kind === 'library'
+                  ? mgr.scope.id
+                  : mgr.scope.kind === 'tag' || mgr.scope.kind === 'tagGroup'
+                    ? mgr.scope.libraryId
+                    : undefined
+              }
               onOpenWall={(r) => setPersonPop({ x: Math.max(12, r.right - PERSON_POP_W), y: r.bottom + 6 })}
               onOpenPerson={(id, name) => mgr.setPersonFilter({ id, name })}
             />
