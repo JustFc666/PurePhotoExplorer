@@ -129,17 +129,14 @@ export function AiRunPanel({ task, title, hint }: Props) {
     }
   }
 
-  const run = async () => {
+  /** 跑任务；`preTag` = 先打标再识别人像（串行）。 */
+  const run = async (preTag: boolean) => {
     setErr(null)
     try {
-      // 识别人像但还没打标 → 先打标，跑完再检测
-      if (task === 'face' && cov && cov.tagged === 0 && cov.total > 0) {
+      if (preTag) {
         await aiRunTask('tag', picked)
         setBusy(true)
         await waitDone()
-        await aiRunTask('face', picked)
-        setBusy(true)
-        return
       }
       await aiRunTask(task, picked)
       setBusy(true)
@@ -149,18 +146,34 @@ export function AiRunPanel({ task, title, hint }: Props) {
     }
   }
 
-  /** 点主按钮：先判断要不要确认 */
-  const onStart = () => {
-    if (task === 'face' && cov && cov.tagged === 0 && cov.total > 0) {
+  /**
+   * 点主按钮：先判断要不要确认。
+   *
+   * ⭐ **必须现查**，不能用 state 里的 `cov`。
+   * 那次踩的坑：换到「rednote」（373 张、从没打过标）后立刻点「识别人像」，
+   * `picked` 已经变了但 `aiLibraryStatus` 的请求还没回来，`cov` 还是上一个库的
+   * （tagged=8）→ 判定「已打标」→ 既不提示也不先打标，直接开跑。
+   * 现查一次只多几十毫秒，但判断一定基于当前范围。
+   */
+  const onStart = async () => {
+    let st: LibraryAiStatus | null = cov
+    try {
+      st = await aiLibraryStatus(picked)
+      setCov(st)
+    } catch {
+      /* 查不到就沿用旧值（null 也不阻塞：走「直接跑」） */
+    }
+
+    if (task === 'face' && st && st.tagged === 0 && st.total > 0) {
       setAsk('pretag')
       return
     }
-    const doneBefore = task === 'tag' ? (cov?.tagged ?? 0) > 0 : (cov?.faced ?? 0) > 0
+    const doneBefore = task === 'tag' ? (st?.tagged ?? 0) > 0 : (st?.faced ?? 0) > 0
     if (doneBefore) {
       setAsk('rerun')
       return
     }
-    void run()
+    void run(false)
   }
 
   const stop = async () => {
@@ -242,7 +255,7 @@ export function AiRunPanel({ task, title, hint }: Props) {
         <button
           className="pv-set-btn"
           disabled={!picked || busy || (cov?.total ?? 0) === 0}
-          onClick={onStart}
+          onClick={() => void onStart()}
         >
           {startLabel}
         </button>
@@ -293,7 +306,7 @@ export function AiRunPanel({ task, title, hint }: Props) {
           danger
           onOk={() => {
             setAsk(null)
-            void run()
+            void run(false)
           }}
           onCancel={() => setAsk(null)}
         />
@@ -307,7 +320,7 @@ export function AiRunPanel({ task, title, hint }: Props) {
           cancelLabel="直接识别"
           onOk={() => {
             setAsk(null)
-            void run()
+            void run(true)
           }}
           onCancel={() => {
             setAsk(null)
