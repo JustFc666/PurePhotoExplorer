@@ -27,13 +27,14 @@ export type VocabMap = Map<string, { l1: string; l2: string }>
 
 const OTHER = 'EXIF / 其他'
 /**
- * 标签条：固定两行、**每行 6 个**，放不下的用「…」表示更多
- * （2026-10-25 用户定稿的表格布局：`全部 | tag1..tag6 | …` / `tag7..tag12 | …`）。
+ * 标签条：固定两行、**每行 7 个**，放不下的用「…」表示更多
+ * （2026-10-29 用户要求 6 → 7：`全部 | tag1..tag7 | …` / `tag8..tag14 | …`）。
  *
  * ⛔ 别改成"全铺开"：右侧现在有人像条，标签行铺太长会**压到人像头像上面**
- *    （用户截图报过重叠）。6+6 是给右侧 80px 头像留出的固定空间。
+ *    （用户截图报过重叠）。7+7 是给右侧 80px 头像留出的空间。
+ *    `.pv-ai-strip` 是 `overflow: hidden`，真挤不下时是裁掉尾巴而不是盖住人像。
  */
-const PER_ROW = 6
+const PER_ROW = 7
 const MAX_TAGS = PER_ROW * 2
 
 interface Props {
@@ -187,7 +188,7 @@ export function AiTagStrip({
   if (tags.length === 0) return null
 
   const list = l1 ? level2 : level1
-  /** 只显示前 12 个（6×2），其余给「…」——右侧有 80px 头像，铺太宽会重叠 */
+  /** 只显示前 14 个（7×2），其余给「…」——右侧有 80px 头像，铺太宽会重叠 */
   const shown = list.slice(0, MAX_TAGS)
   const rest = list.length - shown.length
   const rows: Group[][] = []

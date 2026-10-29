@@ -1830,6 +1830,18 @@ export function ManagerView(props: Props) {
    * `mgr.scope` 的联合类型，访问 `.path` 会报 TS2339。
    */
   const browseScope = mgr.scope.kind === 'browse' ? mgr.scope : null
+  /**
+   * 能否跑「一键 AI 识别」。
+   *
+   * ⭐ 2026-10-29 从标题右侧挪到筛选行（`格式` 之前）。放在标题右侧时，
+   * 它被 `margin-left:auto` 顶到窗口最右边、离图库名隔着一大片空白，
+   * 既不像"这个图库的操作"，也在窄窗口下离筛选器很远。
+   * 挪到筛选行第一个位置后，视线从「图库名 → 筛选 → AI 识别」是一条线。
+   *
+   * 只对**已入库的图库**显示：标签条和人像条都按 image_id 存，
+   * 浏览模式的临时预览没有索引行，跑了也没地方显示。
+   */
+  const aiEligible = !mgr.isBrowsing && !mgr.isIdle && mgr.scope.kind === 'library'
 
   return (
     <div className={`pv-mg${props.active ? '' : ' is-hidden'}`}>
@@ -1999,21 +2011,6 @@ export function ManagerView(props: Props) {
               />
             )}
             <div className="pv-mg-headr">
-              {/*
-                一键 AI 识别（2026-10-29 用户要求）：只对**已入库的图库**显示。
-                空图库（没标签没人像）时用户最自然的动作是就地跑一遍，
-                而不是「打开设置 → AI 分析 → 选库 → 点两个按钮」。
-              */}
-              {!mgr.isBrowsing && !mgr.isIdle && mgr.scope.kind === 'library' && (
-                <button
-                  type="button"
-                  className="pv-btn"
-                  title="先打标，再识别人像（两步自动串行）"
-                  onClick={() => setPipeOpen(true)}
-                >
-                  AI 识别
-                </button>
-              )}
               {browseScope ? (
                 <>
                   {/*
@@ -2056,8 +2053,30 @@ export function ManagerView(props: Props) {
           */}
           {!mgr.isBrowsing &&
           !mgr.isIdle &&
-          (mgr.stats?.formats.length || mgr.cameras.length || mgr.places.length || mgr.years.length) ? (
+          (aiEligible ||
+            mgr.stats?.formats.length ||
+            mgr.cameras.length ||
+            mgr.places.length ||
+            mgr.years.length) ? (
             <div className="pv-mg-filters">
+              {/*
+                一键 AI 识别（2026-10-29 用户要求：放在「格式」前面）。
+                空图库（没标签没人像）时用户最自然的动作是就地跑一遍，
+                而不是「打开设置 → AI 分析 → 选库 → 点两个按钮」。
+              */}
+              {aiEligible && (
+                <button
+                  type="button"
+                  // ⛔ 不用全局 `.pv-btn`：它高 30px，而筛选行的下拉是 26px，
+                  //    混在一起会把整行撑高 4px、人像条跟着变位。
+                  //    `.pv-mg-ai` 与 `.pv-mg-fbtn` 同尺寸，只换配色（主色）。
+                  className="pv-mg-ai"
+                  title="先打标，再识别人像（两步自动串行）"
+                  onClick={() => setPipeOpen(true)}
+                >
+                  AI 识别
+                </button>
+              )}
               {/*
                 2026-10-24：改成**标准下拉框**（锚定按钮正下方、定宽、最多 13 行可滚动），
                 顺序按用户要求：格式 → 年份 → 相机 → 地点。

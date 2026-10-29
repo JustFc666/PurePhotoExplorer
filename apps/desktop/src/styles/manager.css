@@ -1758,3 +1758,29 @@ body.is-col-resizing {
 .pv-ps-more-l {
   white-space: nowrap;
 }
+
+/* ── 「AI 识别」按钮（2026-10-29）──────────────────────────────────
+   位置：筛选行第一位，在「格式」之前（用户要求）。
+   尺寸必须与 `.pv-mg-fbtn` 一致（26px）：差 4px 就会把筛选行撑高、
+   右侧人像条跟着变位。配色用主色填充 —— 它是动作，不是筛选状态。 */
+.pv-mg-ai {
+  display: inline-flex;
+  align-items: center;
+  height: 26px;
+  padding: 0 12px;
+  border-radius: 7px;
+  border: 1px solid var(--pv-accent);
+  background: var(--pv-accent);
+  color: #fff;
+  font-size: 12px;
+  line-height: 1;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.pv-mg-ai:hover {
+  background: var(--pv-accent-hover);
+  border-color: var(--pv-accent-hover);
+}
+.pv-mg-ai:active {
+  background: var(--pv-accent-press);
+}
