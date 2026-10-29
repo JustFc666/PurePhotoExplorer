@@ -78,6 +78,22 @@ pub struct Tagger {
     fp16: bool,
 }
 
+/// 词表里的**全部一级类目名**（去重 + 排序），只读 `tag_meta.json`，不加载模型。
+///
+/// 用途：清掉老库里「一级类目」那种派生标签 —— 见
+/// `pv_index::repo::tags::drop_redundant_l1`。
+pub fn vocab_l1_names(dir: &Path) -> Result<Vec<String>, String> {
+    let path = dir.join("tag_meta.json");
+    let meta: TagMeta = serde_json::from_str(
+        &std::fs::read_to_string(&path).map_err(|e| format!("读 {path:?} 失败：{e}"))?,
+    )
+    .map_err(|e| format!("解析 {path:?} 失败：{e}"))?;
+    let mut out: Vec<String> = meta.vocab.into_iter().map(|e| e.l1).collect();
+    out.sort();
+    out.dedup();
+    Ok(out)
+}
+
 impl Tagger {
     /// 从导出的产物目录加载（含 `clip_vision.onnx` / `text_embeds.bin` / `tag_meta.json`）。
     pub fn load(dir: &Path) -> Result<Self, String> {

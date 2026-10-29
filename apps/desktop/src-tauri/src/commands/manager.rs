@@ -361,6 +361,25 @@ pub async fn manager_open(
             Ok(())
         })
         .map_err(merr)?;
+
+    /*
+     * 老库清理：删掉「已经有二级词支撑」的一级类目标签。
+     *
+     * 早期 Python 版打标把一级类目也当独立标签写库，于是一张刀剑图会同时挂着
+     * 「兵器 0.45（一级）」「刀剑 0.47（二级）」「物品 0.40（一级）」——
+     * 用户看到它被同时归进「兵器」和「物品」两个目录。
+     * 一级本来就能由词表的 l2→l1 反推，属于派生数据，不该单独存一份。
+     *
+     * 幂等：清过一次之后这条 DELETE 命中 0 行，每次启动只剩一次空扫描。
+     * 词表读不到（`l1` 为空）时函数本身是空操作，不会误删。
+     */
+    let l1_names = crate::commands::ai::vocab_l1_names();
+    state
+        .with_manager_mut(|s| {
+            s.drop_redundant_l1_tags(&l1_names).map_err(|e| e.to_string())?;
+            Ok(())
+        })
+        .map_err(merr)?;
     Ok(dir.to_string_lossy().into_owned())
 }
 

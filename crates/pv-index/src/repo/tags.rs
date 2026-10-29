@@ -71,6 +71,52 @@ pub fn clear_image_source(conn: &Connection, image_id: i64, source: &str) -> Res
     )?)
 }
 
+/// 删掉「**已经有二级词支撑**」的图上的**一级类目标签**。返回删除行数。
+///
+/// ## 为什么要有这条
+/// 一级类目（自然 / 活动 / 兵器 / 物品…）在库里只是**二级的派生**：词表里
+/// `l2 -> l1` 是确定的（刀剑 -> 兵器），分组、侧栏计数都能反推出来。
+/// 早期 Python 版打标把一级也当独立标签写库，于是同一张图会同时出现
+/// 「兵器 0.45（一级）」和「物品 0.40（一级）」—— 一张刀剑图被同时归到
+/// 两个一级目录（用户 2026-10-29 报的「应该在兵器，被归进物品」）。
+///
+/// Rust 版打标**从来只写二级**，所以这里只需要清掉历史遗留。
+///
+/// ## 判据（用户提的规则）
+/// 同一张图上「一级 + 二级」共存时，**那个单独的一级舍去**：
+/// 二级已经能推出它，而且没有二级支撑的一级往往是误判（物品 0.40）。
+///
+/// **只删「这张图已经有二级词」的那些**。只有一级、没有二级的图
+/// （老库里「自然」11 张、「建筑」16 张是这样）**保留** —— 那是它唯一的证据，
+/// 删掉会让这些图变成「无标签」，侧栏计数也跟着掉。
+///
+/// `l1_names` 为空时**直接返回 0**（保护）：传空会让 `NOT IN ()` 退化，
+/// 把所有标签都当成一级。
+pub fn drop_redundant_l1(conn: &Connection, l1_names: &[String]) -> Result<usize> {
+    if l1_names.is_empty() {
+        return Ok(0);
+    }
+    let ph = vec!["?"; l1_names.len()].join(",");
+    let sql = format!(
+        "DELETE FROM image_tags
+          WHERE source = 'ai'
+            AND tag_id IN (SELECT id FROM tags WHERE name IN ({ph}))
+            AND image_id IN (
+                  SELECT it2.image_id FROM image_tags it2
+                    JOIN tags t2 ON t2.id = it2.tag_id
+                   WHERE it2.source = 'ai' AND t2.name NOT IN ({ph}) )"
+    );
+    let mut stmt = conn.prepare(&sql)?;
+    let mut params: Vec<&dyn rusqlite::ToSql> = Vec::with_capacity(l1_names.len() * 2);
+    for n in l1_names {
+        params.push(n);
+    }
+    for n in l1_names {
+        params.push(n);
+    }
+    Ok(stmt.execute(params.as_slice())?)
+}
+
 /// 列出全部标签。
 pub fn list_all(conn: &Connection) -> Result<Vec<Tag>> {
     let mut stmt = conn.prepare("SELECT id, name, kind, color FROM tags ORDER BY name")?;
@@ -354,5 +400,108 @@ mod tests {
         let pairs = vec![("人像".to_string(), "人像".to_string())];
         let got = group_counts(&conn, Some(1), None, &pairs).unwrap();
         assert!(got.is_empty(), "exif 挂载不该计入一级类目张数");
+    }
+}
+
+#[cfg(test)]
+mod l1_cleanup_tests {
+    use super::*;
+    use crate::open_test_db;
+
+    fn seed_img(conn: &Connection, name: &str) -> i64 {
+        conn.execute(
+            "INSERT OR IGNORE INTO volumes(id, volume_guid) VALUES (1, 'v1')",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT OR IGNORE INTO folders(id, volume_id, rel_path) VALUES (1, 1, 'root')",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO images(dir_id, rel_name) VALUES (1, ?1)",
+            params![name],
+        )
+        .unwrap();
+        conn.last_insert_rowid()
+    }
+
+    fn tag(conn: &Connection, image_id: i64, name: &str, conf: f64) {
+        let id = ensure(conn, name, Some("ai")).unwrap();
+        add_image_tag(conn, image_id, id, "ai", Some(conf)).unwrap();
+    }
+
+    fn names(conn: &Connection, image_id: i64) -> Vec<String> {
+        let mut st = conn
+            .prepare(
+                "SELECT t.name FROM image_tags it JOIN tags t ON t.id = it.tag_id
+                  WHERE it.image_id = ?1 ORDER BY t.name",
+            )
+            .unwrap();
+        st.query_map(params![image_id], |r| r.get(0))
+            .unwrap()
+            .map(|r| r.unwrap())
+            .collect()
+    }
+
+    /// 用户报的那张刀剑图：兵器(一级) + 刀剑(二级) + 物品(一级)
+    /// → 两条一级都删掉，只留二级「刀剑」，由词表反推出属于「兵器」。
+    #[test]
+    fn 有二级支撑时一级标签被舍去() {
+        let conn = open_test_db().unwrap();
+        let img = seed_img(&conn, "sword.jpg");
+        tag(&conn, img, "兵器", 0.45);
+        tag(&conn, img, "刀剑", 0.47);
+        tag(&conn, img, "物品", 0.40);
+
+        let n = drop_redundant_l1(&conn, &["兵器".to_string(), "物品".to_string()]).unwrap();
+        assert_eq!(n, 2, "两条一级都该删");
+        assert_eq!(names(&conn, img), vec!["刀剑".to_string()], "只留二级词");
+    }
+
+    /// 只有一级、没有二级的图要**保住** —— 那是它唯一的证据。
+    #[test]
+    fn 只有一级的图保留() {
+        let conn = open_test_db().unwrap();
+        let img = seed_img(&conn, "nature.jpg");
+        tag(&conn, img, "自然", 0.41);
+
+        assert_eq!(
+            drop_redundant_l1(&conn, &["自然".to_string()]).unwrap(),
+            0
+        );
+        assert_eq!(names(&conn, img), vec!["自然".to_string()]);
+    }
+
+    /// 别误删 EXIF / OCR 等其他来源的标签（只是名字碰巧同名）。
+    #[test]
+    fn 不碰其他来源的标签() {
+        let conn = open_test_db().unwrap();
+        let img = seed_img(&conn, "x.jpg");
+        let id = ensure(&conn, "物品", Some("exif")).unwrap();
+        add_image_tag(&conn, img, id, "exif", None).unwrap();
+        tag(&conn, img, "刀剑", 0.50);
+
+        assert_eq!(
+            drop_redundant_l1(&conn, &["物品".to_string()]).unwrap(),
+            0
+        );
+        // 排序：刀剑 在 物品 前（中文按字节序）
+        let got = names(&conn, img);
+        assert_eq!(got.len(), 2, "exif 那条不能被删：{got:?}");
+        assert!(got.contains(&"物品".to_string()));
+    }
+
+    /// 传空的一级名单必须**什么都不做**（否则 NOT IN () 会把所有标签当一级）。
+    #[test]
+    fn 空名单是空操作() {
+        let conn = open_test_db().unwrap();
+        let img = seed_img(&conn, "y.jpg");
+        tag(&conn, img, "兵器", 0.45);
+        tag(&conn, img, "刀剑", 0.47);
+
+        assert_eq!(drop_redundant_l1(&conn, &[]).unwrap(), 0);
+        assert_eq!(names(&conn, img).len(), 2);
     }
 }

@@ -15,7 +15,6 @@
 //! ⚠️ 拉伸 vs padding 会影响**关键点**的精度，进而影响对齐后的特征。
 //! 如果实测识别率不如 Python 版，第一件事就是换成「等比例缩放 + 填充」。
 
-use ort::ep::DirectML;
 use ort::session::Session;
 use ort::value::Tensor;
 use pv_decode::RgbaImage;

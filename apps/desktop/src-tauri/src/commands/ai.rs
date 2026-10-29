@@ -1227,6 +1227,14 @@ fn run_pipeline_blocking(app: tauri::AppHandle, library: String) {
     run_face_batch_blocking(app, library, true);
 }
 
+/// 词表里的一级类目名（只读 `tag_meta.json`，**不加载模型**）。
+///
+/// 读不到就返回空 —— 调用方（`drop_redundant_l1_tags`）拿空列表是空操作，
+/// 绝不会因为词表缺失而误删标签。
+pub(crate) fn vocab_l1_names() -> Vec<String> {
+    pv_ai::tagger::vocab_l1_names(&tagger_dir()).unwrap_or_default()
+}
+
 /// 打标模型目录。
 fn tagger_dir() -> PathBuf {
     asset_dir("tag", "tag_meta.json")
@@ -1319,7 +1327,8 @@ pub async fn ai_run_task(
     let root = project_root()
         .ok_or_else(|| err("找不到项目目录（tools/ai 脚本所在位置）".into()))?;
 
-    let (th, th_l1) = state
+    // 只有 Python 那条老路会用到这两个阈值；Rust 打标在下面自己读
+    let (_th, _th_l1) = state
         .with_manager(|s| {
             let get = |k: &str| s.setting(k).ok().flatten();
             Ok((

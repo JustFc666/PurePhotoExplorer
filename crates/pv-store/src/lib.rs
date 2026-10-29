@@ -973,6 +973,14 @@ impl Store {
         Ok(())
     }
 
+    /// 清掉历史遗留的「一级类目」派生标签（幂等，见 `repo::tags::drop_redundant_l1`）。
+    ///
+    /// 只删「这张图已经有二级词」的那些一级标签；只有一级的图保留。
+    /// `l1_names` 传空时是空操作。
+    pub fn drop_redundant_l1_tags(&mut self, l1_names: &[String]) -> Result<usize> {
+        Ok(repo::tags::drop_redundant_l1(&self.conn, l1_names)?)
+    }
+
     /// 从一批图**移除**某个标签（按 id）。返回受影响的张数。
     pub fn remove_tag(&mut self, ids: &[i64], tag_id: i64) -> Result<usize> {
         let mut n = 0usize;
