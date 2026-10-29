@@ -63,6 +63,20 @@ pub fn replace_for_image(conn: &Connection, image_id: i64, faces: &[Face]) -> Re
     Ok(ids)
 }
 
+/// 删掉一批图片的所有人脸（「按图库清空」用）。返回删除行数。
+///
+/// 分批在调用方做：SQLite 的 `IN (?,?,…)` 变量数有上限（默认 999），
+/// 图库上万张图必须切块，否则直接报 "too many SQL variables"。
+pub fn delete_for_images(conn: &Connection, image_ids: &[i64]) -> Result<usize> {
+    if image_ids.is_empty() {
+        return Ok(0);
+    }
+    let ph = vec!["?"; image_ids.len()].join(",");
+    let sql = format!("DELETE FROM faces WHERE image_id IN ({ph})");
+    let mut stmt = conn.prepare(&sql)?;
+    Ok(stmt.execute(rusqlite::params_from_iter(image_ids.iter().copied()))?)
+}
+
 const COLS: &str = "id, image_id, person_id, x, y, w, h, tier, model, score, quality, embedding";
 
 fn map_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<Face> {

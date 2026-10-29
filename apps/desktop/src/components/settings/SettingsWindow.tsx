@@ -20,6 +20,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { MouseEvent as ReactMouseEvent } from 'react'
 import { ASSOCIATION_FORMATS } from '../../constants/formats'
+import { managerLibraries, type LibraryItem } from '../../ipc/manager'
 import { AiRunPanel } from './AiRunPanel'
 import type { AssociationState } from '../../ipc'
 import { open as openDialog, save as saveDialog } from '@tauri-apps/plugin-dialog'
@@ -100,7 +101,6 @@ const PAGES = [
   { id: 'assoc', group: '文件类型', label: '打开方式' },
   { id: 'tag', group: 'AI 分析', label: '打标' },
   { id: 'face', group: 'AI 分析', label: '人脸' },
-  { id: 'faces', group: '隐私与数据', label: '人脸数据' },
   { id: 'cache', group: '隐私与数据', label: '缓存与目录' },
   { id: 'about', group: '关于', label: '关于' },
 ] as const
@@ -266,7 +266,6 @@ export function SettingsWindow({
             )}
             {page === 'tag' && <TagPage />}
             {page === 'face' && <FacePage />}
-            {page === 'faces' && <FacesPage />}
             {page === 'cache' && <CachePage />}
             {page === 'about' && <AboutPage />}
           </div>
@@ -782,14 +781,45 @@ function TagRerun() {
  */
 function FacePage() {
   const [cfg, setCfg] = useState<AiConfig | null>(null)
+  const [stats, setStats] = useState<FacesStats | null>(null)
+  const [libs, setLibs] = useState<LibraryItem[]>([])
+  /** null = 全部图库 */
+  const [scope, setScope] = useState<string | null>(null)
+  const [confirming, setConfirming] = useState(false)
+  const [msg, setMsg] = useState<string | null>(null)
 
-  useEffect(() => {
+  const load = useCallback(() => {
     void aiConfig().then(setCfg).catch(() => undefined)
+    void managerFacesStats().then(setStats).catch(() => setStats(null))
+    void managerLibraries().then(setLibs).catch(() => undefined)
   }, [])
+
+  useEffect(load, [load])
+
+  /* 二次确认：点了「清空」先变成「确认清空」，5 秒不点自动复原 */
+  useEffect(() => {
+    if (!confirming) return
+    const t = window.setTimeout(() => setConfirming(false), 5000)
+    return () => window.clearTimeout(t)
+  }, [confirming])
 
   const setFaces = (on: boolean) => {
     setCfg((c) => (c ? { ...c, faces: on } : c))
     void aiSaveConfig({ faces: on }).catch(() => undefined)
+  }
+
+  const clear = () => {
+    if (!confirming) {
+      setConfirming(true)
+      return
+    }
+    setConfirming(false)
+    void managerFacesClear(scope ?? undefined)
+      .then((n) => {
+        setMsg(scope ? `已删除「${scope}」的 ${n} 张人脸` : `已删除 ${n} 张人脸与全部人物`)
+        load()
+      })
+      .catch((e: unknown) => setMsg(String(e)))
   }
 
   return (
@@ -801,7 +831,7 @@ function FacePage() {
         <>
           <Row
             label="人脸识别"
-            hint="只在本机运行，不上传；embedding 属于生物特征，可随时在「人脸数据」里清空"
+            hint="只在本机运行、不上传。embedding 属于生物特征，可随时在下面清空"
           >
             <Switch on={cfg.faces} onChange={setFaces} label="人脸识别" />
           </Row>
@@ -809,6 +839,44 @@ function FacePage() {
           <FaceRerun />
         </>
       )}
+
+      {/* ── 人脸数据（原「隐私与数据 → 人脸数据」，2026-10-29 合并到此页）── */}
+      <div className="pv-set-row" style={{ marginTop: 24 }}>
+        <div className="pv-set-label">人脸数据</div>
+        <div className="pv-set-info">
+          <span style={{ flex: 1 }}>
+            已分析 <strong>{stats?.faces ?? 0}</strong> 张脸 · 已归属{' '}
+            <strong>{stats?.assigned ?? 0}</strong> · <strong>{stats?.persons ?? 0}</strong> 个人物（
+            {stats?.namedPersons ?? 0} 个已命名）
+          </span>
+        </div>
+        <div className="pv-set-hint">
+          这些是人脸识别的**结果**，不在照片文件里，也不会被导出
+        </div>
+
+        {/* 清空范围：全部 / 单个图库 */}
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', margin: '10px 0 8px' }}>
+          <Choice on={scope === null} label="全部图库" onClick={() => setScope(null)} />
+          {libs.map((l) => (
+            <Choice
+              key={l.id}
+              on={scope === l.name}
+              label={`${l.name}（${l.count} 张）`}
+              onClick={() => setScope(l.name)}
+            />
+          ))}
+        </div>
+
+        <div className="pv-set-btnrow">
+          <button className="pv-set-btn pv-set-btn--danger" onClick={clear}>
+            {confirming
+              ? `确认清空${scope ? `「${scope}」` : '全部'}`
+              : `清空${scope ? `「${scope}」` : '全部'}人脸数据…`}
+          </button>
+          <span className="pv-set-hint">只删人脸与人物，照片、标签、缓存都不受影响</span>
+        </div>
+        {msg && <div className="pv-set-hint">{msg}</div>}
+      </div>
     </>
   )
 }
@@ -820,62 +888,6 @@ function FaceRerun() {
       title="重新识别人像"
       hint="先检测人脸并写向量，再重新聚类（两步自动串行）。只处理带「人像 / 证件」标签的图；同一张图里同一个人只算一次。"
     />
-  )
-}
-
-function FacesPage() {
-  const [stats, setStats] = useState<FacesStats | null>(null)
-  const [confirming, setConfirming] = useState(false)
-  const [msg, setMsg] = useState<string | null>(null)
-
-  const load = useCallback(() => {
-    void managerFacesStats()
-      .then(setStats)
-      .catch(() => setStats(null))
-  }, [])
-  useEffect(load, [load])
-
-  /* 两段确认：点了「清空」先变成「确认清空」，4 秒不点就复原 */
-  useEffect(() => {
-    if (!confirming) return
-    const t = window.setTimeout(() => setConfirming(false), 4000)
-    return () => window.clearTimeout(t)
-  }, [confirming])
-
-  const clear = () => {
-    if (!confirming) {
-      setConfirming(true)
-      return
-    }
-    setConfirming(false)
-    void managerFacesClear()
-      .then((n) => {
-        setMsg(`已删除 ${n} 张人脸与全部人物`)
-        load()
-      })
-      .catch((e: unknown) => setMsg(String(e)))
-  }
-
-  return (
-    <>
-      <h2 className="pv-set-h1">人脸数据</h2>
-      <Row label="当前状态" hint="这些是人脸识别的**结果**，不在照片文件里，也不会被导出">
-        <div className="pv-set-info">
-          <span style={{ flex: 1 }}>
-            已分析 <strong>{stats?.faces ?? 0}</strong> 张脸 · 已归属{' '}
-            <strong>{stats?.assigned ?? 0}</strong> · <strong>{stats?.persons ?? 0}</strong> 个人物（
-            {stats?.namedPersons ?? 0} 个已命名）
-          </span>
-        </div>
-      </Row>
-      <div className="pv-set-btnrow">
-        <button className="pv-set-btn pv-set-btn--danger" onClick={clear}>
-          {confirming ? '确认清空人脸数据' : '清空人脸数据…'}
-        </button>
-        <span className="pv-set-hint">只删除人脸与人物，照片、标签、缓存都不受影响</span>
-      </div>
-      {msg && <div className="pv-set-hint">{msg}</div>}
-    </>
   )
 }
 

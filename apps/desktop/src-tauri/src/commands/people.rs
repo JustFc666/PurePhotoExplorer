@@ -282,11 +282,50 @@ pub async fn manager_faces_stats(state: State<'_, AppState>) -> Result<FacesStat
 /// ⛔ 只删 `faces` / `persons`，**不碰图片索引与缩略图缓存** ——
 /// 用户关掉人脸功能不该丢掉他的图库。
 #[tauri::command]
-pub async fn manager_faces_clear(state: State<'_, AppState>) -> Result<usize, ErrorDto> {
+pub async fn manager_faces_clear(
+    state: State<'_, AppState>,
+    library: Option<String>,
+) -> Result<usize, ErrorDto> {
     state
-        .with_manager(|s| {
-            persons_repo::delete_all(s.conn()).map_err(|e| e.to_string())?;
-            faces_repo::delete_all(s.conn(), None).map_err(|e| e.to_string())
+        .with_manager(|s| match library {
+            // 全部：连 persons 一起清（干净利落，等价于「回到没跑过人脸」）
+            None => {
+                persons_repo::delete_all(s.conn()).map_err(|e| e.to_string())?;
+                faces_repo::delete_all(s.conn(), None).map_err(|e| e.to_string())
+            }
+            // 单图库：只删这个图库里那些图的人脸，再清理变空的人物
+            Some(name) => {
+                let libs = pv_index::repo::libraries::list(s.conn()).map_err(|e| e.to_string())?;
+                let Some(lib) = libs.into_iter().find(|l| l.name == name) else {
+                    return Err(format!("找不到图库「{name}」"));
+                };
+                let q = pv_store::ImageQuery::default();
+                let imgs = s
+                    .query_in_library(&q, lib.id)
+                    .map_err(|e| e.to_string())?;
+                let mut total = 0usize;
+                /*
+                 * 分批删：图库可能上万张，`IN (?,?,…)` 的变量数有上限
+                 * （SQLite 默认 999），所以每 500 个一批。
+                 */
+                for chunk in imgs.chunks(500) {
+                    let ids: Vec<i64> = chunk.iter().map(|i| i.id).collect();
+                    total += faces_repo::delete_for_images(s.conn(), &ids)
+                        .map_err(|e| e.to_string())?;
+                }
+                /*
+                 * 清理孤儿人物：这个图库删完脸之后，原来的人物可能一张脸都不剩。
+                 * ⛔ 不能 `delete_all` —— 其他图库的人物不能被牵连。
+                 */
+                s.conn()
+                    .execute(
+                        "DELETE FROM persons WHERE id NOT IN                          (SELECT DISTINCT person_id FROM faces WHERE person_id IS NOT NULL)",
+                        [],
+                    )
+                    .map_err(|e| e.to_string())?;
+                persons_repo::refresh_all(s.conn()).map_err(|e| e.to_string())?;
+                Ok(total)
+            }
         })
         .map_err(merr)
 }

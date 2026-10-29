@@ -91,7 +91,13 @@ export async function managerFacesStats(): Promise<FacesStats> {
   return invoke<FacesStats>('manager_faces_stats')
 }
 
-/** 清除全部人脸数据（隐私开关）；返回删掉的人脸行数。 */
-export async function managerFacesClear(): Promise<number> {
-  return invoke<number>('manager_faces_clear')
+/**
+ * 清除人脸数据；返回删掉的人脸行数。
+ *
+ * @param library 传图库名 = 只清这个图库；不传 = 清全部（连人物一起）
+ *
+ * ⚠️ 按图库清时**只清理变空的人物**，其他图库的人物原封不动。
+ */
+export async function managerFacesClear(library?: string): Promise<number> {
+  return invoke<number>('manager_faces_clear', { library: library ?? null })
 }
