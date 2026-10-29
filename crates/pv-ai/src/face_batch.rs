@@ -36,6 +36,22 @@ impl Default for FaceBatchOpts {
     }
 }
 
+/// 同图去重阈值：一张图里两张脸的余弦超过它就只保留分数高的那张。
+///
+/// ## 为什么需要（2026-10-29 用户报的「一张浮雕算出 6 张脸」）
+/// 用户库里所有「多脸图」的内部相似度分布：
+///
+/// | 图 | 脸数 | 最高余弦 | 平均余弦 |
+/// |---|---|---|---|
+/// | 博物馆浮雕（相邻雕像风格相同） | 6 | **0.686** | **0.552** |
+/// | 其他 6 脸/4 脸/3 脸图 | 3–6 | 0.24–0.58 | 0.10–0.44 |
+///
+/// 取 **0.55**：浮雕那种「整张图的人脸都长一个样」会被压成 1~2 张，
+/// 而正常合影（不同人平均 0.10~0.44）一张都不会被误合并。
+///
+/// ⚠️ 这是**同图**内的去重，不影响跨图的聚类 —— 同一个人在不同照片里仍然是一个人。
+const SAME_IMAGE_DEDUP_COS: f32 = 0.55;
+
 /// 一张检测到的人脸（坐标已归一化到 0..1，与 `faces` 表一致）。
 #[derive(Debug, Clone)]
 pub struct DetectedFace {
@@ -200,7 +216,24 @@ fn detect_one(
             embedding: emb,
         });
     }
-    Ok(out)
+
+    Ok(dedup_same_image(out))
+}
+
+/// 同图去重：`faces` 必须**按分数降序**（`detect` 出来就是），
+/// 保留分数高的，后面相似的丢掉。
+fn dedup_same_image(faces: Vec<DetectedFace>) -> Vec<DetectedFace> {
+    let mut kept: Vec<DetectedFace> = Vec::with_capacity(faces.len());
+    for f in faces {
+        if kept
+            .iter()
+            .any(|k| crate::face::cosine(&k.embedding, &f.embedding) > SAME_IMAGE_DEDUP_COS)
+        {
+            continue;
+        }
+        kept.push(f);
+    }
+    kept
 }
 
 #[cfg(test)]
@@ -233,5 +266,73 @@ mod tests {
     #[test]
     fn 空簇不建() {
         assert!(!is_likely_real_person(&[]));
+    }
+}
+
+#[cfg(test)]
+mod dedup_tests {
+    use super::{dedup_same_image, DetectedFace};
+
+    fn face(score: f32, emb: Vec<f32>) -> DetectedFace {
+        DetectedFace {
+            image_id: 1,
+            x: 0.0,
+            y: 0.0,
+            w: 0.1,
+            h: 0.1,
+            score,
+            quality: 100.0,
+            embedding: emb,
+        }
+    }
+
+    fn unit(v: &[f32]) -> Vec<f32> {
+        let n: f32 = v.iter().map(|x| x * x).sum::<f32>().sqrt();
+        v.iter().map(|x| x / n).collect()
+    }
+
+    /// 浮雕场景：6 张脸风格高度相似（余弦 ~0.55+），只留分数最高的那张
+    #[test]
+    fn 浮雕式多脸被压成一张() {
+        let mut faces = Vec::new();
+        for (i, s) in [0.855f32, 0.825, 0.816, 0.804, 0.783, 0.709].iter().enumerate() {
+            // 公共基 + 各自方向：两两余弦 = 1/(1+x²)，x=0.78 → ≈0.62，
+            // 正好是用户那张浮雕实测的 0.55~0.69 区间
+            let mut v = vec![0.0f32; 8];
+            v[0] = 1.0;
+            v[i + 1] = 0.78;
+            faces.push(face(*s, unit(&v)));
+        }
+        let kept = dedup_same_image(faces);
+        assert!(kept.len() <= 2, "浮雕式多脸应该被压成 1~2 张，实际 {}", kept.len());
+        assert_eq!(kept[0].score, 0.855, "应该保留分数最高的");
+    }
+
+    /// 正常合影：不同人余弦很低，一张都不能少
+    #[test]
+    fn 合影不同人一个都不少() {
+        let faces = vec![
+            face(0.919, unit(&[1.0, 0.0, 0.0, 0.0])),
+            face(0.917, unit(&[0.0, 1.0, 0.0, 0.0])),
+            face(0.836, unit(&[0.0, 0.0, 1.0, 0.0])),
+        ];
+        let kept = dedup_same_image(faces);
+        assert_eq!(kept.len(), 3, "不同人不能被合并");
+    }
+
+    /// 同一张脸被检测两次（几乎相同）→ 留分数高的
+    #[test]
+    fn 重复检测只留高分() {
+        let a = unit(&[1.0, 0.0, 0.0, 0.0]);
+        let b = unit(&[0.99, 0.02, 0.0, 0.0]);
+        let kept = dedup_same_image(vec![face(0.80, a), face(0.90, b)]);
+        assert_eq!(kept.len(), 1);
+        assert_eq!(kept[0].score, 0.80, "入参按分数降序，先来的被保留");
+    }
+
+    #[test]
+    fn 单张原样返回() {
+        let kept = dedup_same_image(vec![face(0.9, unit(&[1.0, 0.0]))]);
+        assert_eq!(kept.len(), 1);
     }
 }
