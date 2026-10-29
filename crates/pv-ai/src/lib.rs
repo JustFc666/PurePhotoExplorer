@@ -10,4 +10,5 @@ pub mod batch;
 pub mod cluster;
 pub mod ort_env;
 pub mod face;
+pub mod face_batch;
 pub mod tagger;

@@ -19,7 +19,6 @@ use std::path::Path;
 use fast_image_resize::images::Image as FirImage;
 use fast_image_resize::{FilterType, PixelType, ResizeAlg, ResizeOptions, Resizer};
 use half::f16;
-use ort::ep::DirectML;
 use ort::session::Session;
 use ort::value::Tensor;
 use pv_decode::RgbaImage;

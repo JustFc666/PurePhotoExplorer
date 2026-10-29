@@ -804,6 +804,268 @@ fn run_tag_batch_blocking(app: tauri::AppHandle, library: String) {
     };
 }
 
+
+/// 跑一次人脸识别（检测 → 特征 → 聚类 → 写库），在 `spawn_blocking` 里执行。
+///
+/// ## 为什么分四段
+/// 1. 查图列表（锁内，毫秒）
+/// 2. **锁外**检测 + 特征（每张 1~3 秒，期间图库滚动不受影响）
+/// 3. **锁外**聚类（纯内存，几千张脸不到 1 秒）
+/// 4. 写库（锁内，事务性插入）
+///
+/// ## persons 会被重建
+/// `--reset` 语义：先 `DELETE FROM persons` 再按新聚类建人物 ——
+/// **用户给人物起的名字会丢**。这与 `tools/ai/face_cluster.py` 的行为一致，
+/// UI 上要明确告知（别让用户莫名其妙发现名字没了）。
+fn run_face_batch_blocking(app: tauri::AppHandle, library: String) {
+    use pv_ai::cluster::{two_stage_cluster, ClusterOpts};
+    use pv_ai::face::{FaceDetector, FaceRecognizer};
+    use pv_ai::face_batch::{detect_batch, FaceBatchOpts, FaceProgress};
+
+    // ⚠️ 一条语句里把 Arc 拷出来，理由同 tag：State 借用活不过函数体
+    let runner: Arc<Mutex<Option<Running>>> = app.state::<AiRunner>().0.clone();
+    let state = app.state::<AppState>();
+    let t_start = std::time::Instant::now();
+
+    tag_log(&runner, format!("开始识别人像：{library}"));
+
+    let fail = |msg: String| {
+        tag_log(&runner, format!("失败：{msg}"));
+        if let Ok(mut g) = runner.lock() {
+            if let Some(r) = g.as_mut() {
+                if let Some(t) = r.tag.as_mut() {
+                    t.finished = true;
+                    t.ok = false;
+                }
+                r.ok = false;
+            }
+        }
+    };
+
+    // ── 1. 查图列表 ──
+    let images: Vec<(i64, PathBuf)> = match state.with_manager(|s| {
+        let libs = pv_index::repo::libraries::list(s.conn()).map_err(|e| e.to_string())?;
+        let Some(lib) = libs.into_iter().find(|l| l.name == library) else {
+            return Err(format!("找不到图库「{library}」"));
+        };
+        let q = pv_store::ImageQuery::default();
+        let imgs = s.query_in_library(&q, lib.id).map_err(|e| e.to_string())?;
+        let mut out = Vec::with_capacity(imgs.len());
+        for img in imgs {
+            if let Ok(Some(p)) = s.abs_path(&img) {
+                out.push((img.id, p));
+            }
+        }
+        Ok(out)
+    }) {
+        Ok(v) => v,
+        Err(e) => return fail(e),
+    };
+
+    if let Ok(mut g) = runner.lock() {
+        if let Some(r) = g.as_mut() {
+            if let Some(t) = r.tag.as_mut() {
+                t.total = images.len();
+            }
+        }
+    }
+    tag_log(&runner, format!("待处理 {} 张", images.len()));
+
+    // ── 2. 模型 ──
+    let dir = face_dir();
+    let mut det = match FaceDetector::load(&dir) {
+        Ok(d) => d,
+        Err(e) => return fail(format!("检测模型加载失败：{e}")),
+    };
+    let mut rec = match FaceRecognizer::load(&dir) {
+        Ok(r) => r,
+        Err(e) => return fail(format!("识别模型加载失败：{e}")),
+    };
+    tag_log(&runner, "模型就绪 · YuNet + SFace".into());
+
+    // ── 3. 检测 + 特征（锁外）──
+    let opts = FaceBatchOpts::default();
+    let mut last_log = 0usize;
+    let (faces, stats) = detect_batch(
+        &images,
+        &mut det,
+        &mut rec,
+        &opts,
+        |p: &FaceProgress| {
+            if let Ok(mut g) = runner.lock() {
+                if let Some(r) = g.as_mut() {
+                    if let Some(t) = r.tag.as_mut() {
+                        t.done = p.done;
+                    }
+                }
+            }
+            if p.done == p.total || p.done - last_log >= 10 {
+                last_log = p.done;
+                let tail = if p.faces > 0 {
+                    format!("（{} 张脸）", p.faces)
+                } else {
+                    String::new()
+                };
+                tag_log(&runner, format!("{}/{} · {}{tail}", p.done, p.total, p.name));
+            }
+        },
+    );
+
+    tag_log(
+        &runner,
+        format!(
+            "检测完成：{} 张图有脸 · 共 {} 张脸 · 失败 {} 张",
+            stats.with_face, stats.faces, stats.failed
+        ),
+    );
+    for e in &stats.errors {
+        tag_log(&runner, format!("跳过 {e}"));
+    }
+    if faces.is_empty() {
+        return fail("一张脸都没检测到（检查图库内容或降低检测门槛）".into());
+    }
+
+    // ── 4. 聚类（锁外）──
+    tag_log(&runner, "聚类中…".into());
+    let embs: Vec<Vec<f32>> = faces.iter().map(|f| f.embedding.clone()).collect();
+    let c_opts = ClusterOpts::default();
+    let labels = two_stage_cluster(&embs, &c_opts);
+    let mut sizes: std::collections::HashMap<i32, usize> = std::collections::HashMap::new();
+    for &l in &labels {
+        *sizes.entry(l).or_insert(0) += 1;
+    }
+    let multi = sizes.values().filter(|&&c| c >= c_opts.min_core).count();
+    let singles = sizes.values().filter(|&&c| c < c_opts.min_core).count();
+    tag_log(
+        &runner,
+        format!("聚类完成：{} 个簇（≥{} 张的 {multi} 个）· 零散 {singles} 组", sizes.len(), c_opts.min_core),
+    );
+
+    // ── 5. 写库（锁内）──
+    tag_log(&runner, "写库中…".into());
+    let ver = format!(
+        "sface_2021dec@{}",
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0)
+    );
+
+    let res = state.with_manager_mut(|s| {
+        let conn = s.conn();
+        // 4a. 重建 persons（Python 版同样的 --reset 语义）
+        conn.execute("DELETE FROM persons", [])
+            .map_err(|e| e.to_string())?;
+
+        // 4b. 按图分组写 faces（先删后插，幂等），并把插入的 face_id 记下来
+        let mut by_image: std::collections::BTreeMap<i64, Vec<usize>> =
+            std::collections::BTreeMap::new();
+        for (i, f) in faces.iter().enumerate() {
+            by_image.entry(f.image_id).or_default().push(i);
+        }
+        let mut face_ids = vec![0i64; faces.len()];
+        for (image_id, idxs) in &by_image {
+            let arr: Vec<pv_index::models::Face> = idxs
+                .iter()
+                .map(|&i| {
+                    let f = &faces[i];
+                    pv_index::models::Face {
+                        id: 0,
+                        image_id: f.image_id,
+                        person_id: None,
+                        x: f.x,
+                        y: f.y,
+                        w: f.w,
+                        h: f.h,
+                        tier: Some(1600),
+                        model: opts.model.to_string(),
+                        score: Some(f.score),
+                        quality: Some(f.quality),
+                        embedding: pv_index::repo::faces::quantize(&f.embedding),
+                    }
+                })
+                .collect();
+            let ids = pv_index::repo::faces::replace_for_image(conn, *image_id, &arr)
+                .map_err(|e| e.to_string())?;
+            for (k, &i) in idxs.iter().enumerate() {
+                face_ids[i] = ids[k];
+            }
+        }
+
+        // 4c. 按簇建人物（只给 ≥ min_core 张的簇建，单例只留 faces 行）
+        let mut by_label: std::collections::HashMap<i32, Vec<usize>> =
+            std::collections::HashMap::new();
+        for (i, &l) in labels.iter().enumerate() {
+            by_label.entry(l).or_default().push(i);
+        }
+        let mut made = 0usize;
+        for (_, idxs) in by_label {
+            if idxs.len() < c_opts.min_core {
+                continue;
+            }
+            // 封面用**质量最高**（脸最大）的那张，头像更清楚
+            let cover = *idxs
+                .iter()
+                .max_by(|a, b| {
+                    faces[**a]
+                        .quality
+                        .partial_cmp(&faces[**b].quality)
+                        .unwrap_or(std::cmp::Ordering::Equal)
+                })
+                .unwrap();
+            let pid = pv_index::repo::persons::insert(
+                conn,
+                &pv_index::models::Person::new(None, Some(ver.clone())),
+            )
+            .map_err(|e| e.to_string())?;
+            pv_index::repo::persons::set_cover(conn, pid, Some(face_ids[cover]))
+                .map_err(|e| e.to_string())?;
+            let fids: Vec<i64> = idxs.iter().map(|&i| face_ids[i]).collect();
+            pv_index::repo::faces::set_person(conn, &fids, Some(pid))
+                .map_err(|e| e.to_string())?;
+            pv_index::repo::persons::refresh_count(conn, pid).map_err(|e| e.to_string())?;
+            made += 1;
+        }
+        pv_index::repo::persons::refresh_all(conn).map_err(|e| e.to_string())?;
+        Ok((made, face_ids.len()))
+    });
+
+    let secs = t_start.elapsed().as_secs_f64();
+    match res {
+        Ok((made, written)) => {
+            tag_log(
+                &runner,
+                format!(
+                    "完成：写入 {written} 张脸 · 建了 {made} 个人物 · 用时 {secs:.1} 秒"
+                ),
+            );
+            if let Ok(mut g) = runner.lock() {
+                if let Some(r) = g.as_mut() {
+                    if let Some(t) = r.tag.as_mut() {
+                        t.finished = true;
+                        t.ok = true;
+                    }
+                    r.ok = true;
+                }
+            }
+        }
+        Err(e) => fail(format!("写库失败：{e}")),
+    }
+}
+
+/// 人脸模型目录：优先 exe 同级 `assets/ai/face`，退回编译期路径。
+fn face_dir() -> PathBuf {
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(dir) = exe.parent() {
+            let p = dir.join("assets/ai/face");
+            if p.join("sface.onnx").is_file() {
+                return p;
+            }
+        }
+    }
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../assets/ai/face")
+}
+
 /// 打标模型目录：优先 exe 同级 `assets/ai/tag`，退回编译期路径（开发机）。
 fn tagger_dir() -> PathBuf {
     if let Ok(exe) = std::env::current_exe() {
@@ -888,6 +1150,28 @@ pub async fn ai_run_task(
         return Ok(path);
     }
 
+    /*
+     * ⭐ `face` 也走 Rust 了（YuNet + SFace + 两阶段聚类）——
+     * 至此打标与人脸都脱离 Python，发行版不再需要 torch。
+     */
+    if task == "face" {
+        let stamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
+        let log = std::env::temp_dir().join(format!("pve-ai-face-{stamp}.log"));
+        let _ = std::fs::write(&log, b"");
+        let path = log.display().to_string();
+        *guard = Some(Running::tag_session(log));
+        drop(guard);
+
+        let app2 = app.clone();
+        let lib2 = library.clone();
+        tauri::async_runtime::spawn_blocking(move || run_face_batch_blocking(app2, lib2));
+        return Ok(path);
+    }
+
+    #[allow(unreachable_code)]
     let steps: Vec<Step> = match task.as_str() {
         "face" => vec![
             Step {
