@@ -953,9 +953,6 @@ fn run_face_batch_blocking(app: tauri::AppHandle, library: String) {
 
     let res = state.with_manager_mut(|s| {
         let conn = s.conn();
-        // 4a. 重建 persons（Python 版同样的 --reset 语义）
-        conn.execute("DELETE FROM persons", [])
-            .map_err(|e| e.to_string())?;
 
         // 4b. 按图分组写 faces（先删后插，幂等），并把插入的 face_id 记下来
         let mut by_image: std::collections::BTreeMap<i64, Vec<usize>> =
@@ -992,15 +989,41 @@ fn run_face_batch_blocking(app: tauri::AppHandle, library: String) {
             }
         }
 
-        // 4c. 按簇建人物（只给 ≥ min_core 张的簇建，单例只留 faces 行）
+        /*
+         * 4c. 清理**孤儿人物** —— 本次替换 faces 后，原来挂着这些人脸的人物可能一张脸
+         * 都不剩了（比如某个「人物」在这批图里只有 2 张脸，重跑后聚类变了/被过滤了）。
+         *
+         * ⛔ 不能用 `DELETE FROM persons`（全表清空）：重跑「二次元」11 张图会把
+         * 其他图库里的 30/41 张脸的大人物一起删掉 —— 那是真实数据事故。
+         * 只删「没有任何 face 指向」的人物，其他图库的人物原封不动。
+         */
+        conn.execute(
+            "DELETE FROM persons WHERE id NOT IN              (SELECT DISTINCT person_id FROM faces WHERE person_id IS NOT NULL)",
+            [],
+        )
+        .map_err(|e| e.to_string())?;
+
+        // 4d. 按簇建人物（只给 ≥ min_core 张的簇建，单例只留 faces 行）
         let mut by_label: std::collections::HashMap<i32, Vec<usize>> =
             std::collections::HashMap::new();
         for (i, &l) in labels.iter().enumerate() {
             by_label.entry(l).or_default().push(i);
         }
         let mut made = 0usize;
+        let mut dropped = 0usize;
         for (_, idxs) in by_label {
             if idxs.len() < c_opts.min_core {
+                continue;
+            }
+            /*
+             * 建人物前先验「这一簇像不像真人」：
+             * YuNet 会在公仔/手办/镜面反光上误检，那些假脸的分数上不去
+             * （整簇 0.62~0.77，一张 ≥0.85 的都没有），真人簇总有高分正脸。
+             * ⛔ 只影响「建不建人物」—— faces 行照写，其他人物不受影响。
+             */
+            let scores: Vec<f32> = idxs.iter().map(|&i| faces[i].score).collect();
+            if !pv_ai::face_batch::is_likely_real_person(&scores) {
+                dropped += 1;
                 continue;
             }
             // 封面用**质量最高**（脸最大）的那张，头像更清楚
@@ -1027,16 +1050,21 @@ fn run_face_batch_blocking(app: tauri::AppHandle, library: String) {
             made += 1;
         }
         pv_index::repo::persons::refresh_all(conn).map_err(|e| e.to_string())?;
-        Ok((made, face_ids.len()))
+        Ok((made, dropped, face_ids.len()))
     });
 
     let secs = t_start.elapsed().as_secs_f64();
     match res {
-        Ok((made, written)) => {
+        Ok((made, dropped, written)) => {
+            let extra = if dropped > 0 {
+                format!(" · 跳过 {dropped} 个疑似误检簇")
+            } else {
+                String::new()
+            };
             tag_log(
                 &runner,
                 format!(
-                    "完成：写入 {written} 张脸 · 建了 {made} 个人物 · 用时 {secs:.1} 秒"
+                    "完成：写入 {written} 张脸 · 建了 {made} 个人物{extra} · 用时 {secs:.1} 秒"
                 ),
             );
             if let Ok(mut g) = runner.lock() {

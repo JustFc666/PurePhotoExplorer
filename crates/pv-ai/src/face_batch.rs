@@ -52,6 +52,35 @@ pub struct DetectedFace {
     pub embedding: Vec<f32>,
 }
 
+/// 这个簇「像不像真人」—— 决定要不要给它建人物。
+///
+/// ## 为什么需要它（2026-10-29 实测数据）
+/// YuNet 会在**公仔 / 手办 / 镜面反光**上误检「人脸」（分数 0.62~0.77），
+/// 这些误检的 SFace 向量彼此余弦 0.52~0.77，刚好擦着 `t_core=0.55` 聚成一簇，
+/// 于是人像墙上冒出一个「封面是镜子」的假人物。
+///
+/// 用户库里 10 个人物的实测分布：
+///
+/// | 簇 | 平均分 | 最高分 | ≥0.85 张数 |
+/// |---|---|---|---|
+/// | 误检（公仔/亭子/手办/合影） | **0.698** | **0.765** | **0** |
+/// | 其余 9 个真人簇 | ≥0.786 | ≥0.855 | ≥1 |
+///
+/// ⚠️ 注意**簇内平均余弦分不开**（误检簇 0.597 反而比真簇 person2 的 0.544 高），
+/// 所以别用「簇内一致性」当判据 —— 只能用检测分数。
+///
+/// 判据取「均分 ≥ 0.75 **且** 最高分 ≥ 0.85」：真人的簇里总有一两张正面清晰的
+/// 高分脸（≥0.85），而误检的整簇都上不去。两个条件缺一不可 ——
+/// 只看均分会把「4 张脸质量均衡但都一般」的真簇误杀。
+pub fn is_likely_real_person(scores: &[f32]) -> bool {
+    if scores.is_empty() {
+        return false;
+    }
+    let mean = scores.iter().sum::<f32>() / scores.len() as f32;
+    let max = scores.iter().cloned().fold(0.0f32, f32::max);
+    mean >= 0.75 && max >= 0.85
+}
+
 /// 进度。
 #[derive(Debug, Clone)]
 pub struct FaceProgress {
@@ -172,4 +201,37 @@ fn detect_one(
         });
     }
     Ok(out)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::is_likely_real_person;
+
+    /// 用户库里真实误检簇的分数（公仔/亭子/手办/合影）
+    #[test]
+    fn 误检簇不建人物() {
+        assert!(!is_likely_real_person(&[0.622, 0.732, 0.674, 0.765]));
+    }
+
+    /// 用户库里最小的真簇（person 1：0.699/0.726/0.842/0.877）
+    #[test]
+    fn 真人小簇照样建() {
+        assert!(is_likely_real_person(&[0.699, 0.726, 0.842, 0.877]));
+    }
+
+    #[test]
+    fn 大簇稳定建() {
+        assert!(is_likely_real_person(&[0.894, 0.901, 0.929, 0.88]));
+    }
+
+    /// 均分够但一张高分都没有 → 不建（质量均衡的误检）
+    #[test]
+    fn 没有高分脸就不建() {
+        assert!(!is_likely_real_person(&[0.76, 0.77, 0.78, 0.79]));
+    }
+
+    #[test]
+    fn 空簇不建() {
+        assert!(!is_likely_real_person(&[]));
+    }
 }
