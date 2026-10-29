@@ -77,6 +77,20 @@ export function FaceAvatar({ face, size = 80, className, fallback }: Props) {
     if (!canvas) return
     if (!face) return
 
+    /*
+     * ⭐ 先把 canvas 清空（2026-10-29 修）。
+     *
+     * React 会复用同一个 <canvas> DOM 节点。人脸重跑后 `persons` 的 face_count
+     * 全变、列表顺序大改，同一个位置换成了别的 person —— 而新封面要走
+     * `managerThumbnail` 的异步解码，这段时间里 canvas 上**还留着上一个人的图**。
+     * 如果缩略图一直取不到（卷离线/解码失败），残留就会**长期停留**，
+     * 用户看到的就是「两个头像一模一样」「第一个头像错了」。
+     *
+     * ⛔ 不能只在异步成功后 putImageData —— 失败路径没有覆盖，残留会一直显着。
+     */
+    const ctxClear = canvas.getContext('2d')
+    if (ctxClear) ctxClear.clearRect(0, 0, canvas.width, canvas.height)
+
     let cancelled = false
     /**
      * 档位按**显示尺寸**选：脸在原图宽约 180px，缩到 1024 长边只剩约 90px，
@@ -209,7 +223,13 @@ export function FaceAvatar({ face, size = 80, className, fallback }: Props) {
   return (
     <span className={`pv-face${className ? ` ${className}` : ''}`} style={{ width: size, height: size }}>
       {face ? (
-        <canvas ref={ref} className="pv-face-canvas" style={{ width: size, height: size }} />
+        <canvas
+          /* key 跟人脸走：换人时直接重建 canvas，不靠清空来防残留 */
+          key={face.id}
+          ref={ref}
+          className="pv-face-canvas"
+          style={{ width: size, height: size }}
+        />
       ) : (
         <span className="pv-face-fallback">{fallback ?? ''}</span>
       )}
