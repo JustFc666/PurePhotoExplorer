@@ -232,21 +232,18 @@ export function ManagerTopBar(props: Props) {
         { id: 'rotate', label: '旋转 / 裁剪' },
       ],
     },
-    {
-      label: '工具',
-      items: [
-        { id: 'aikey', label: 'AI 关键词与语义搜索' },
-        { id: 'vault', label: '加密图库' },
-        { id: 'settings', label: '首选项…', hint: 'Ctrl+,', onSelect: onOpenSettings },
-      ],
-    },
-    {
-      label: '帮助',
-      items: [
-        { id: 'keys', label: '快捷键速查' },
-        { id: 'about', label: '关于 PurePhotoExplorer' },
-      ],
-    },
+    /*
+     * ⛔ 「工具」「帮助」两个菜单已删除（2026-10-29 用户要求：没啥用）。
+     *
+     * 里面全是**没有 onSelect 的死条目** —— `MenuButton` 只调 `it.onSelect?.()`，
+     * 点了完全没反应：
+     *   工具 → AI 关键词与语义搜索 / 加密图库 / 首选项…（首选项有直接按钮了）
+     *   帮助 → 快捷键速查 / 关于 PurePhotoExplorer
+     *
+     * 唯一有实现的「首选项…」也不需要：工具栏右侧已有直接的「设置」按钮。
+     * 「快捷键速查」在看图模式的「帮助」按钮 + H/F1 快捷键里。
+     * 将来真要做这些功能，直接加回菜单对象即可。
+     */
   ]
 
   return (
@@ -260,7 +257,7 @@ export function ManagerTopBar(props: Props) {
         ))}
         {/*
           「设置」是**直接按钮**而不是下拉：它只有一个动作（开设置窗口），
-          做成一行下拉再点一次是多余的。位置按用户要求放在「帮助」右边。
+          做成一行下拉再点一次是多余的。紧跟在菜单栏后面。
         */}
         <button
           type="button"
