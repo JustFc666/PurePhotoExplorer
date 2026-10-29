@@ -7,5 +7,6 @@
 //! 现在一份 `onnxruntime` + `DirectML.dll` 就覆盖 AMD/NVIDIA/Intel 所有 DX12 显卡。
 
 pub mod batch;
+pub mod ort_env;
 pub mod face;
 pub mod tagger;

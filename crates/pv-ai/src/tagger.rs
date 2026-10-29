@@ -104,11 +104,8 @@ impl Tagger {
         }
 
         let onnx = dir.join("clip_vision.onnx");
-        let env = ort::init()
-            .with_name("pve-tagger")
-            .with_execution_providers([DirectML::default().build()])
-            .build()
-            .map_err(|e| format!("ORT 环境初始化失败：{e}"))?;
+        // ⛔ 不能自己 ort::init()：进程里只允许一个环境，三个模型各自 init 会炸
+        let env = crate::ort_env::ort_env()?;
         let session = Session::builder(&env)
             .and_then(|mut b| b.commit_from_file(&onnx))
             .map_err(|e| format!("加载视觉塔失败（{onnx:?}）：{e}"))?;
