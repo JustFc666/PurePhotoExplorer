@@ -63,6 +63,8 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
         .manage(AppState::new())
+        // AI 任务运行器（打标 / 人脸共用，全局单任务）
+        .manage(commands::AiRunner::default())
         .invoke_handler(tauri::generate_handler![
             commands::probe_image,
             commands::decode_image,
@@ -136,6 +138,9 @@ pub fn run() {
             commands::ai_vocab_toggle,
             commands::ai_vocab_export,
             commands::ai_vocab_import,
+            commands::ai_run_task,
+            commands::ai_task_status,
+            commands::ai_task_stop,
             commands::manager_create_smart_library,
             commands::manager_cache_stats,
             commands::manager_clear_cache,
