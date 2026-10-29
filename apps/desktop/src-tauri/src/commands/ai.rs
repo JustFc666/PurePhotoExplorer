@@ -1053,30 +1053,90 @@ fn run_face_batch_blocking(app: tauri::AppHandle, library: String) {
     }
 }
 
-/// 人脸模型目录：优先 exe 同级 `assets/ai/face`，退回编译期路径。
+/// 人脸模型目录。
 fn face_dir() -> PathBuf {
-    if let Ok(exe) = std::env::current_exe() {
-        if let Some(dir) = exe.parent() {
-            let p = dir.join("assets/ai/face");
-            if p.join("sface.onnx").is_file() {
-                return p;
-            }
-        }
-    }
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../assets/ai/face")
+    asset_dir("face", "sface.onnx")
 }
 
-/// 打标模型目录：优先 exe 同级 `assets/ai/tag`，退回编译期路径（开发机）。
-fn tagger_dir() -> PathBuf {
+/// 找 `assets/ai/<sub>`（`marker` 用来判断目录对不对）。
+///
+/// ⭐ **从 exe 所在目录逐级往上找**，不用 `env!("CARGO_MANIFEST_DIR")`：
+/// - 发行版：exe 旁边就是 `assets/ai/face`（第 0 级命中）
+/// - 开发机：`release/` 或 `target/debug/examples/` 往上几级才到项目根
+///
+/// ⛔ 之前用编译期路径 `join("../../assets/ai/face")` —— 但本文件属于
+/// `apps/desktop/src-tauri`，往上**两级**是 `apps/`，少了一级，
+/// 于是拼出 `apps/assets/ai/face/yunet.onnx` 这种不存在的路径。
+fn asset_dir(sub: &str, marker: &str) -> PathBuf {
     if let Ok(exe) = std::env::current_exe() {
-        if let Some(dir) = exe.parent() {
-            let p = dir.join("assets/ai/tag");
-            if p.join("tag_meta.json").is_file() {
+        if let Some(start) = exe.parent() {
+            if let Some(p) = asset_dir_from(start, sub, marker) {
                 return p;
             }
         }
     }
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../assets/ai/tag")
+    // 兜底：编译期路径（从 apps/desktop/src-tauri 往上**三级**才到项目根）
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../../assets/ai")
+        .join(sub)
+}
+
+/// 打标模型目录。
+fn tagger_dir() -> PathBuf {
+    asset_dir("tag", "tag_meta.json")
+}
+
+/// 从 `start` 逐级往上找 `assets/ai/<sub>`（独立成函数是为了能单测）。
+fn asset_dir_from(start: &std::path::Path, sub: &str, marker: &str) -> Option<PathBuf> {
+    let mut d = start.to_path_buf();
+    // 6 级够覆盖 target/debug/examples → 项目根
+    for _ in 0..6 {
+        let p = d.join("assets/ai").join(sub);
+        if p.join(marker).is_file() {
+            return Some(p);
+        }
+        if !d.pop() {
+            break;
+        }
+    }
+    None
+}
+
+#[cfg(test)]
+mod asset_tests {
+    use super::asset_dir_from;
+    use std::path::{Path, PathBuf};
+
+    /// 项目根（本 crate 在 `apps/desktop/src-tauri`，往上三级）
+    fn root() -> PathBuf {
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../..")
+    }
+
+    /// 开发机从 `release/` 跑 exe 时，必须能往上找到项目根里的模型。
+    ///
+    /// ⛔ 之前用编译期 `join("../../assets/...")`，少了一级，拼出
+    /// `apps/assets/...`（不存在）—— 用户点「开始」直接报模型加载失败。
+    /// 这个测试就是防它再来一次。
+    #[test]
+    fn 从_release_目录能往上找到模型目录() {
+        let start = root().join("release");
+        let got = asset_dir_from(&start, "face", "yunet.onnx");
+        assert!(got.is_some(), "从 release/ 往上没找到 assets/ai/face");
+        assert!(got.unwrap().join("yunet.onnx").is_file());
+    }
+
+    #[test]
+    fn 从_examples_目录也能找到() {
+        let start = root().join("target/debug/examples");
+        let got = asset_dir_from(&start, "tag", "tag_meta.json");
+        assert!(got.is_some(), "从 target/debug/examples 往上没找到 assets/ai/tag");
+    }
+
+    #[test]
+    fn 找不到就返回_none_而不是瞎猜() {
+        let start = Path::new("C:/definitely/not/here");
+        assert!(asset_dir_from(start, "face", "yunet.onnx").is_none());
+    }
 }
 
 fn read_f32(state: &AppState, key: &str, def: f32) -> f32 {
