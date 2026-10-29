@@ -65,6 +65,7 @@ import { AiTagStrip } from './AiTagStrip'
 import { TagPicker } from './TagPicker'
 import { ManagerTopBar } from './ManagerTopBar'
 import { PersonStrip } from './PersonStrip'
+import { AiPipelineDialog } from './AiPipelineDialog'
 import { PersonWall, PERSON_POP_W } from './PersonWall'
 import {
   managerImageTags,
@@ -203,6 +204,8 @@ export function ManagerView(props: Props) {
    * 存在的意义是**让等待可解释**：首次访问某个目录时缩略图要一张张现解码，
    * 没有这个计数，界面就只是「一片空白」——与「卡死了」在观感上没有任何区别。
    */
+  /** 一键 AI 识别弹层（先打标再识别人像） */
+  const [pipeOpen, setPipeOpen] = useState(false)
   const [pendingThumbs, setPendingThumbs] = useState(0)
 
   useEffect(() => subscribeThumbPending(setPendingThumbs), [])
@@ -1925,6 +1928,16 @@ export function ManagerView(props: Props) {
           */}
           <div className="pv-mg-top">
             <div className="pv-mg-top-main">
+          {pipeOpen && (
+            <AiPipelineDialog
+              library={mgr.scopeTitle}
+              onClose={() => setPipeOpen(false)}
+              onDone={() => {
+                setPipeOpen(false)
+                mgr.reload()
+              }}
+            />
+          )}
           <div className="pv-mg-head">
             <div className="pv-mg-headl">
               <h2 className="pv-mg-title">
@@ -1979,6 +1992,21 @@ export function ManagerView(props: Props) {
               />
             )}
             <div className="pv-mg-headr">
+              {/*
+                一键 AI 识别（2026-10-29 用户要求）：只对**已入库的图库**显示。
+                空图库（没标签没人像）时用户最自然的动作是就地跑一遍，
+                而不是「打开设置 → AI 分析 → 选库 → 点两个按钮」。
+              */}
+              {!mgr.isBrowsing && !mgr.isIdle && mgr.scope.kind === 'library' && (
+                <button
+                  type="button"
+                  className="pv-btn"
+                  title="先打标，再识别人像（两步自动串行）"
+                  onClick={() => setPipeOpen(true)}
+                >
+                  AI 识别
+                </button>
+              )}
               {browseScope ? (
                 <>
                   {/*

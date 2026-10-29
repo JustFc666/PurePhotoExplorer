@@ -755,6 +755,12 @@ export interface AiTaskStatus {
   ok: boolean
   /** 日志尾部（最多 200 行） */
   lines: string[]
+  /** 当前阶段：`tag` / `face`（一键 AI 识别时用来高亮进度行） */
+  phase: string
+  tagDone: number
+  tagTotal: number
+  faceDone: number
+  faceTotal: number
 }
 
 /**
@@ -763,7 +769,17 @@ export interface AiTaskStatus {
  * ⚠️ 现阶段是**过渡实现**：后端 spawn `tools/ai/*.py`，需要本机有 Python。
  * 返回的是日志文件路径（调试用，界面上不显示）。
  */
-export function aiRunTask(task: 'tag' | 'face', library: string): Promise<string> {
+/**
+ * 启动 AI 任务。
+ *
+ * - `tag`      只打标
+ * - `face`     只识别人像
+ * - `pipeline` 一键：先打标再识别人像（后端串行，进度含两阶段）
+ */
+export function aiRunTask(
+  task: 'tag' | 'face' | 'pipeline',
+  library: string,
+): Promise<string> {
   return invoke<string>('ai_run_task', { task, library })
 }
 

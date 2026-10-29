@@ -566,7 +566,7 @@ fn spawn_next(run: &mut Running) -> Result<(), String> {
 }
 
 /// 任务状态快照。
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Default, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AiTaskStatus {
     /// 还有步骤在跑
@@ -576,6 +576,14 @@ pub struct AiTaskStatus {
     pub ok: bool,
     /// 日志尾部（最多 200 行）
     pub lines: Vec<String>,
+    /// 当前阶段：`"tag"` / `"face"`（一键 AI 识别时前端据此高亮进度行）
+    pub phase: String,
+    /// 打标进度
+    pub tag_done: usize,
+    pub tag_total: usize,
+    /// 人脸进度
+    pub face_done: usize,
+    pub face_total: usize,
 }
 
 /// 读日志尾部。跑久了文件可能几 MB，只取尾部，别每次轮询都全量解析。
@@ -590,12 +598,22 @@ fn tail_lines(path: &Path, max: usize) -> Vec<String> {
 
 // Rust 打标的进度（与 Python 子进程共用 `Running`，靠 `tag` 字段区分走哪条路）。
 struct TagProgress {
+    /// 当前阶段：`"tag"` / `"face"`（pipeline 任务用来高亮对应的进度行）
+    phase: String,
+    /// 打标阶段的进度
+    tag_done: usize,
+    tag_total: usize,
+    /// 人脸阶段的进度
+    face_done: usize,
+    face_total: usize,
+    /// 兼容单阶段任务：等于当前阶段的那一对
     total: usize,
     done: usize,
-    /// 日志尾部（前端直接显示，最多 200 行）
-    lines: VecDeque<String>,
+    /// 整体是否结束（pipeline 要等两步都跑完）
     finished: bool,
     ok: bool,
+    /// 日志尾部（前端直接显示，最多 200 行）
+    lines: VecDeque<String>,
 }
 
 impl Running {
@@ -610,11 +628,16 @@ impl Running {
             python: PathBuf::new(),
             root: PathBuf::new(),
             tag: Some(TagProgress {
+                phase: "tag".into(),
+                tag_done: 0,
+                tag_total: 0,
+                face_done: 0,
+                face_total: 0,
                 total: 0,
                 done: 0,
-                lines: VecDeque::new(),
                 finished: false,
                 ok: true,
+                lines: VecDeque::new(),
             }),
         }
     }
@@ -649,7 +672,7 @@ fn tag_log(runner: &Mutex<Option<Running>>, line: String) {
 /// 1. 锁内查图列表（毫秒级）
 /// 2. **锁外**逐张解码 + 推理（1~2 秒/张，期间图库滚动不受影响）
 /// 3. 回调里逐张写库（锁粒度 = 一张图，毫秒级）
-fn run_tag_batch_blocking(app: tauri::AppHandle, library: String) {
+fn run_tag_batch_blocking(app: tauri::AppHandle, library: String, mark_finished: bool) {
     use pv_ai::batch::{tag_batch, Progress, TagOptions};
 
     // ⚠️ 先在**一条语句**里把 Arc 拷出来：`State<'_, T>` 借用 `app`，
@@ -683,7 +706,9 @@ fn run_tag_batch_blocking(app: tauri::AppHandle, library: String) {
     if let Ok(mut g) = runner.lock() {
         if let Some(r) = g.as_mut() {
             if let Some(t) = r.tag.as_mut() {
-                t.total = total;
+                        t.phase = "tag".into();
+                        t.tag_total = total;
+                        t.total = total;
             }
         }
     }
@@ -742,6 +767,8 @@ fn run_tag_batch_blocking(app: tauri::AppHandle, library: String) {
             if let Ok(mut g) = runner.lock() {
                 if let Some(r) = g.as_mut() {
                     if let Some(t) = r.tag.as_mut() {
+                        t.phase = "tag".into();
+                        t.tag_done = p.done;
                         t.done = p.done;
                     }
                 }
@@ -788,7 +815,7 @@ fn run_tag_batch_blocking(app: tauri::AppHandle, library: String) {
     if let Ok(mut g) = runner.lock() {
         if let Some(r) = g.as_mut() {
             if let Some(t) = r.tag.as_mut() {
-                t.finished = true;
+                t.finished = mark_finished;
                 t.ok = stats.failed == 0;
             }
             r.ok = stats.failed == 0;
@@ -809,7 +836,7 @@ fn run_tag_batch_blocking(app: tauri::AppHandle, library: String) {
 /// `--reset` 语义：先 `DELETE FROM persons` 再按新聚类建人物 ——
 /// **用户给人物起的名字会丢**。这与 `tools/ai/face_cluster.py` 的行为一致，
 /// UI 上要明确告知（别让用户莫名其妙发现名字没了）。
-fn run_face_batch_blocking(app: tauri::AppHandle, library: String) {
+fn run_face_batch_blocking(app: tauri::AppHandle, library: String, mark_finished: bool) {
     use pv_ai::cluster::{two_stage_cluster, ClusterOpts};
     use pv_ai::face::{FaceDetector, FaceRecognizer};
     use pv_ai::face_batch::{detect_batch, FaceBatchOpts, FaceProgress};
@@ -857,6 +884,8 @@ fn run_face_batch_blocking(app: tauri::AppHandle, library: String) {
     if let Ok(mut g) = runner.lock() {
         if let Some(r) = g.as_mut() {
             if let Some(t) = r.tag.as_mut() {
+                t.phase = "face".into();
+                t.face_total = images.len();
                 t.total = images.len();
             }
         }
@@ -894,6 +923,8 @@ fn run_face_batch_blocking(app: tauri::AppHandle, library: String) {
             if let Ok(mut g) = runner.lock() {
                 if let Some(r) = g.as_mut() {
                     if let Some(t) = r.tag.as_mut() {
+                        t.phase = "face".into();
+                        t.face_done = p.done;
                         t.done = p.done;
                     }
                 }
@@ -1069,7 +1100,7 @@ fn run_face_batch_blocking(app: tauri::AppHandle, library: String) {
             if let Ok(mut g) = runner.lock() {
                 if let Some(r) = g.as_mut() {
                     if let Some(t) = r.tag.as_mut() {
-                        t.finished = true;
+                        t.finished = mark_finished;
                         t.ok = true;
                     }
                     r.ok = true;
@@ -1162,6 +1193,38 @@ pub async fn ai_library_status(
             })
         })
         .map_err(err)
+}
+
+/// **一键 AI 识别**：先打标，再识别人像，串行跑完。
+///
+/// ## 为什么不做成前端串行
+/// 前端串行要靠轮询发现「第一步结束了」再发第二个请求，中间有任何抖动
+/// （用户切页、请求超时）就会卡住。放在后端一个函数里，
+/// 两阶段的进度写进同一个 `Running`，前端只看一个任务。
+///
+/// ⚠️ 第一阶段传 `mark_finished = false`：跑完不能把 `finished` 置真，
+/// 否则前端会在打标结束时就认为整体完成，第二阶段的日志和进度全看不到。
+fn run_pipeline_blocking(app: tauri::AppHandle, library: String) {
+    run_tag_batch_blocking(app.clone(), library.clone(), false);
+
+    // 第一阶段失败（fail 里一定会把 finished 置真）→ 不再跑人脸
+    let failed = {
+        let runner: Arc<Mutex<Option<Running>>> = app.state::<AiRunner>().0.clone();
+        let mut g = runner.lock().ok();
+        let bad = g
+            .as_mut()
+            .and_then(|o| o.as_ref())
+            .and_then(|r| r.tag.as_ref())
+            .map(|t| t.finished && !t.ok)
+            .unwrap_or(false);
+        drop(g);
+        bad
+    };
+    if failed {
+        return;
+    }
+
+    run_face_batch_blocking(app, library, true);
 }
 
 /// 打标模型目录。
@@ -1289,7 +1352,7 @@ pub async fn ai_run_task(
 
         let app2 = app.clone();
         let lib2 = library.clone();
-        tauri::async_runtime::spawn_blocking(move || run_tag_batch_blocking(app2, lib2));
+        tauri::async_runtime::spawn_blocking(move || run_tag_batch_blocking(app2, lib2, true));
         return Ok(path);
     }
 
@@ -1310,7 +1373,28 @@ pub async fn ai_run_task(
 
         let app2 = app.clone();
         let lib2 = library.clone();
-        tauri::async_runtime::spawn_blocking(move || run_face_batch_blocking(app2, lib2));
+        tauri::async_runtime::spawn_blocking(move || run_face_batch_blocking(app2, lib2, true));
+        return Ok(path);
+    }
+
+    /*
+     * ⭐ `pipeline` = 一键 AI 识别：先打标、再识别人像，后端串行跑完。
+     * 前端只看一个任务，两阶段进度都在 `TagProgress` 里。
+     */
+    if task == "pipeline" {
+        let stamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
+        let log = std::env::temp_dir().join(format!("pve-ai-pipe-{stamp}.log"));
+        let _ = std::fs::write(&log, b"");
+        let path = log.display().to_string();
+        *guard = Some(Running::tag_session(log));
+        drop(guard);
+
+        let app2 = app.clone();
+        let lib2 = library.clone();
+        tauri::async_runtime::spawn_blocking(move || run_pipeline_blocking(app2, lib2));
         return Ok(path);
     }
 
@@ -1375,6 +1459,7 @@ pub async fn ai_task_status(runner: State<'_, AiRunner>) -> Result<AiTaskStatus,
             done: true,
             ok: true,
             lines: Vec::new(),
+            ..Default::default()
         });
     };
 
@@ -1385,6 +1470,11 @@ pub async fn ai_task_status(runner: State<'_, AiRunner>) -> Result<AiTaskStatus,
             done: t.finished,
             ok: t.ok,
             lines: t.lines.iter().cloned().collect(),
+            phase: t.phase.clone(),
+            tag_done: t.tag_done,
+            tag_total: t.tag_total,
+            face_done: t.face_done,
+            face_total: t.face_total,
         });
     }
 
@@ -1428,6 +1518,7 @@ pub async fn ai_task_status(runner: State<'_, AiRunner>) -> Result<AiTaskStatus,
         done,
         ok: run.ok,
         lines: tail_lines(&run.log, 200),
+        ..Default::default()
     })
 }
 
