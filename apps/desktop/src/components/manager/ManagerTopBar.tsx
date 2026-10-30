@@ -130,8 +130,19 @@ interface Props {
   /** 有可另存的目标（选中了图片）才启用「文件 → 另存为…」 */
   canSaveAs: boolean
   onSaveAs: () => void
+  /** 打开文件夹（只导航，不改变图库成员） */
+  onOpenFolder: () => void
+  /** 选中的目录加入图库（原「添加文件夹」的行为） */
   onAddFolder: () => void
   onRescan: () => void
+  /** 打印选中的图（复用单图模式的版面预览） */
+  onPrint: () => void
+  /** 复制选中的图到文件夹（字节复制） */
+  onCopyTo: () => void
+  /** 移动选中的图到文件夹 */
+  onMoveTo: () => void
+  /** 删除选中的图（进回收站） */
+  onDeleteFile: () => void
   onSelectAll: () => void
   onClearSelection: () => void
   onExit: () => void
@@ -162,12 +173,18 @@ export function ManagerTopBar(props: Props) {
     hasSelection,
     canSaveAs,
     onSaveAs,
+    onOpenFolder,
     onAddFolder,
     onRescan,
+    onPrint,
+    onCopyTo,
+    onMoveTo,
+    onDeleteFile,
     onSelectAll,
     onClearSelection,
     onExit,
     onOpenSettings,
+    onClose,
     onDragMouseDown,
   } = props
 
@@ -178,14 +195,54 @@ export function ManagerTopBar(props: Props) {
 
   const menus: { label: string; items: MenuItem[] }[] = [
     {
+      /*
+       * 文件菜单按「正常软件」的顺序排（用户 2026-10-30）：
+       *   打开 / 加入 → 打印 → 复制·移动·删除 → 另存为 / 重扫 → 退出
+       *
+       * ⚠️ 原来的「添加文件夹…」改名并**拆成两条**：
+       *   · 打开文件夹…  = 只导航过去看（Ctrl+O 的常规语义）
+       *   · 加入图库…    = 原来那个「选中目录 → 扫进索引并挂到图库」的重动作
+       *   一个 innocuous 的「添加」菜单项背后其实是入库（写索引 + 生成缓存），
+       *   混在一起既反直觉、也不好发现。
+       */
       label: '文件',
       items: [
-        { id: 'add', label: '添加文件夹…', hint: 'Ctrl+O', onSelect: onAddFolder },
+        { id: 'open-folder', label: '打开文件夹…', hint: 'Ctrl+O', onSelect: onOpenFolder },
+        { id: 'add-lib', label: '加入图库…', onSelect: onAddFolder },
+        {
+          id: 'print',
+          label: '打印…',
+          hint: 'Ctrl+P',
+          // 打印的是**选中的那几张**（预览里可翻页），一张没选就无从下手
+          disabled: !hasSelection,
+          separatorBefore: true,
+          onSelect: onPrint,
+        },
+        {
+          id: 'copy-to',
+          label: '复制到文件夹…',
+          disabled: !hasSelection,
+          onSelect: onCopyTo,
+        },
+        {
+          id: 'move-to',
+          label: '移动到文件夹…',
+          disabled: !hasSelection,
+          onSelect: onMoveTo,
+        },
+        {
+          id: 'delete',
+          label: '删除…',
+          hint: 'Delete',
+          disabled: !hasSelection,
+          onSelect: onDeleteFile,
+        },
         {
           id: 'saveas',
           // 没选中时禁用：这条作用于「选中的那几张」，不是整个目录
           label: '另存为…',
           disabled: !canSaveAs,
+          separatorBefore: true,
           onSelect: onSaveAs,
         },
         {
@@ -195,7 +252,8 @@ export function ManagerTopBar(props: Props) {
           disabled: !canRescan || busy,
           onSelect: onRescan,
         },
-        { id: 'exit', label: '返回看图', hint: 'Esc', separatorBefore: true, onSelect: onExit },
+        // 「退出」= 关程序（原来这里只有「返回看图」，模式切换不该占文件菜单末尾）
+        { id: 'quit', label: '退出', hint: 'Alt+F4', separatorBefore: true, onSelect: onClose },
       ],
     },
     {
@@ -222,35 +280,10 @@ export function ManagerTopBar(props: Props) {
           separatorBefore: i === 0,
           onSelect: () => onTier(t.key),
         })),
+        // 「返回看图」从「文件」搬到这里：它不是文件操作，是**切回单图模式**
+        { id: 'exit', label: '返回看图', hint: 'Esc', separatorBefore: true, onSelect: onExit },
       ],
     },
-    {
-      /*
-       * ⚠️ **保留占位，别删**（2026-10-29 用户明确要求）。
-       *
-       * 这三条现在都是死条目（没有 `onSelect`），但「打印」是接下来要接的功能，
-       * 菜单结构先留着，实现时把 `onSelect` 补上即可。
-       * 「另存为…」是重复的（「文件」菜单里那条才是真实现的），接打印时一并处理。
-       */
-      label: '图像',
-      items: [
-        { id: 'print', label: '打印…' },
-        { id: 'saveas', label: '另存为…' },
-        { id: 'rotate', label: '旋转 / 裁剪' },
-      ],
-    },
-    /*
-     * ⛔ 「工具」「帮助」两个菜单已删除（2026-10-29 用户要求：没啥用）。
-     *
-     * 里面全是**没有 onSelect 的死条目** —— `MenuButton` 只调 `it.onSelect?.()`，
-     * 点了完全没反应：
-     *   工具 → AI 关键词与语义搜索 / 加密图库 / 首选项…（首选项有直接按钮了）
-     *   帮助 → 快捷键速查 / 关于 PurePhotoExplorer
-     *
-     * 唯一有实现的「首选项…」也不需要：工具栏右侧已有直接的「设置」按钮。
-     * 「快捷键速查」在看图模式的「帮助」按钮 + H/F1 快捷键里。
-     * 将来真要做这些功能，直接加回菜单对象即可。
-     */
   ]
 
   return (

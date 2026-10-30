@@ -587,6 +587,23 @@ export function ManagerView(props: Props) {
   }, [mgr])
 
   /**
+   * 文件 →「打开文件夹…」：选一个目录**导航过去看**（Ctrl+O 的常规语义）。
+   *
+   * ⛔ 不要复用 `pickFolder` —— 那个是「加入图库」（扫索引 + 生成缩略图缓存）。
+   * 两个动作以前挤在一个「添加文件夹」里，看着像打开、实际在入库。
+   */
+  const pickOpenFolder = useCallback(async () => {
+    const picked = await openDialog({
+      directory: true,
+      multiple: false,
+      title: '打开文件夹',
+    })
+    if (typeof picked !== 'string') return
+    const trimmed = picked.replace(/[\\/]+$/, '')
+    gotoWithReveal(trimmed, trimmed.split(/[\\/]/).pop() || picked)
+  }, [gotoWithReveal])
+
+  /**
    * 单击选择（用户 2026-10-24 定稿）：
    * - **普通单击 = 加选**（连续点缩略图累加多选，不再需要按住 Ctrl）；
    * - **单击已选中的 = 取消本次全部选择**（比逐个移除更常用 —— 用户点错了
@@ -1297,10 +1314,11 @@ export function ManagerView(props: Props) {
    * ⚠️ 必须说清三件事，否则用户不敢点或者误以为文件彻底没了：
    * 能还原、会清索引、卷未挂载的只能清索引。
    */
-  const doDelete = useCallback(async () => {
+  const doDelete = useCallback(async (targetsIn?: GridItem[]) => {
     if (exporting) return
     // 浏览模式的项没有 id，但有 path —— 照样能删（只删文件，没有索引要清）
-    const targets = cardCtxItems.filter((i) => i.path != null || i.id != null)
+    // `targetsIn` 由「文件 → 删除…」传选中项；不传就沿用右键作用对象
+    const targets = (targetsIn ?? cardCtxItems).filter((i) => i.path != null || i.id != null)
     if (targets.length === 0) {
       setExportNotice({ tone: 'warn', text: '这些项目既没有本地路径也没有索引记录' })
       return
@@ -1830,6 +1848,56 @@ export function ManagerView(props: Props) {
    * `mgr.scope` 的联合类型，访问 `.path` 会报 TS2339。
    */
   const browseScope = mgr.scope.kind === 'browse' ? mgr.scope : null
+
+  /**
+   * 文件菜单的快捷键：`Ctrl+O` 打开文件夹、`Ctrl+P` 打印、`Delete` 删除。
+   *
+   * ⚠️ 菜单上写了 hint 就必须真的绑上 —— F5 那次就是「菜单写着 F5、实际没绑」，
+   * 用户按了没反应以为是刷新坏了。三个都作用在**当前选中**（打印/删除）。
+   * 用 ref 转一层，避免选中一变就重挂监听。
+   */
+  const fileKeysRef = useRef({
+    open: () => {},
+    print: () => {},
+    del: () => {},
+  })
+  fileKeysRef.current = {
+    open: () => void pickOpenFolder(),
+    // 空选中时**静默**（不要去弹「这些图片没有可用的本地路径」——
+    // 用户只是随手按了下快捷键，不是要执行操作）
+    print: () => {
+      if (selectedPaths.length > 0) doPrint(selectedPaths)
+    },
+    del: () => {
+      if (selectedItems.length > 0) void doDelete(selectedItems)
+    },
+  }
+  useEffect(() => {
+    if (!props.active) return
+    const onKey = (e: KeyboardEvent) => {
+      const t = e.target as HTMLElement | null
+      const typing =
+        !!t && (['INPUT', 'TEXTAREA', 'SELECT'].includes(t.tagName) || t.isContentEditable)
+      if (typing) return
+      if ((e.ctrlKey || e.metaKey) && !e.altKey && e.key.toLowerCase() === 'o') {
+        e.preventDefault()
+        fileKeysRef.current.open()
+        return
+      }
+      if ((e.ctrlKey || e.metaKey) && !e.altKey && e.key.toLowerCase() === 'p') {
+        e.preventDefault()
+        fileKeysRef.current.print()
+        return
+      }
+      // 不带修饰键的 Delete：选中为空时什么都不做（别误删）
+      if (e.key === 'Delete' && !e.ctrlKey && !e.metaKey) {
+        e.preventDefault()
+        fileKeysRef.current.del()
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [props.active])
   /**
    * 能否跑「一键 AI 识别」。
    *
@@ -1859,7 +1927,13 @@ export function ManagerView(props: Props) {
         busy={mgr.busy}
         canRescan={mgr.canRescan}
         hasSelection={selectedCount > 0}
+        onOpenFolder={() => void pickOpenFolder()}
         onAddFolder={() => void pickFolder()}
+        // 文件级操作都作用在**当前选中**上（右键走各自的 cardCtxItems）
+        onPrint={() => doPrint(selectedPaths)}
+        onCopyTo={() => void doCopyTo(selectedPaths)}
+        onMoveTo={() => void doMoveTo(selectedItems)}
+        onDeleteFile={() => void doDelete(selectedItems)}
         onRescan={() => void mgr.rescan()}
         onSelectAll={mgr.selectAll}
         onClearSelection={mgr.clearSelection}
