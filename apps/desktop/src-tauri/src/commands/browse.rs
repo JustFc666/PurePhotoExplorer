@@ -164,11 +164,8 @@ pub async fn fs_list_images(
     path: String,
     probe_limit: Option<usize>,
 ) -> Result<DirListingDto, ErrorDto> {
-    let all = pv_store::list_dir_images_fast(Path::new(&path)).map_err(|e| ErrorDto {
-        code: "browseError".into(),
-        message: e.to_string(),
-        user_visible: true,
-    })?;
+    let all = pv_store::list_dir_images_fast(Path::new(&path))
+        .map_err(|e| browse_err(&path, &e))?;
     let total = all.len();
     let probe_n = probe_limit.unwrap_or(FIRST_SCREEN_PROBE).min(MAX_BROWSE_FILES);
     let items = all
@@ -244,6 +241,38 @@ pub async fn fs_probe_times(paths: Vec<String>) -> Result<Vec<Option<i64>>, Erro
 ///
 /// 解码层 [`pv_decode::probe_dimensions`] 也有一道同样的拦截（防调用点漏判），
 /// 这里提前判断是为了连一次函数调用和一次 `open` 都省掉。
+/// 把「浏览目录」的底层错误翻成用户能懂的一句话。
+///
+/// 原始的 `IO 错误：拒绝访问。(os error 5)` 对用户没有信息量 ——
+/// 看到它只能猜是不是软件坏了。这里按常见成因给建议：
+/// - 拒绝访问(5)：受保护目录 / 加密盘未解锁 / 需要管理员
+/// - 设备未就绪(21 / 1117 / 1167)：光驱空、读卡器没插卡、移动盘掉线
+///
+/// ⚠️ 最常见的「拒绝访问」**已经不再是错误**（2026-10-30 修）：卷根上的
+/// `pagefile.sys` / `hiberfil.sys` / `DumpStack.log` 读不了，会让整个目录
+/// 列举失败 —— 现在扫描层单个文件探测失败就跳过它，正常盘一定能列出来。
+fn browse_err(path: &str, e: &pv_store::StoreError) -> ErrorDto {
+    let io_err = match e {
+        pv_store::StoreError::Io(io) => Some(io),
+        pv_store::StoreError::Index(pv_index::IndexError::Io(io)) => Some(io),
+        _ => None,
+    };
+    let msg = match io_err.and_then(|io| io.raw_os_error()) {
+        Some(5) => format!(
+            "无法读取 {path}：系统拒绝访问。可能该目录受保护、所在盘被加密（BitLocker）未解锁，或以普通权限读不了"
+        ),
+        Some(21) | Some(1117) | Some(1167) => {
+            format!("无法读取 {path}：设备未就绪（空光驱 / 读卡器没插卡 / 移动盘已断开）")
+        }
+        _ => format!("无法读取 {path}：{e}"),
+    };
+    ErrorDto {
+        code: "browseError".into(),
+        message: msg,
+        user_visible: true,
+    }
+}
+
 fn probe_size(
     reg: &pv_decode::DecoderRegistry,
     path: &str,

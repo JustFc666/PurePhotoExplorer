@@ -15,11 +15,24 @@ pub fn mtime_ns(md: &std::fs::Metadata) -> i64 {
 
 /// 是否跳过：隐藏文件 / 常见临时文件（编辑器/下载中间态）。
 pub(crate) fn is_skippable(name: &str) -> bool {
-    name.starts_with('.')
+    if name.starts_with('.')
         || name.ends_with('~')
         || name.ends_with(".tmp")
         || name.ends_with(".crdownload")
         || name.ends_with(".part")
+    {
+        return true;
+    }
+    /*
+     * Windows 卷根上的系统独占文件：读第一个字节就是「拒绝访问 (os error 5)」。
+     * 它们本来也不可能是图片，这里提前挡掉，连一次 open 都不用试。
+     * （真正的兜底在扫描循环里：任何 probe 失败都跳过该文件，不影响整目录。）
+     */
+    // 用 `eq_ignore_ascii_case` 逐个比，不 `to_lowercase()` —— 这是每个目录项都要跑的热路径
+    name.eq_ignore_ascii_case("pagefile.sys")
+        || name.eq_ignore_ascii_case("hiberfil.sys")
+        || name.eq_ignore_ascii_case("swapfile.sys")
+        || name.eq_ignore_ascii_case("dumpstack.log")
 }
 
 /// 遍历单个目录中的图像（**非递归**）。
@@ -41,7 +54,17 @@ pub fn walk_dir(dir: &Path) -> Result<Vec<FoundFile>> {
         if is_skippable(&name) {
             continue;
         }
-        if let Some((format, is_raw)) = crate::format::probe_file(&entry.path())? {
+        /*
+         * ⛔ **单个文件读不到头不能拖垮整个目录**（2026-10-30 用户报的）。
+         * 卷根上总有 `pagefile.sys` / `hiberfil.sys` / `DumpStack.log` 这类
+         * 被系统独占的文件，读第一个字节就是 `拒绝访问 (os error 5)`。
+         * 以前这里是 `?`，于是「点 C:\ 或 L:\ 直接报 IO 错误」——
+         * 整个盘一张图都列不出来，只因为根目录躺着个页面文件。
+         */
+        let Ok(picked) = crate::format::probe_file(&entry.path()) else {
+            continue;
+        };
+        if let Some((format, is_raw)) = picked {
             out.push(FoundFile {
                 rel_name: name,
                 size: md.len() as i64,
@@ -92,7 +115,11 @@ pub fn walk_dir_fast(dir: &Path) -> Result<Vec<FoundFile>> {
         }
         let picked = match crate::format::guess_by_extension(&name) {
             Some((tag, is_raw)) => Some((tag.to_string(), is_raw)),
-            None => crate::format::probe_file(&entry.path())?,
+            // 同上：读不到头（系统文件/被独占/权限不足）就跳过这一个
+            None => match crate::format::probe_file(&entry.path()) {
+                Ok(v) => v,
+                Err(_) => continue,
+            },
         };
         if let Some((format, is_raw)) = picked {
             out.push(FoundFile {

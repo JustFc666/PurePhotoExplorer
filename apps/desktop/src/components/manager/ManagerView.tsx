@@ -59,6 +59,7 @@ import type { ContextMenuItem } from '../chrome/ContextMenu'
 import { FilterDropdown, FilterRow } from './FilterDropdown'
 import { PromptDialog } from '../chrome/PromptDialog'
 import { PrintPreview } from '../viewer/PrintPreview'
+import { DriveIcon } from '../icons/DriveIcon'
 import { FolderIcon } from '../icons/FolderIcon'
 import { ManagerSidebar } from './ManagerSidebar'
 import { AiTagStrip } from './AiTagStrip'
@@ -1912,6 +1913,21 @@ export function ManagerView(props: Props) {
       : null
 
   const blankCtx = useContextMenu()
+  /**
+   * 「新建图库 / 加进图库」的作用对象。
+   *
+   * ⭐ 用户 2026-10-30：在目录列表里**选中某个文件夹**再右键（菜单弹在空白处或
+   * 卡片上），操作对象应该是**那个选中的文件夹**，而不是"当前浏览的这个目录"。
+   * 所以优先级：选中的文件夹 > 当前浏览目录。
+   */
+  const libTargets: { path: string; name: string }[] = (() => {
+    const picked = selectedItems
+      .filter((i) => i.kind === 'dir' && i.path)
+      .map((i) => ({ path: i.path as string, name: i.name }))
+    if (picked.length > 0) return picked
+    return curDir ? [{ path: curDir.path, name: curDir.name }] : []
+  })()
+
   const blankMenuItems = useMemo<ContextMenuItem[]>(
     () => [
       {
@@ -1929,17 +1945,20 @@ export function ManagerView(props: Props) {
       {
         id: 'blank-new-lib',
         label: '新建图库',
-        hint: curDir?.name,
+        // 提示写**真正会被建库的那个名字**（选中的文件夹名），不是当前目录名
+        hint: libTargets.length === 1 ? libTargets[0]?.name : undefined,
         separatorBefore: true,
-        disabled: !curDir,
+        // 多选时没法决定叫什么名字（和目录卡片的规矩一致）
+        disabled: libTargets.length !== 1,
         onSelect: () => {
-          if (curDir) setNewLibFor({ path: curDir.path, folderName: curDir.name })
+          const t = libTargets[0]
+          if (t) setNewLibFor({ path: t.path, folderName: t.name })
         },
       },
       {
         id: 'blank-add-lib',
-        label: '加入图库',
-        disabled: !curDir,
+        label: libTargets.length > 1 ? `加入图库（${libTargets.length} 个）` : '加入图库',
+        disabled: libTargets.length === 0,
         // 只列图库名，不带张数（和文件菜单的子菜单保持一致）
         children:
           mgr.libraries.length > 0
@@ -1947,7 +1966,9 @@ export function ManagerView(props: Props) {
                 id: `blank-lib-${l.id}`,
                 label: l.name,
                 onSelect: () => {
-                  if (curDir) addDirToLibrary(curDir.path, 'existing', { id: l.id, name: l.name })
+                  for (const t of libTargets) {
+                    addDirToLibrary(t.path, 'existing', { id: l.id, name: l.name })
+                  }
                 },
               }))
             : [{ id: 'blank-lib-none', label: '（还没有图库）', disabled: true }],
@@ -1975,7 +1996,9 @@ export function ManagerView(props: Props) {
         onSelect: () => playSlideshow(),
       },
     ],
-    [mgr, curDir, addDirToLibrary, selectedCount, playPaths.length, playSlideshow],
+    // `libTargets` 是每次渲染新建的数组，不能直接进依赖（会每帧重算菜单）；
+    // 真正影响结果的是这些原始值：
+    [mgr, curDir, selectedItems, addDirToLibrary, selectedCount, playPaths.length, playSlideshow],
   )
 
   /** 打开空白菜单；「我的电脑」启动态不弹（那里没有可刷新的东西）。 */
@@ -2000,6 +2023,21 @@ export function ManagerView(props: Props) {
    * `mgr.scope` 的联合类型，访问 `.path` 会报 TS2339。
    */
   const browseScope = mgr.scope.kind === 'browse' ? mgr.scope : null
+
+  /**
+   * 「我的电脑」主区直接铺盘符（用户 2026-10-30）。
+   *
+   * 盘符本来只有展开左侧树的第一层才有 —— 选中「我的电脑」时主区是空的，
+   * 用户还得回侧栏再展开一次。这里直接把 `computer` 节点的子节点（磁盘）
+   * 拿来渲染，进来看图库就能点盘。
+   */
+  const computerNode = tree.roots.find((n) => n.kind === 'computer') ?? null
+  const driveNodes = computerNode ? tree.childrenOf(computerNode) : null
+  const expandNode = tree.expand
+  useEffect(() => {
+    if (mgr.scope.kind !== 'none' || !computerNode || driveNodes !== null) return
+    void expandNode(computerNode)
+  }, [mgr.scope.kind, computerNode, driveNodes, expandNode])
 
   /**
    * 文件菜单的快捷键：`Ctrl+O` 打开文件夹、`Ctrl+P` 打印、`Delete` 删除。
@@ -2425,7 +2463,40 @@ export function ManagerView(props: Props) {
             />
           </div>
 
-          {mgr.items.length === 0 ? (
+          {/*
+            「我的电脑」：直接铺盘符卡片。单击进入该盘（浏览模式），
+            和侧栏点盘符走同一条 `gotoWithReveal`（会顺便把树展开定位过去）。
+          */}
+          {mgr.scope.kind === 'none' && driveNodes && driveNodes.length > 0 ? (
+            <div
+              className="pv-mg-grid"
+              style={{ ['--pv-card' as string]: `${CARD_WIDTH[mgr.tier]}px` }}
+            >
+              {driveNodes.map((d) => (
+                <div
+                  key={d.path ?? d.name}
+                  className="pv-mg-card is-dir"
+                  role="button"
+                  tabIndex={0}
+                  title={d.path ?? d.name}
+                  onClick={() => {
+                    if (d.path) gotoWithReveal(d.path, d.name)
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && d.path) gotoWithReveal(d.path, d.name)
+                  }}
+                >
+                  <div className="pv-mg-cardimg">
+                    <div className="pv-mg-dirface">
+                      <DriveIcon className="pv-mg-diricon" />
+                    </div>
+                  </div>
+                  <div className="pv-mg-cardname">{d.name}</div>
+                  <div className="pv-mg-cardmeta">{d.note ?? '磁盘'}</div>
+                </div>
+              ))}
+            </div>
+          ) : mgr.items.length === 0 ? (
             <div className="pv-mg-empty" onContextMenu={openBlankMenu}>
               {mgr.busy
                 ? '正在处理…'
