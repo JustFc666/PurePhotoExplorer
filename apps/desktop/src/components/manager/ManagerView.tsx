@@ -60,6 +60,7 @@ import { FilterDropdown, FilterRow } from './FilterDropdown'
 import { PromptDialog } from '../chrome/PromptDialog'
 import { PrintPreview } from '../viewer/PrintPreview'
 import { DriveIcon } from '../icons/DriveIcon'
+import { useShellIcons } from '../../hooks/useShellIcons'
 import { FolderIcon } from '../icons/FolderIcon'
 import { ManagerSidebar } from './ManagerSidebar'
 import { AiTagStrip } from './AiTagStrip'
@@ -2033,6 +2034,21 @@ export function ManagerView(props: Props) {
    */
   const computerNode = tree.roots.find((n) => n.kind === 'computer') ?? null
   const driveNodes = computerNode ? tree.childrenOf(computerNode) : null
+  /*
+   * 盘符卡片用**系统图标**（和侧栏树同一份数据，见 `useShellIcons`）：
+   * 用户 2026-10-31「这里磁盘 ui 要和侧栏统一」—— 自绘 SVG 的深色盘体和
+   * 资源管理器那套白色盘体并排看像两个软件。
+   * 后端给的是 256px 的 Jumbo 图标，缩到 112px 依然清晰；取不到才回退 SVG。
+   */
+  const shellIcons = useShellIcons()
+  /**
+   * 「我的电脑」主区里被单击的盘符（**双击才进入**，用户 2026-10-31 要求）。
+   *
+   * 单独一份 state 而不复用 `mgr.selection` —— 盘符不是 `mgr.items` 里的一项
+   * （那个列表是当前目录/图库的照片），塞进去会让「已选 N 张」和批量操作都乱掉。
+   * 单击只负责高亮，和文件夹卡片的手感保持一致。
+   */
+  const [driveSel, setDriveSel] = useState<string | null>(null)
   const expandNode = tree.expand
   useEffect(() => {
     if (mgr.scope.kind !== 'none' || !computerNode || driveNodes !== null) return
@@ -2472,29 +2488,49 @@ export function ManagerView(props: Props) {
               className="pv-mg-grid"
               style={{ ['--pv-card' as string]: `${CARD_WIDTH[mgr.tier]}px` }}
             >
-              {driveNodes.map((d) => (
-                <div
-                  key={d.path ?? d.name}
-                  className="pv-mg-card is-dir"
-                  role="button"
-                  tabIndex={0}
-                  title={d.path ?? d.name}
-                  onClick={() => {
-                    if (d.path) gotoWithReveal(d.path, d.name)
-                  }}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' && d.path) gotoWithReveal(d.path, d.name)
-                  }}
-                >
-                  <div className="pv-mg-cardimg">
-                    <div className="pv-mg-dirface">
-                      <DriveIcon className="pv-mg-diricon" />
+              {driveNodes.map((d) => {
+                // 侧栏树用的同一份系统图标（后端按盘符分发，系统盘/移动盘/光驱不同）
+                const sysIcon = shellIcons?.drives.find(([p]) => p === d.path)?.[1] ?? null
+                const on = d.path !== null && driveSel === d.path
+                return (
+                  <div
+                    key={d.path ?? d.name}
+                    className={`pv-mg-card is-dir${on ? ' is-selected' : ''}`}
+                    role="button"
+                    tabIndex={0}
+                    aria-pressed={on}
+                    title={`${d.path ?? d.name}（双击进入）`}
+                    // 单击 = 高亮（和文件夹卡片一致），**双击才进入**（用户 2026-10-31）
+                    onClick={() => {
+                      if (!d.path) return
+                      setDriveSel(on ? null : d.path)
+                    }}
+                    onDoubleClick={() => {
+                      if (d.path) gotoWithReveal(d.path, d.name)
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && d.path) gotoWithReveal(d.path, d.name)
+                    }}
+                  >
+                    <div className="pv-mg-cardimg">
+                      <div className="pv-mg-dirface">
+                        {sysIcon ? (
+                          <img
+                            className="pv-mg-diricon pv-mg-driveimg"
+                            src={sysIcon}
+                            alt=""
+                            draggable={false}
+                          />
+                        ) : (
+                          <DriveIcon className="pv-mg-diricon" />
+                        )}
+                      </div>
                     </div>
+                    <div className="pv-mg-cardname">{d.name}</div>
+                    <div className="pv-mg-cardmeta">{d.note ?? '磁盘'}</div>
                   </div>
-                  <div className="pv-mg-cardname">{d.name}</div>
-                  <div className="pv-mg-cardmeta">{d.note ?? '磁盘'}</div>
-                </div>
-              ))}
+                )
+              })}
             </div>
           ) : mgr.items.length === 0 ? (
             <div className="pv-mg-empty" onContextMenu={openBlankMenu}>

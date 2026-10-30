@@ -25,8 +25,8 @@ use windows_sys::Win32::Graphics::Gdi::{
 use windows_sys::Win32::Storage::FileSystem::{GetLogicalDrives, FILE_ATTRIBUTE_DIRECTORY};
 use windows_sys::Win32::System::Com::CoTaskMemFree;
 use windows_sys::Win32::UI::Shell::{
-    SHGetFileInfoW, SHParseDisplayName, SHFILEINFOW, SHGFI_ICON, SHGFI_LARGEICON, SHGFI_PIDL,
-    SHGFI_USEFILEATTRIBUTES,
+    SHGetFileInfoW, SHGetImageList, SHParseDisplayName, SHFILEINFOW, SHGFI_ICON, SHGFI_LARGEICON,
+    SHGFI_PIDL, SHGFI_SYSICONINDEX, SHGFI_USEFILEATTRIBUTES, SHIL_JUMBO,
 };
 use windows_sys::Win32::UI::Shell::Common::ITEMIDLIST;
 use windows_sys::Win32::UI::WindowsAndMessaging::{
@@ -72,6 +72,88 @@ pub fn icon_png(path: &str, as_folder: bool) -> Option<Vec<u8>> {
     let png = unsafe { icon_to_png(info.hIcon) };
     unsafe { DestroyIcon(info.hIcon) };
     png
+}
+
+/// 同上，但优先取 **256×256 的 Jumbo 图标**。
+///
+/// ## 为什么需要 `SHGetFileInfoW` 之外的第二个 API
+/// `SHGetFileInfoW` 只能给到 32px（高 DPI 下 48px）。这个尺寸在侧栏文件树的
+/// 16px 行里刚好，但主区「我的电脑」的盘符卡片要放到 **112px** —— 32px 位图放大
+/// 3.5 倍是一团糊，和侧栏并排看就是「一个清晰一个糊」。
+///
+/// Vista 起 shell 提供 `SHGetImageList(SHIL_JUMBO)`，里面是 256px 的同一份图标。
+/// 取法：先用 `SHGFI_SYSICONINDEX` 拿到**这条路径在系统图像列表里的序号**，
+/// 再去 Jumbo 列表里按序号取 —— 两份列表的序号是同一个。
+///
+/// ⚠️ `IImageList` 在 `windows-sys` 里没有生成（只有 `SHGetImageList` 函数本身），
+/// 所以下面按 COM 的裸 vtable 手工调用：`GetIcon` 是第 10 项、`Release` 是第 2 项。
+/// 序号错会调到别的函数上，**加任何新调用前先查 `IImageList` 的继承顺序**：
+/// `IUnknown(0 QI, 1 AddRef, 2 Release)` → `3 Add, 4 ReplaceIcon, 5 SetOverlayImage,
+/// 6 Replace, 7 AddMasked, 8 Draw, 9 Remove, 10 GetIcon`。
+///
+/// 任何一步失败都退回 32px 那份 —— 图标糊一点总比没有好。
+pub fn icon_data_url_big(path: &str) -> Option<String> {
+    icon_png_jumbo(path)
+        .or_else(|| icon_png(path, false))
+        .map(|b| format!("data:image/png;base64,{}", base64(&b)))
+}
+
+/// `IID_IImageList` —— `SHGetImageList` 要的接口号。
+const IID_IIMAGELIST: windows_sys::core::GUID = windows_sys::core::GUID {
+    data1: 0x46EB_5926,
+    data2: 0x582E,
+    data3: 0x4017,
+    data4: [0x9F, 0xDF, 0xE8, 0x99, 0x8D, 0xAA, 0x09, 0x50],
+};
+
+/// `ILD_TRANSPARENT`（`windows-sys` 没导出，值来自 `commctrl.h`）。
+const ILD_TRANSPARENT: u32 = 0x0000_0001;
+
+fn icon_png_jumbo(path: &str) -> Option<Vec<u8>> {
+    unsafe {
+        // 1) 这条路径在**系统图像列表**里的序号
+        let mut w = wide(path);
+        let mut info: SHFILEINFOW = zeroed();
+        let ok = SHGetFileInfoW(
+            w.as_mut_ptr(),
+            0,
+            &mut info,
+            size_of::<SHFILEINFOW>() as u32,
+            SHGFI_SYSICONINDEX,
+        );
+        if ok == 0 {
+            return None;
+        }
+
+        // 2) 拿 Jumbo 列表（256px）
+        let mut piml: *mut c_void = std::ptr::null_mut();
+        if SHGetImageList(SHIL_JUMBO as i32, &IID_IIMAGELIST, &mut piml) < 0 || piml.is_null() {
+            return None;
+        }
+
+        let vt = *(piml as *const *const usize);
+
+        // 3) GetIcon（vtable[10]）—— 拿 HICON
+        type GetIconFn = unsafe extern "system" fn(*mut c_void, i32, u32, *mut HICON) -> i32;
+        let get_icon: GetIconFn = std::mem::transmute(*vt.add(10));
+        let mut hicon: HICON = std::ptr::null_mut();
+        let out = if get_icon(piml, info.iIcon, ILD_TRANSPARENT, &mut hicon) >= 0
+            && !hicon.is_null()
+        {
+            let png = icon_to_png(hicon);
+            DestroyIcon(hicon);
+            png
+        } else {
+            None
+        };
+
+        // 4) Release（vtable[2]）—— 这个接口是引用计数的，漏掉就是内存泄漏
+        type ReleaseFn = unsafe extern "system" fn(*mut c_void) -> u32;
+        let release: ReleaseFn = std::mem::transmute(*vt.add(2));
+        release(piml);
+
+        out
+    }
 }
 
 /// 把 `HICON` 画进 32bpp DIB，取出 RGBA，再编码成 PNG。
@@ -234,7 +316,10 @@ pub fn tree_icons() -> TreeIcons {
             continue;
         }
         let root = format!("{}:\\", (b'A' + i as u8) as char);
-        if let Some(url) = icon_data_url(&root, false) {
+        // ⚠️ 用 **Jumbo（256px）**，不是 32px 那份（2026-10-31）：
+        //    侧栏树里缩到 16px 无所谓，但主区「我的电脑」的盘符卡片要放到 112px，
+        //    32px 位图放大后是一团糊。同一份数据两处用，才能「UI 统一」。
+        if let Some(url) = icon_data_url_big(&root) {
             drives.push((root, url));
         }
     }
@@ -271,6 +356,12 @@ mod tests {
         ];
         for (name, path, as_folder) in cases {
             if let Some(b) = icon_png(path, as_folder) {
+                let _ = std::fs::write(dir.join(format!("icon_{name}.png")), &b);
+            }
+        }
+        // Jumbo（主区盘符卡片用）：尺寸应为 256×256
+        for (name, path) in [("drive_c_jumbo", r"C:\"), ("drive_d_jumbo", r"D:\")] {
+            if let Some(b) = icon_png_jumbo(path) {
                 let _ = std::fs::write(dir.join(format!("icon_{name}.png")), &b);
             }
         }

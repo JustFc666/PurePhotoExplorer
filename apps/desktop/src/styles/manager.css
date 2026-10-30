@@ -1815,3 +1815,18 @@ body.is-col-resizing {
 .pv-mg-ai:active {
   background: var(--pv-accent-press);
 }
+
+/* ── 「我的电脑」主区的盘符卡片（2026-10-31）────────────────────────
+   图标换成**系统图标**，与侧栏树同源（后端 `SHGetImageList(SHIL_JUMBO)` 取的
+   256px 版本，缩到这里依然清晰）。
+
+   ⚠️ 不能直接复用 `.pv-mg-diricon`：它的 `aspect-ratio` 是 256/218（给非正方形的
+   `FolderIcon` 用的），套到正方形盘符图标上会被压扁。 */
+.pv-mg-driveimg {
+  width: min(calc(var(--pv-card, 168px) * 0.44), 112px);
+  aspect-ratio: 1;
+  height: auto;
+  object-fit: contain;
+  /* 系统图标自带透明边距，别再加额外留白 */
+  border-radius: 0;
+}
