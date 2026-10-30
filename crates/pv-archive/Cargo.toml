@@ -1,0 +1,20 @@
+[package]
+name = "pv-archive"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "PurePhotoExplorer 压缩包内图片浏览：虚拟路径、按需解压、解压缓存"
+
+[dependencies]
+pv-core.workspace = true
+# ZIP 只用来读，deflate + stored 覆盖了 99% 的 zip/cbz。
+# ⛔ 不开 bzip2 / zstd / aes 特性：那是给「解别人的加密包」用的，
+#    拖进来一堆 C 依赖，而图片包里几乎不会出现。
+zip = { version = "2", default-features = false, features = ["deflate"] }
+blake3.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+
+[dev-dependencies]
+pv-decode.workspace = true

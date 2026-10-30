@@ -438,6 +438,17 @@ export function ManagerView(props: Props) {
         gotoWithReveal(item.path, item.name)
         return
       }
+      /*
+       * 压缩包：进入后主区显示**包内图片**（走 `fs_list_images(包路径)`）。
+       *
+       * ⛔ 不走 `gotoWithReveal`：它会给侧栏树做 `revealTo(路径)`，
+       *    而树里根本没有「包」这个节点（我们不在包里模拟目录层级），
+       *    那次调用必然是空转 + 一次多余的失败。
+       */
+      if (item.kind === 'archive' && item.path) {
+        void mgr.gotoDir(item.path, item.name)
+        return
+      }
       if (item.path) onOpenImage(item.path, playPaths)
     },
     [gotoWithReveal, onOpenImage, playPaths],
@@ -1590,16 +1601,29 @@ export function ManagerView(props: Props) {
      * 「用文件夹名」每个目录各建一个库；「加入图库」把它们都挂到同一个库。
      * 「新建图库」只能对一个目录（多个目录该叫什么名？无从判断），多选时置灰。
      */
-    const allDirs = cardCtxItems.length > 0 && cardCtxItems.every((i) => i.kind === 'dir')
+    /*
+     * 「容器」菜单 = 全是文件夹**或**压缩包。
+     *
+     * 压缩包共用这套菜单（它和文件夹一样是「能进去看的东西」），但
+     * **入库三项全部禁用**：包内条目没有稳定的磁盘路径，索引层存不进去；
+     * 硬要加就是把「缓存文件路径」写进库，包一换全部失效。
+     */
+    const allContainers =
+      cardCtxItems.length > 0 &&
+      cardCtxItems.every((i) => i.kind === 'dir' || i.kind === 'archive')
     const dirs = cardCtxItems.filter((i) => i.kind === 'dir' && i.path)
-    if (allDirs) {
-      const one = dirs.length === 1 ? dirs[0] : null
+    if (allContainers) {
+      const one = cardCtxItems.length === 1 ? cardCtxItems[0] : null
+      /** 选中的全是压缩包 → 没有任何一个能加入图库 */
+      const noDir = dirs.length === 0
+      const openLabel = noDir ? '打开压缩包' : '浏览此目录'
       return [
         {
           id: 'dir-add-name',
           label:
             dirs.length > 1 ? `加进图库：各自用文件夹名（${dirs.length} 个）` : '加进图库：用文件夹名',
-          hint: one?.name,
+          hint: noDir ? '压缩包不能加入图库' : one?.name,
+          disabled: noDir,
           onSelect: () => {
             for (const d of dirs) if (d.path) addDirToLibrary(d.path, 'name')
           },
@@ -1607,15 +1631,18 @@ export function ManagerView(props: Props) {
         {
           id: 'dir-add-new',
           label: '加进新图库…',
-          hint: one ? '自定义名称' : '只能选一个目录',
-          disabled: !one,
+          hint: noDir ? '压缩包不能加入图库' : one ? '自定义名称' : '只能选一个目录',
+          disabled: noDir || dirs.length !== 1,
           onSelect: () => {
-            if (one?.path) addDirToLibrary(one.path, 'new')
+            const d = dirs.length === 1 ? dirs[0] : null
+            if (d?.path) addDirToLibrary(d.path, 'new')
           },
         },
         {
           id: 'dir-add-existing',
           label: dirs.length > 1 ? `加入图库（${dirs.length} 个目录）` : '加进已有图库',
+          disabled: noDir,
+          hint: noDir ? '压缩包不能加入图库' : undefined,
           // 子菜单只支持一层；一条图库都没有时给一条禁用说明项
           children:
             mgr.libraries.length > 0
@@ -1633,12 +1660,16 @@ export function ManagerView(props: Props) {
         },
         {
           id: 'dir-browse',
-          label: '浏览此目录',
-          hint: one ? '不入库' : '只能选一个目录',
+          label: openLabel,
+          hint: one ? (noDir ? '查看包内图片' : '不入库') : '只能选一个',
           separatorBefore: true,
           disabled: !one,
           onSelect: () => {
-            if (one?.path) gotoWithReveal(one.path, one.name)
+            if (!one?.path) return
+            // 压缩包不走 `gotoWithReveal`：侧栏树里没有「包」这个节点，
+            // `revealTo` 必然空转（见 `openItem` 的同款注释）
+            if (one.kind === 'archive') void mgr.gotoDir(one.path, one.name)
+            else gotoWithReveal(one.path, one.name)
           },
         },
       ]

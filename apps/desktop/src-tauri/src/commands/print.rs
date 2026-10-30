@@ -74,9 +74,11 @@ pub fn print_image(
     printer: Option<String>,
     quick: Option<bool>,
 ) -> std::result::Result<PrintResultDto, ErrorDto> {
+    // 压缩包内条目：先解到缓存目录，再按普通文件送印
+    let real = crate::paths::resolve(&path)?;
     print_impl(
         state.registry(),
-        &PathBuf::from(&path),
+        &real,
         rotation_steps,
         &aspect,
         crop,

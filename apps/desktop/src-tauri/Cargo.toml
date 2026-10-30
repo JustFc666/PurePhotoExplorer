@@ -33,6 +33,8 @@ pv-meta.workspace = true
 # 离线地名库：GPS 坐标 → 最近的城市（数据随二进制走，不联网）
 pv-geo.workspace = true
 pv-edit.workspace = true
+# 压缩包内图片浏览（zip/cbz 纯 Rust，rar/7z 走 7z.exe）
+pv-archive.workspace = true
 
 # 仅 Windows：自绘窗口的最大化 / 尺寸校正 + 文件关联（写 HKCU）
 # （WS_EX_WINDOWEDGE 残留边框会让客户区比外框四面内缩，需按实测偏移外扩）

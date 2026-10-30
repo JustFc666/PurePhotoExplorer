@@ -92,6 +92,14 @@ const FIRST_SCREEN_PROBE = 60
 /** 后台补尺寸的批大小。一批 240 个 ≈ 2–5 秒，批之间让出一帧保证滚动不卡。 */
 const DIM_CHUNK = 240
 
+/**
+ * 压缩包扩展名（与后端 `pv_archive::ARCHIVE_EXTS` 保持一致）。
+ *
+ * 只用于「进这个路径之前先判断要不要拉子目录」这种**省一次 IPC** 的小事。
+ * ⛔ 不要拿它做业务判断（能不能打开、是不是图片），那些一律看后端返回。
+ */
+const ARCHIVE_EXT_RE = /\.(zip|cbz|rar|cbr|7z|cb7)$/i
+
 /** 文件名搜索的防抖时长（ms）——敲每个字符都查一次会白跑很多次 SQL。 */
 const SEARCH_DEBOUNCE_MS = 250
 
@@ -179,10 +187,12 @@ export interface GridItem {
   /** true = 浏览模式的临时项（未入库） */
   transient: boolean
   /**
-   * `dir` = 浏览模式里的**子文件夹**（双击进入，无缩略图、不可选）。
-   * 排序上排在文件前面（照资源管理器的习惯）。
+   * `dir` = 浏览模式里的**子文件夹**（双击进入，无缩略图）。
+   * `archive` = 压缩包（zip/cbz/rar/cbr/7z/cb7），同样双击进入，
+   *   进去看到的是**包内图片**（虚拟路径 `包!内部`）。
+   * 两者都排在文件前面（照资源管理器的习惯）。
    */
-  kind: 'file' | 'dir'
+  kind: 'file' | 'dir' | 'archive'
 }
 
 /**
@@ -736,16 +746,25 @@ export function useManager(): ManagerApi {
       setBusy(true)
       setError(null)
       try {
+        /*
+         * ⚠️ 压缩包**不拉子目录**：我们不在包里模拟目录层级（进去就是扁平一层图），
+         * 而 `fs_list_dirs(包路径)` 会把它当普通目录读 —— 得到空数组，
+         * 白白多一次 IPC 和一次 read_dir（在移动盘上还能卡一下）。
+         */
+        const isArchive = ARCHIVE_EXT_RE.test(path)
         const [first, dirs] = await Promise.all([
           fsListImages(path, FIRST_SCREEN_PROBE),
-          fsListDirs(path).catch(() => [] as FsNode[]),
+          isArchive
+            ? Promise.resolve([] as FsNode[])
+            : fsListDirs(path).catch(() => [] as FsNode[]),
         ])
         if (token !== browseToken.current) return
         setListing(first)
         setSubdirs(dirs)
         // ⭐ 先让界面活过来，剩下的事后台做
         setBusy(false)
-        void fillRestDimensions(first, token)
+        // 包内条目探尺寸要先解压（见 DirListing.isArchive 的注释），一律跳过
+        if (!first.isArchive) void fillRestDimensions(first, token)
       } catch (e) {
         if (token !== browseToken.current) return
         setListing(null)
@@ -1295,7 +1314,9 @@ export function useManager(): ManagerApi {
     if (scope.kind === 'browse') {
       // 子文件夹排前面（照资源管理器的习惯），然后是图片
       const dirs: GridItem[] = subdirs.map((d) => ({
-        key: `dir:${d.path ?? d.name}`,
+        // 压缩包也走这条分支（无缩略图、无索引行），只是 kind 不同 ——
+        // 卡片据此换图标，双击行为完全一样（进去看）
+        key: `${d.kind === 'archive' ? 'arc' : 'dir'}:${d.path ?? d.name}`,
         id: null,
         path: d.path,
         name: d.name,
@@ -1309,7 +1330,7 @@ export function useManager(): ManagerApi {
         flag: 0,
         hasTags: false,
         transient: true,
-        kind: 'dir',
+        kind: d.kind === 'archive' ? 'archive' : 'dir',
       }))
       // ⭐ 浏览模式的排序在**前端**做：列表是直读磁盘的一次性结果，
       // 切排序不可能重新扫一遍目录（冷盘 1–10 秒）。一页最多 2 万条，

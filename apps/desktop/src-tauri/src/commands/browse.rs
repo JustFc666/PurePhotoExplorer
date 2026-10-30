@@ -14,7 +14,7 @@
 //! ⚠️ **这些都必须是 `async`**：`read_dir` 在网络驱动器或无响应的盘符上会阻塞很久，
 //! 非 `async` 命令跑在主线程上会直接把窗口卡成「未响应」（详见 `manager.rs` 的注释）。
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use tauri::ipc::Response;
 use tauri::State;
@@ -120,6 +120,93 @@ pub async fn fs_resolve_dir(path: String) -> Result<Option<ResolvedDirDto>, Erro
     Ok(fs_browse::resolve_dir(&path).map(|(path, name)| ResolvedDirDto { path, name }))
 }
 
+/// 把「可能是虚拟路径」的入参落成真实文件路径（实现见 [`crate::paths::resolve`]）。
+///
+/// 这里保留一层薄包装只是为了少写 `crate::` 前缀 —— **真正的逻辑只有一份**，
+/// 别在这里复制一份自己的实现（解码 / 打印 / 看图都共用同一个）。
+fn resolve_path(path: &str) -> Result<PathBuf, ErrorDto> {
+    crate::paths::resolve(path)
+}
+
+fn is_archive_file(path: &str) -> bool {
+    crate::paths::is_archive_file(path)
+}
+
+/// 包内条目的格式标签（小写，和 `pv_scan` 那条路的取值保持一致）。
+///
+/// 为什么不读魔数：包里每张图读魔数都要先解压，一个 300 页的包光列目录
+/// 就要解 300 次。而包内条目的扩展名几乎总是对的（打包工具不会改扩展名）。
+/// 真判断错也不致命 —— 解码层仍然按魔数走，最多是卡片上的标签写错。
+fn format_of_name(name: &str) -> (String, bool) {
+    let ext = name.rsplit_once('.').map(|(_, e)| e.to_ascii_lowercase()).unwrap_or_default();
+    let (f, raw) = match ext.as_str() {
+        "jpg" | "jpeg" | "jpe" | "jfif" => ("jpeg", false),
+        "png" => ("png", false),
+        "gif" => ("gif", false),
+        "bmp" => ("bmp", false),
+        "webp" => ("webp", false),
+        "avif" => ("avif", false),
+        "heic" | "heif" => ("heif", false),
+        "psd" => ("psd", false),
+        // TIFF 与相机 RAW 同头，入库那条路也把它标成 raw（见 pv_scan 的注释）
+        "tif" | "tiff" => ("raw", true),
+        _ => ("unknown", false),
+    };
+    (f.to_string(), raw)
+}
+
+/// 列出压缩包里的图片。
+///
+/// ## 为什么 **不探尺寸**（`width/height` 恒为 `None`）
+/// 探尺寸要先解压：zip 一条 3ms、rar 一条 85ms（起进程）。首屏 60 条意味着
+/// 180ms / **5 秒**，后者直接就是「点开卡住」。而卡片真正的信息量在缩略图上，
+/// 尺寸标签只是锦上添花。
+///
+/// 前端相应地**不会**对压缩包范围发起后台补尺寸（`fillRestDimensions` 跳过），
+/// 否则 240 条一批会白跑 240 次解压。
+fn list_archive(pack: &str) -> Result<DirListingDto, ErrorDto> {
+    let entries = pv_archive::list_images(pack).map_err(|e| ErrorDto {
+        code: "archiveError".into(),
+        message: e,
+        user_visible: true,
+    })?;
+    let total = entries.len();
+
+    // 包内条目没有各自的修改时间，统一用包的 —— 排序（修改时间）只要求稳定，
+    // 不要求在包内还能分出先后。
+    let pack_mtime = std::fs::metadata(pack)
+        .ok()
+        .and_then(|m| m.modified().ok())
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .map(|d| d.as_nanos() as i64)
+        .unwrap_or(0);
+
+    let items = entries
+        .into_iter()
+        .take(MAX_BROWSE_FILES)
+        .map(|e| {
+            let (format, is_raw) = format_of_name(&e.name);
+            let name = e.name.rsplit('/').next().unwrap_or(&e.name).to_string();
+            FsImageDto {
+                path: pv_archive::make_virtual(pack, &e.name),
+                name,
+                size: e.size as i64,
+                mtime: pack_mtime,
+                format,
+                is_raw,
+                width: None,
+                height: None,
+            }
+        })
+        .collect::<Vec<_>>();
+
+    Ok(DirListingDto {
+        total,
+        items,
+        is_archive: true,
+    })
+}
+
 /// 浏览列表里的一个文件。
 #[derive(Debug, Clone, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -143,6 +230,12 @@ pub struct DirListingDto {
     /// 目录里**实际**有多少张图
     pub total: usize,
     pub items: Vec<FsImageDto>,
+    /// 这一份列表是不是**压缩包内部**的（前端据此跳过「后台补尺寸」）。
+    ///
+    /// ⛔ 前端不要自己用「路径里有没有 `!`」来判断：包名本身可能带 `!`，
+    /// 而普通文件名也可能带 —— 那会把普通目录误判成压缩包。
+    #[serde(default)]
+    pub is_archive: bool,
 }
 
 /// 列出目录里的图片（**单层、不写索引、不生成缩略图**）—— 临时预览用。
@@ -164,6 +257,10 @@ pub async fn fs_list_images(
     path: String,
     probe_limit: Option<usize>,
 ) -> Result<DirListingDto, ErrorDto> {
+    // 压缩包：列包内图片（虚拟路径），**不解压、不探尺寸**（见 `list_archive`）
+    if is_archive_file(&path) {
+        return list_archive(&path);
+    }
     let all = pv_store::list_dir_images_fast(Path::new(&path))
         .map_err(|e| browse_err(&path, &e))?;
     let total = all.len();
@@ -190,7 +287,11 @@ pub async fn fs_list_images(
             }
         })
         .collect::<Vec<_>>();
-    Ok(DirListingDto { total, items })
+    Ok(DirListingDto {
+        total,
+        items,
+        is_archive: false,
+    })
 }
 
 /// 批量探测像素尺寸（后台补齐用）。
@@ -207,7 +308,10 @@ pub async fn fs_probe_dimensions(
         .map(|p| {
             // 这里拿不到 `is_raw` 标记，靠 `probe_dimensions` 内部的 RAW 拦截兜底
             // （解码层直接返回 UnsupportedFormat，不会去读那 47MB）。
-            pv_decode::probe_dimensions(state.registry(), Path::new(p))
+            // 解压失败（包坏了 / 找不到 7z）也只影响这一条 → `null`，
+            // 不因为一张图把整批尺寸都判死。
+            let real = resolve_path(p).ok()?;
+            pv_decode::probe_dimensions(state.registry(), &real)
                 .ok()
                 .map(|(w, h)| (i64::from(w), i64::from(h)))
         })
@@ -229,7 +333,10 @@ pub async fn fs_probe_dimensions(
 pub async fn fs_probe_times(paths: Vec<String>) -> Result<Vec<Option<i64>>, ErrorDto> {
     Ok(paths
         .iter()
-        .map(|p| pv_meta::read_exif(Path::new(p)).and_then(|e| e.taken_at_unix()))
+        .map(|p| {
+            let real = resolve_path(p).ok()?;
+            pv_meta::read_exif(&real).and_then(|e| e.taken_at_unix())
+        })
         .collect())
 }
 
@@ -239,8 +346,6 @@ pub async fn fs_probe_times(paths: Vec<String>) -> Result<Vec<Option<i64>>, Erro
 /// 一张 ARW 47MB —— 611 个 ARW 的目录要读 28.7GB、界面假死 287 秒。
 /// 而且内嵌预览的尺寸并不是传感器尺寸（1616×1080 vs 6000×4000），显示了反而是错的。
 ///
-/// 解码层 [`pv_decode::probe_dimensions`] 也有一道同样的拦截（防调用点漏判），
-/// 这里提前判断是为了连一次函数调用和一次 `open` 都省掉。
 /// 把「浏览目录」的底层错误翻成用户能懂的一句话。
 ///
 /// 原始的 `IO 错误：拒绝访问。(os error 5)` 对用户没有信息量 ——
@@ -273,6 +378,14 @@ fn browse_err(path: &str, e: &pv_store::StoreError) -> ErrorDto {
     }
 }
 
+/// 探一个文件的尺寸。**RAW 一律跳过**。
+///
+/// ⛔ 2026-10-17 实测：`probe_dimensions` 对 RAW 要把整个文件读进来扫内嵌 JPEG 预览，
+/// 一张 ARW 47MB —— 611 个 ARW 的目录要读 28.7GB、界面假死 287 秒。
+/// 而且内嵌预览的尺寸并不是传感器尺寸（1616×1080 vs 6000×4000），显示了反而是错的。
+///
+/// 解码层 [`pv_decode::probe_dimensions`] 也有一道同样的拦截（防调用点漏判），
+/// 这里提前判断是为了连一次函数调用和一次 `open` 都省掉。
 fn probe_size(
     reg: &pv_decode::DecoderRegistry,
     path: &str,
@@ -311,7 +424,9 @@ pub async fn fs_thumbnail(
         message: format!("未知缩略图档位：{tier}"),
         user_visible: true,
     })?;
-    let img = pv_decode::decode_scaled(state.registry(), Path::new(&path), tier.long_edge())
+    // 包内图片：先把这一条解到缓存目录，再按普通文件解码（解过一次就一直命中）
+    let real = resolve_path(&path)?;
+    let img = pv_decode::decode_scaled(state.registry(), &real, tier.long_edge())
         .map_err(ErrorDto::from)?;
     Ok(Response::new(pack_pixels(&img)))
 }

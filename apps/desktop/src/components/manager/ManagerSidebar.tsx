@@ -24,6 +24,7 @@ import { FS_COMPUTER_KEY, fsResolveDir, type FsNode, type TreeIcons } from '../.
 import type { FsTreeApi } from '../../hooks/useFsTree'
 import { useShellIcons } from '../../hooks/useShellIcons'
 import type { LibChoice, Scope } from '../../hooks/useManager'
+import { ArchiveIcon } from '../icons/ArchiveIcon'
 import { FolderIcon } from '../icons/FolderIcon'
 import { GalleryIcon } from '../icons/GalleryIcon'
 
@@ -99,7 +100,13 @@ function FsRow({
    * 否则用户得点两次（第一次点开才发现其实有子目录）才看得到内容。
    * 加载完是空的才把箭头收起来。
    */
-  const hasChevron = isComputer || kids === null || kids.length > 0
+  /*
+   * 压缩包**永远不给展开箭头**：我们不在包里模拟目录层级（进去就是扁平一层图），
+   * 而 `kids === null`（还没加载过）那条「先当作有箭头」的规则会让它显示成可展开，
+   * 点开一次才发现是空的。直接在这里排除掉。
+   */
+  const isArchive = node.kind === 'archive'
+  const hasChevron = !isArchive && (isComputer || kids === null || kids.length > 0)
   // 「停在我的电脑」「已入库」「正在浏览」都算选中，用户才不会觉得点了没反应
   const onThisRow = isComputer
     ? scope.kind === 'none'
@@ -153,6 +160,9 @@ function FsRow({
           {isFolderNode(node) ? (
             // 矢量文件夹图标：16px 的树里和大卡片里共用同一份形状
             <FolderIcon size={16} />
+          ) : isArchive ? (
+            // 压缩包：和网格卡片同一份矢量图，一眼和文件夹区分开
+            <ArchiveIcon size={16} />
           ) : iconSrc(node, icons) ? (
             <img className="pv-mg-ico-img" src={iconSrc(node, icons)!} alt="" draggable={false} />
           ) : (

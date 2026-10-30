@@ -15,6 +15,7 @@ import type { MouseEvent as ReactMouseEvent } from 'react'
 import { formatFileSize } from '../../ipc'
 import type { ThumbTier } from '../../ipc/manager'
 import type { GridItem } from '../../hooks/useManager'
+import { ArchiveIcon } from '../icons/ArchiveIcon'
 import { FolderIcon } from '../icons/FolderIcon'
 import { ThumbCanvas, thumbSourceOf } from './ThumbCanvas'
 
@@ -96,7 +97,14 @@ export function PhotoCard({
   //    而且选中效果要和照片**完全一致** —— 同样的高亮边框 + 右上角圆形勾。
   //    以前这里是个独立的小卡片：没有 onClick、没有 is-selected、没有勾，
   //    于是"单击没反应"。
-  if (item.kind === 'dir') {
+  /*
+   * 文件夹与压缩包共用这张「容器卡片」：都没有缩略图、都双击进入、
+   * 都能被选中（右键菜单据此作用于选中的那几个）。
+   * 差别只有图标和说明文字 —— 压缩包不能用文件夹图标，
+   * 否则一眼看不出「这个点进去没有子目录，而是一堆图」。
+   */
+  if (item.kind === 'dir' || item.kind === 'archive') {
+    const isArc = item.kind === 'archive'
     return (
       <div
         className={`pv-mg-card is-dir${selected ? ' is-selected' : ''}`}
@@ -106,7 +114,7 @@ export function PhotoCard({
         role="button"
         tabIndex={0}
         aria-pressed={selected}
-        title={`${item.path ?? item.name}\n双击进入`}
+        title={`${item.path ?? item.name}\n双击${isArc ? '查看包内图片' : '进入'}`}
         onClick={onToggle}
         onDoubleClick={onOpen}
         onKeyDown={(e) => {
@@ -121,7 +129,11 @@ export function PhotoCard({
         <div className="pv-mg-cardimg">
           <div className="pv-mg-dirface">
             {/* 矢量图标：宽度跟着卡片档位（sm…xl）走，见 manager.css 的 `.pv-mg-diricon` */}
-            <FolderIcon className="pv-mg-diricon" />
+            {isArc ? (
+              <ArchiveIcon className="pv-mg-diricon" />
+            ) : (
+              <FolderIcon className="pv-mg-diricon" />
+            )}
           </div>
           {selectable && (
             <span className="pv-mg-check" aria-hidden>
@@ -130,7 +142,9 @@ export function PhotoCard({
           )}
         </div>
         <div className="pv-mg-cardname">{item.name}</div>
-        <div className="pv-mg-cardmeta">文件夹 · 双击进入</div>
+        <div className="pv-mg-cardmeta">
+          {isArc ? '压缩包 · 双击查看' : '文件夹 · 双击进入'}
+        </div>
       </div>
     )
   }

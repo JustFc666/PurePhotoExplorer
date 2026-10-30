@@ -13,6 +13,7 @@ members = [
     "crates/pv-vault",
     "crates/pv-edit",
     "crates/pv-ai",
+    "crates/pv-archive",
     "apps/desktop/src-tauri",
 ]
 
@@ -35,6 +36,7 @@ pv-geo = { path = "crates/pv-geo" }
 pv-vault = { path = "crates/pv-vault" }
 pv-edit = { path = "crates/pv-edit" }
 pv-ai = { path = "crates/pv-ai" }
+pv-archive = { path = "crates/pv-archive" }
 
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

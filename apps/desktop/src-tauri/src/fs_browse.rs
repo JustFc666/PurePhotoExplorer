@@ -23,7 +23,7 @@ pub struct FsNode {
     pub name: String,
     /// `None` = 虚拟节点（只有「我的电脑」本身没有对应路径）
     pub path: Option<String>,
-    /// `computer` / `drive` / `dir`
+    /// `computer` / `drive` / `dir` / `archive`（zip/cbz/rar/cbr/7z/cb7）
     pub kind: String,
     /// 附加说明（盘符 `(C:)`）
     pub note: Option<String>,
@@ -287,7 +287,7 @@ pub fn list_dirs(path: Option<&str>) -> Vec<FsNode> {
     for entry in entries.flatten() {
         let Ok(ft) = entry.file_type() else { continue };
         // 不跟随符号链接：可能指向自身或成环，展开时会无限套娃
-        if ft.is_symlink() || !ft.is_dir() {
+        if ft.is_symlink() {
             continue;
         }
         let name = entry.file_name().to_string_lossy().into_owned();
@@ -295,12 +295,34 @@ pub fn list_dirs(path: Option<&str>) -> Vec<FsNode> {
         if name.starts_with('.') || name.starts_with('$') || name == "System Volume Information" {
             continue;
         }
-        out.push(FsNode {
-            name,
-            path: Some(entry.path().to_string_lossy().into_owned()),
-            kind: "dir".to_string(),
-            note: None,
-        });
+
+        if ft.is_dir() {
+            out.push(FsNode {
+                name,
+                path: Some(entry.path().to_string_lossy().into_owned()),
+                kind: "dir".to_string(),
+                note: None,
+            });
+            continue;
+        }
+
+        /*
+         * 压缩包也是「能进去看的容器」（2026-10-31）：zip/cbz/rar/cbr/7z/cb7。
+         *
+         * ⭐ 单独给 `kind = "archive"` 而不是复用 `"dir"`：
+         *   - 树里不能给它展开箭头（我们**不模拟包内子目录**，进去就是扁平一层图片）
+         *   - 图标要是压缩包，不是文件夹
+         *   - 「加入图库」对它是无意义的（包内条目没有稳定路径），要能挡掉
+         */
+        if pv_archive::has_archive_ext(&name) {
+            out.push(FsNode {
+                name,
+                path: Some(entry.path().to_string_lossy().into_owned()),
+                kind: "archive".to_string(),
+                // 不给 note：侧栏行尾再写一遍「压缩包」是噪音，图标已经说明了
+                note: None,
+            });
+        }
     }
 
     // `sort_by_cached_key` 而不是 `sort_by_key`：大小写转换要分配 String，

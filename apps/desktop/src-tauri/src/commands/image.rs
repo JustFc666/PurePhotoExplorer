@@ -35,7 +35,8 @@ pub fn probe_image(
     state: State<'_, AppState>,
     path: String,
 ) -> std::result::Result<ImageInfoDto, ErrorDto> {
-    let p = PathBuf::from(&path);
+    // 压缩包内条目：先解到缓存目录（解过一次就一直命中），再按普通文件探测
+    let p = crate::paths::resolve(&path)?;
     let info = state.registry().probe(&p).map_err(ErrorDto::from)?;
 
     let meta = std::fs::metadata(&p).map_err(|e| io_err(&p, e))?;
@@ -114,8 +115,8 @@ pub fn decode_image(
     path: String,
     purpose: String,
 ) -> std::result::Result<Response, ErrorDto> {
-    let p = PathBuf::from(&path);
     let target = decode_target_for(&purpose);
+    let p = crate::paths::resolve(&path)?;
 
     let img = state.registry().decode(&p, target).map_err(ErrorDto::from)?;
     Ok(Response::new(pack_pixels(&img)))
@@ -132,7 +133,14 @@ pub fn decode_image(
 /// 另一种颜色，翻过去仍是旧颜色。
 #[tauri::command]
 pub fn file_version(path: String) -> std::result::Result<FileVersionDto, ErrorDto> {
-    let p = PathBuf::from(&path);
+    /*
+     * 压缩包内条目用**包**的元数据，不为了 stat 去解压一次。
+     * 语义上也更对：包被替换 → 缓存目录重建 → 前端看见版本变了就重新解码。
+     */
+    let p = match pv_archive::split_virtual(&path) {
+        Some((pack, _)) => PathBuf::from(pack),
+        None => PathBuf::from(&path),
+    };
     let meta = std::fs::metadata(&p).map_err(|e| io_err(&p, e))?;
     let modified_ms = meta
         .modified()
@@ -225,8 +233,8 @@ pub fn decode_animation(
     max_bytes: Option<usize>,
     min_duration_ms: Option<u32>,
 ) -> std::result::Result<Response, ErrorDto> {
-    let p = PathBuf::from(&path);
     let target = decode_target_for(&purpose);
+    let p = crate::paths::resolve(&path)?;
 
     // 按文件头分发（GIF / WebP）：命令层不必关心是哪种动图格式
     let anim = pv_decode::decode_animation(&p, target).map_err(ErrorDto::from)?;

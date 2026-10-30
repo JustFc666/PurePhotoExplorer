@@ -110,6 +110,16 @@ export interface FsImage {
 export interface DirListing {
   total: number
   items: FsImage[]
+  /**
+   * 这份列表来自**压缩包内部**（2026-10-31）。
+   *
+   * 前端据此跳过「后台补尺寸」—— 包内每条探尺寸都要先解压：
+   * zip 3ms/条、rar 85ms/条（起进程），240 条一批就是 20 秒白跑。
+   * 而卡片的信息量本来就在缩略图上，尺寸标签只是锦上添花。
+   *
+   * ⛔ 不要用「路径里有没有 `!`」自行判断：包名和普通文件名都可能带 `!`。
+   */
+  isArchive: boolean
 }
 
 /**
