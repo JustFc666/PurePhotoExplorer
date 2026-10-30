@@ -25,6 +25,11 @@ export interface MenuItem {
   checked?: boolean
   onSelect?: () => void
   separatorBefore?: boolean
+  /**
+   * 二级子菜单（**只支持一层**，和 `ContextMenu` 保持一致）。
+   * 有 `children` 的项不响应点击，悬停向右展开。
+   */
+  children?: MenuItem[]
 }
 
 /**
@@ -73,21 +78,58 @@ function MenuButton({ label, items }: { label: string; items: MenuItem[] }) {
           {items.map((it) => (
             <div key={it.id}>
               {it.separatorBefore && <div className="pv-mg-sep" />}
-              <button
-                type="button"
-                role="menuitem"
-                className="pv-mg-menuitem"
-                disabled={it.disabled || !it.onSelect}
-                onClick={() => {
-                  setOpen(false)
-                  it.onSelect?.()
-                }}
-                title={!it.onSelect ? '待接入' : undefined}
-              >
-                <span className="pv-mg-menutick">{it.checked ? '✓' : ''}</span>
-                <span className="pv-mg-menulabel">{it.label}</span>
-                {it.hint && <span className="pv-mg-menuhint">{it.hint}</span>}
-              </button>
+              {it.children ? (
+                // 有子菜单的项：悬停向右展开（CSS `:hover` 控制显隐，见 manager.css）
+                <div className="pv-mg-subwrap">
+                  <button
+                    type="button"
+                    role="menuitem"
+                    className="pv-mg-menuitem"
+                    disabled={it.disabled}
+                    aria-haspopup="menu"
+                  >
+                    <span className="pv-mg-menutick" />
+                    <span className="pv-mg-menulabel">{it.label}</span>
+                    {it.hint && <span className="pv-mg-menuhint">{it.hint}</span>}
+                    <span className="pv-mg-subcaret">›</span>
+                  </button>
+                  <div className="pv-mg-submenu" role="menu">
+                    {it.children.map((c) => (
+                      <button
+                        key={c.id}
+                        type="button"
+                        role="menuitem"
+                        className="pv-mg-menuitem"
+                        disabled={c.disabled || !c.onSelect}
+                        onClick={() => {
+                          setOpen(false)
+                          c.onSelect?.()
+                        }}
+                      >
+                        <span className="pv-mg-menutick">{c.checked ? '✓' : ''}</span>
+                        <span className="pv-mg-menulabel">{c.label}</span>
+                        {c.hint && <span className="pv-mg-menuhint">{c.hint}</span>}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  role="menuitem"
+                  className="pv-mg-menuitem"
+                  disabled={it.disabled || !it.onSelect}
+                  onClick={() => {
+                    setOpen(false)
+                    it.onSelect?.()
+                  }}
+                  title={!it.onSelect ? '待接入' : undefined}
+                >
+                  <span className="pv-mg-menutick">{it.checked ? '✓' : ''}</span>
+                  <span className="pv-mg-menulabel">{it.label}</span>
+                  {it.hint && <span className="pv-mg-menuhint">{it.hint}</span>}
+                </button>
+              )}
             </div>
           ))}
         </div>
@@ -132,6 +174,18 @@ interface Props {
   onSaveAs: () => void
   /** 打开文件夹（只导航，不改变图库成员） */
   onOpenFolder: () => void
+  /**
+   * 当前正在看的目录（`null` = 不在某个目录里，比如「全部照片」/图库范围）。
+   * 「新建图库 / 加入图库」作用于它 —— 没目录时这两项置灰。
+   */
+  dirPath: string | null
+  dirName: string
+  /** 用当前目录新建一个图库（对话框默认名字 = 目录名） */
+  onNewLibraryFromDir: () => void
+  /** 把当前目录加进指定的已有图库 */
+  onAddDirToLibrary: (id: number, name: string) => void
+  /** 已有图库（「加入图库 ▸」的子菜单） */
+  libraries: { id: number; name: string }[]
   onRescan: () => void
   /** 打印选中的图（复用单图模式的版面预览） */
   onPrint: () => void
@@ -172,6 +226,11 @@ export function ManagerTopBar(props: Props) {
     canSaveAs,
     onSaveAs,
     onOpenFolder,
+    dirPath,
+    dirName,
+    onNewLibraryFromDir,
+    onAddDirToLibrary,
+    libraries,
     onRescan,
     onPrint,
     onCopyTo,
@@ -204,6 +263,32 @@ export function ManagerTopBar(props: Props) {
       label: '文件',
       items: [
         { id: 'open-folder', label: '打开文件夹…', hint: 'Ctrl+O', onSelect: onOpenFolder },
+        /*
+         * 「新建图库 / 加入图库」作用于**当前正在看的这个目录**（用户 2026-10-30）。
+         * 这两条原来散在别处：新建图库在侧栏「图库 +」，加入图库在浏览模式标题栏
+         * 那个紫色按钮 —— 都在视线之外。收进文件菜单，和"打开文件夹"挨着。
+         */
+        {
+          id: 'new-lib',
+          label: '新建图库',
+          hint: dirPath ? dirName : '先打开一个文件夹',
+          disabled: !dirPath,
+          onSelect: onNewLibraryFromDir,
+        },
+        {
+          id: 'add-to-lib',
+          label: '加入图库',
+          disabled: !dirPath,
+          // 二级菜单只列图库名，不带张数（用户 2026-10-30 明确要求）
+          children:
+            libraries.length > 0
+              ? libraries.map((l) => ({
+                  id: `add-lib-${l.id}`,
+                  label: l.name,
+                  onSelect: () => onAddDirToLibrary(l.id, l.name),
+                }))
+              : [{ id: 'add-lib-none', label: '（还没有图库）', disabled: true }],
+        },
         {
           id: 'print',
           label: '打印…',

@@ -261,18 +261,6 @@ export function ManagerView(props: Props) {
    * 所以用自己的 [`PromptDialog`]。
    */
   const [newLibFor, setNewLibFor] = useState<{ path: string; folderName: string } | null>(null)
-  /**
-   * 「打开文件夹」选完目录后弹出的二选一菜单（新建图库 / 加入图库 ▸）。
-   *
-   * 用户 2026-10-30 定的流程：文件夹选好之后再问"要新建还是加进已有的"，
-   * 而不是在文件菜单里先摊一堆「加进已有图库 · xxx」。
-   */
-  const [folderMenu, setFolderMenu] = useState<{
-    path: string
-    name: string
-    x: number
-    y: number
-  } | null>(null)
 
   /**
    * 侧栏「图库 +」：建一个**空的**图库。
@@ -623,23 +611,7 @@ export function ManagerView(props: Props) {
   )
 
   /**
-   * 最近一次按下的视口坐标。
-   *
-   * 用来把「选完文件夹后的二选一菜单」贴到用户刚点的地方 ——
-   * 顶栏菜单项的 `onSelect` 拿不到事件对象，原生目录对话框又不会带坐标回来。
-   * 捕获阶段监听，代价只有一次赋值。
-   */
-  const lastPointRef = useRef({ x: 0, y: 0 })
-  useEffect(() => {
-    const onDown = (e: PointerEvent) => {
-      lastPointRef.current = { x: e.clientX, y: e.clientY }
-    }
-    window.addEventListener('pointerdown', onDown, true)
-    return () => window.removeEventListener('pointerdown', onDown, true)
-  }, [])
-
-  /**
-   * 文件 →「打开文件夹…」：选目录 → 弹出「新建图库 / 加入图库 ▸」二选一。
+   * 文件 →「打开文件夹…」：选一个目录导航过去看。
    *
    * ⛔ 不要复用 `pickFolder` —— 那个是「加入图库」（扫索引 + 生成缩略图缓存）。
    * 两个动作以前挤在一个「添加文件夹」里，看着像打开、实际在入库。
@@ -648,14 +620,12 @@ export function ManagerView(props: Props) {
     const picked = await openDialog({
       directory: true,
       multiple: false,
-      title: '选择文件夹',
+      title: '打开文件夹',
     })
     if (typeof picked !== 'string') return
     const trimmed = picked.replace(/[\\/]+$/, '')
-    const name = trimmed.split(/[\\/]/).pop() || picked
-    // 菜单贴在**刚才点菜单那一下**的位置（原生对话框不会改 pointerdown 记录）
-    setFolderMenu({ path: picked, name, x: lastPointRef.current.x, y: lastPointRef.current.y })
-  }, [])
+    gotoWithReveal(trimmed, trimmed.split(/[\\/]/).pop() || picked)
+  }, [gotoWithReveal])
 
   /**
    * 单击选择（用户 2026-10-24 定稿）：
@@ -1955,6 +1925,14 @@ export function ManagerView(props: Props) {
    * `mgr.scope` 的联合类型，访问 `.path` 会报 TS2339。
    */
   const browseScope = mgr.scope.kind === 'browse' ? mgr.scope : null
+  /**
+   * 当前正在看的**目录**（浏览模式或已入库目录），没有就是 `null`。
+   * 「文件 → 新建图库 / 加入图库」作用在它身上。
+   */
+  const curDir =
+    mgr.scope.kind === 'browse' || mgr.scope.kind === 'folder'
+      ? { path: mgr.scope.path, name: mgr.scope.name }
+      : null
 
   /**
    * 文件菜单的快捷键：`Ctrl+O` 打开文件夹、`Ctrl+P` 打印、`Delete` 删除。
@@ -2035,6 +2013,15 @@ export function ManagerView(props: Props) {
         canRescan={mgr.canRescan}
         hasSelection={selectedCount > 0}
         onOpenFolder={() => void pickOpenFolder()}
+        dirPath={curDir?.path ?? null}
+        dirName={curDir?.name ?? ''}
+        onNewLibraryFromDir={() => {
+          if (curDir) setNewLibFor({ path: curDir.path, folderName: curDir.name })
+        }}
+        onAddDirToLibrary={(id, name) => {
+          if (curDir) addDirToLibrary(curDir.path, 'existing', { id, name })
+        }}
+        libraries={mgr.libraries.map((l) => ({ id: l.id, name: l.name }))}
         // 文件级操作都作用在**当前选中**上（右键走各自的 cardCtxItems）
         onPrint={() => doPrint(selectedPaths)}
         onCopyTo={() => void doCopyTo(selectedPaths)}
@@ -2211,14 +2198,11 @@ export function ManagerView(props: Props) {
                       </button>
                     </>
                   )}
-                  <button
-                    type="button"
-                    className="pv-btn pv-btn-primary"
-                    onClick={() => setNewLibFor({ path: browseScope.path, folderName: browseScope.name })}
-                    title="扫描这个目录并加入图库（生成缩略图缓存，之后打开更快）"
-                  >
-                    加入图库…
-                  </button>
+                  {/*
+                    ⛔ 这里原来有个紫色「加入图库…」按钮（2026-10-30 用户要求删掉）。
+                    同一个动作已经收进「文件 → 新建图库 / 加入图库」——
+                    放在标题栏既抢眼又和菜单重复，而且只能"新建"，没法选已有图库。
+                  */}
                 </>
               ) : null}
             </div>
@@ -2497,48 +2481,6 @@ export function ManagerView(props: Props) {
           </span>
         )}
       </footer>
-
-      {/*
-        「打开文件夹」选完目录后的二选一菜单（用户 2026-10-30 定的流程）。
-        ⚠️ `ContextMenu` **不会**在 onSelect 后自己关，每条都要显式 `setFolderMenu(null)`,
-        否则会和新库命名对话框叠在一起。
-      */}
-      {folderMenu && (
-        <ContextMenu
-          key={`folder-${folderMenu.x},${folderMenu.y}`}
-          position={{ x: folderMenu.x, y: folderMenu.y }}
-          onClose={() => setFolderMenu(null)}
-          items={[
-            {
-              id: 'folder-new-lib',
-              label: '新建图库',
-              hint: folderMenu.name,
-              onSelect: () => {
-                const m = folderMenu
-                setFolderMenu(null)
-                addDirToLibrary(m.path, 'new')
-              },
-            },
-            {
-              id: 'folder-exist-lib',
-              label: '加入图库',
-              children:
-                mgr.libraries.length > 0
-                  ? mgr.libraries.map((l) => ({
-                      id: `folder-lib-${l.id}`,
-                      // 不显示张数（用户 2026-10-30 明确要求），只要图库名
-                      label: l.name,
-                      onSelect: () => {
-                        const m = folderMenu
-                        setFolderMenu(null)
-                        addDirToLibrary(m.path, 'existing', { id: l.id, name: l.name })
-                      },
-                    }))
-                  : [{ id: 'folder-lib-none', label: '（还没有图库）', disabled: true }],
-            },
-          ]}
-        />
-      )}
 
       {/* 「加进新图库…」的名字输入框 */}
       {newLibFor && (

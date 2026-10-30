@@ -78,6 +78,36 @@
   border-radius: 8px;
   box-shadow: var(--pv-shadow-lg);
 }
+/* ── 顶栏菜单的二级子菜单（2026-10-30）────────────────────────────
+   「文件 → 加入图库 ▸」用。只支持一层（和 ContextMenu 的约定一致）。
+   显隐完全交给 CSS `:hover`：不用 JS 管状态，鼠标移开自动收，不会残留。 */
+.pv-mg-subwrap {
+  position: relative;
+}
+.pv-mg-submenu {
+  position: absolute;
+  top: -5px;
+  left: 100%;
+  z-index: 41;
+  display: none;
+  min-width: 150px;
+  padding: 4px;
+  background: var(--pv-bg-surface);
+  border: 1px solid var(--pv-border);
+  border-radius: 8px;
+  box-shadow: var(--pv-shadow-lg);
+}
+/* 悬停整行（含子菜单）就展开 —— 移到子菜单上时仍算在 wrap 内 */
+.pv-mg-subwrap:hover > .pv-mg-submenu {
+  display: block;
+}
+.pv-mg-subcaret {
+  margin-left: auto;
+  padding-left: 10px;
+  color: var(--pv-text-tertiary);
+  font-size: 12px;
+}
+
 .pv-mg-menuitem {
   display: flex;
   align-items: center;
