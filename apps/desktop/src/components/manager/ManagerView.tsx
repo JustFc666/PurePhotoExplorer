@@ -261,6 +261,18 @@ export function ManagerView(props: Props) {
    * 所以用自己的 [`PromptDialog`]。
    */
   const [newLibFor, setNewLibFor] = useState<{ path: string; folderName: string } | null>(null)
+  /**
+   * 「打开文件夹」选完目录后弹出的二选一菜单（新建图库 / 加入图库 ▸）。
+   *
+   * 用户 2026-10-30 定的流程：文件夹选好之后再问"要新建还是加进已有的"，
+   * 而不是在文件菜单里先摊一堆「加进已有图库 · xxx」。
+   */
+  const [folderMenu, setFolderMenu] = useState<{
+    path: string
+    name: string
+    x: number
+    y: number
+  } | null>(null)
 
   /**
    * 侧栏「图库 +」：建一个**空的**图库。
@@ -580,8 +592,8 @@ export function ManagerView(props: Props) {
    * - `new`      弹输入框自定义图库名
    * - `existing` 直接挂到指定的已有图库
    *
-   * ⭐ 这里是**唯一**的入口，`文件 → 加进图库` 三条和目录卡片右键都用它，
-   * 免得两处行为漂移（以前顶栏只会「用文件夹名」，右键才有另外两种）。
+   * ⭐ 目录卡片右键、侧栏目录右键都走这里 —— **同一个函数**，行为不会两处漂移。
+   * 文件菜单不进这里：它先让你选目录，再问「新建 / 加入已有」，见 `folderMenu`。
    */
   const addDirToLibrary = useCallback(
     (
@@ -611,31 +623,23 @@ export function ManagerView(props: Props) {
   )
 
   /**
-   * 文件菜单那三条：先弹目录选择框，再按选中方式入库。
+   * 最近一次按下的视口坐标。
    *
-   * （文件菜单里没有"当前目录"这个上下文，所以必须先问是哪个目录；
-   *   目录卡片右键则是已知路径，直接进 `addDirToLibrary`。）
+   * 用来把「选完文件夹后的二选一菜单」贴到用户刚点的地方 ——
+   * 顶栏菜单项的 `onSelect` 拿不到事件对象，原生目录对话框又不会带坐标回来。
+   * 捕获阶段监听，代价只有一次赋值。
    */
-  const pickFolderForLibrary = useCallback(
-    async (mode: 'name' | 'new' | 'existing', lib?: { id: number; name: string }) => {
-      const picked = await openDialog({
-        directory: true,
-        multiple: false,
-        title:
-          mode === 'new'
-            ? '选择要加进新图库的文件夹'
-            : mode === 'existing'
-              ? `选择要加进「${lib?.name ?? ''}」的文件夹`
-              : '选择要加入图库的文件夹',
-      })
-      if (typeof picked !== 'string') return
-      addDirToLibrary(picked, mode, lib)
-    },
-    [addDirToLibrary],
-  )
+  const lastPointRef = useRef({ x: 0, y: 0 })
+  useEffect(() => {
+    const onDown = (e: PointerEvent) => {
+      lastPointRef.current = { x: e.clientX, y: e.clientY }
+    }
+    window.addEventListener('pointerdown', onDown, true)
+    return () => window.removeEventListener('pointerdown', onDown, true)
+  }, [])
 
   /**
-   * 文件 →「打开文件夹…」：选一个目录**导航过去看**（Ctrl+O 的常规语义）。
+   * 文件 →「打开文件夹…」：选目录 → 弹出「新建图库 / 加入图库 ▸」二选一。
    *
    * ⛔ 不要复用 `pickFolder` —— 那个是「加入图库」（扫索引 + 生成缩略图缓存）。
    * 两个动作以前挤在一个「添加文件夹」里，看着像打开、实际在入库。
@@ -644,12 +648,14 @@ export function ManagerView(props: Props) {
     const picked = await openDialog({
       directory: true,
       multiple: false,
-      title: '打开文件夹',
+      title: '选择文件夹',
     })
     if (typeof picked !== 'string') return
     const trimmed = picked.replace(/[\\/]+$/, '')
-    gotoWithReveal(trimmed, trimmed.split(/[\\/]/).pop() || picked)
-  }, [gotoWithReveal])
+    const name = trimmed.split(/[\\/]/).pop() || picked
+    // 菜单贴在**刚才点菜单那一下**的位置（原生对话框不会改 pointerdown 记录）
+    setFolderMenu({ path: picked, name, x: lastPointRef.current.x, y: lastPointRef.current.y })
+  }, [])
 
   /**
    * 单击选择（用户 2026-10-24 定稿）：
@@ -1618,8 +1624,8 @@ export function ManagerView(props: Props) {
             mgr.libraries.length > 0
               ? mgr.libraries.map((l) => ({
                   id: `dir-lib-${l.id}`,
+                  // 不显示张数（用户 2026-10-30：二级菜单里只要图库名）
                   label: l.name,
-                  hint: `${l.count} 张`,
                   onSelect: () => addDirToLibrary(dirPath, 'existing', { id: l.id, name: l.name }),
                 }))
               : [{ id: 'dir-lib-none', label: '（还没有其他图库）', disabled: true }],
@@ -2029,12 +2035,6 @@ export function ManagerView(props: Props) {
         canRescan={mgr.canRescan}
         hasSelection={selectedCount > 0}
         onOpenFolder={() => void pickOpenFolder()}
-        onAddToLibraryByName={() => void pickFolderForLibrary('name')}
-        onAddToNewLibrary={() => void pickFolderForLibrary('new')}
-        onAddToExistingLibrary={(id, name) =>
-          void pickFolderForLibrary('existing', { id, name })
-        }
-        libraries={mgr.libraries.map((l) => ({ id: l.id, name: l.name, count: l.count }))}
         // 文件级操作都作用在**当前选中**上（右键走各自的 cardCtxItems）
         onPrint={() => doPrint(selectedPaths)}
         onCopyTo={() => void doCopyTo(selectedPaths)}
@@ -2497,6 +2497,48 @@ export function ManagerView(props: Props) {
           </span>
         )}
       </footer>
+
+      {/*
+        「打开文件夹」选完目录后的二选一菜单（用户 2026-10-30 定的流程）。
+        ⚠️ `ContextMenu` **不会**在 onSelect 后自己关，每条都要显式 `setFolderMenu(null)`,
+        否则会和新库命名对话框叠在一起。
+      */}
+      {folderMenu && (
+        <ContextMenu
+          key={`folder-${folderMenu.x},${folderMenu.y}`}
+          position={{ x: folderMenu.x, y: folderMenu.y }}
+          onClose={() => setFolderMenu(null)}
+          items={[
+            {
+              id: 'folder-new-lib',
+              label: '新建图库',
+              hint: folderMenu.name,
+              onSelect: () => {
+                const m = folderMenu
+                setFolderMenu(null)
+                addDirToLibrary(m.path, 'new')
+              },
+            },
+            {
+              id: 'folder-exist-lib',
+              label: '加入图库',
+              children:
+                mgr.libraries.length > 0
+                  ? mgr.libraries.map((l) => ({
+                      id: `folder-lib-${l.id}`,
+                      // 不显示张数（用户 2026-10-30 明确要求），只要图库名
+                      label: l.name,
+                      onSelect: () => {
+                        const m = folderMenu
+                        setFolderMenu(null)
+                        addDirToLibrary(m.path, 'existing', { id: l.id, name: l.name })
+                      },
+                    }))
+                  : [{ id: 'folder-lib-none', label: '（还没有图库）', disabled: true }],
+            },
+          ]}
+        />
+      )}
 
       {/* 「加进新图库…」的名字输入框 */}
       {newLibFor && (
