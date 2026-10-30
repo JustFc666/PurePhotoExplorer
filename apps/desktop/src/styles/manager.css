@@ -649,7 +649,8 @@ body.is-col-resizing {
 }
 /* 文件夹卡片的面：和缩略图同尺寸（4:3），中间一个大图标 */
 .pv-mg-card.is-dir {
-  cursor: default;
+  /* 目录卡片现在也能被点中（选中 → 右键加进图库），所以是 pointer 不是 default */
+  cursor: pointer;
 }
 /* ⭐ 目录卡片也要 4:3：缩略图盒 `.pv-mg-thumbbox` 就是这个比例，
    目录不给高度的话会比照片卡片矮一截，混排时网格行高参差。 */

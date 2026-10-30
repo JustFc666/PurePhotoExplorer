@@ -91,20 +91,31 @@ export function PhotoCard({
   const renameDone = useRef(false)
 
   // 子文件夹：没有缩略图（进去才有内容），画一个文件夹图标即可。
-  // 双击进入由 `onOpen` 处理；单击不选中（目录没有索引操作可做）。
+  //
+  // ⭐ 2026-10-30：目录也要**能被选中**（用户：先选中再右键加进图库），
+  //    而且选中效果要和照片**完全一致** —— 同样的高亮边框 + 右上角圆形勾。
+  //    以前这里是个独立的小卡片：没有 onClick、没有 is-selected、没有勾，
+  //    于是"单击没反应"。
   if (item.kind === 'dir') {
     return (
       <div
-        className="pv-mg-card is-dir"
+        className={`pv-mg-card is-dir${selected ? ' is-selected' : ''}`}
         // 文件夹卡片也带索引：否则「当前可见的最大序号」会漏掉它们，
         // 浏览一个纯目录时预取窗口就永远算不出来
         data-idx={index}
         role="button"
         tabIndex={0}
+        aria-pressed={selected}
         title={`${item.path ?? item.name}\n双击进入`}
+        onClick={onToggle}
         onDoubleClick={onOpen}
         onKeyDown={(e) => {
           if (e.key === 'Enter') onOpen()
+          else if (e.key === ' ') {
+            e.preventDefault()
+            // 键盘路径没有鼠标事件，和照片卡片一样转一下复用同一套切换逻辑
+            onToggle(e as unknown as ReactMouseEvent)
+          }
         }}
       >
         <div className="pv-mg-cardimg">
@@ -112,6 +123,11 @@ export function PhotoCard({
             {/* 矢量图标：宽度跟着卡片档位（sm…xl）走，见 manager.css 的 `.pv-mg-diricon` */}
             <FolderIcon className="pv-mg-diricon" />
           </div>
+          {selectable && (
+            <span className="pv-mg-check" aria-hidden>
+              {selected ? '✓' : ''}
+            </span>
+          )}
         </div>
         <div className="pv-mg-cardname">{item.name}</div>
         <div className="pv-mg-cardmeta">文件夹 · 双击进入</div>
