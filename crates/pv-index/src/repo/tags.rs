@@ -192,12 +192,25 @@ pub fn counts_scoped(
     library_id: Option<i64>,
     dir_id: Option<i64>,
 ) -> Result<Vec<(i64, String, i64)>> {
+    /*
+     * `t.kind <> 'exif'` —— 侧栏「标签」分区**不列 EXIF 派生标签**（用户 2026-10-30）。
+     *
+     * `kind='exif'` 的那批全是**相机机型**（iQOO 10 / XT1650-05 / Canon EOS R5…）
+     * 和**地点**（上海 / 浦东 / 金桥…），一共 48 个，占侧栏一多半，把真正有用的
+     * AI 标签（人像 / 单人 / 二次元…）挤到下面去了。
+     *
+     * 它们不是没有出口：
+     *   机型 → 筛选栏「相机」下拉
+     *   地点 → 筛选栏「地点」下拉
+     * 所以从标签列表里拿掉不丢功能。
+     */
     let mut stmt = conn.prepare(
         "SELECT t.id, t.name, COUNT(DISTINCT it.image_id) AS n
            FROM tags t
            JOIN image_tags it ON it.tag_id = t.id
            JOIN images i ON i.id = it.image_id
-          WHERE (?1 IS NULL OR EXISTS (
+          WHERE t.kind <> 'exif'
+            AND (?1 IS NULL OR EXISTS (
                     SELECT 1 FROM library_folders lf
                      WHERE lf.library_id = ?1 AND lf.folder_id = i.dir_id))
             AND (?2 IS NULL OR i.dir_id = ?2)
@@ -503,5 +516,49 @@ mod l1_cleanup_tests {
 
         assert_eq!(drop_redundant_l1(&conn, &[]).unwrap(), 0);
         assert_eq!(names(&conn, img).len(), 2);
+    }
+}
+
+#[cfg(test)]
+mod scoped_counts_tests {
+    use super::*;
+    use crate::open_test_db;
+
+    /// 侧栏「标签」分区**不列 EXIF 派生标签**（机型 / 地点）。
+    ///
+    /// 用户 2026-10-30：48 个机型/城市名把真正的 AI 标签挤到下面去了。
+    /// 它们没丢：机型走筛选栏「相机」、地点走「地点」下拉。
+    #[test]
+    fn 侧栏标签不含机型与地点() {
+        let conn = open_test_db().unwrap();
+        conn.execute(
+            "INSERT OR IGNORE INTO volumes(id, volume_guid) VALUES (1, 'v1')",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT OR IGNORE INTO folders(id, volume_id, rel_path) VALUES (1, 1, 'root')",
+            [],
+        )
+        .unwrap();
+        conn.execute("INSERT INTO images(dir_id, rel_name) VALUES (1, 'a.jpg')", [])
+            .unwrap();
+        let img = conn.last_insert_rowid();
+
+        for (name, kind) in [("人像", "ai"), ("二次元", "ai"), ("iQOO 10", "exif"), ("上海", "exif")] {
+            let id = ensure(&conn, name, Some(kind)).unwrap();
+            add_image_tag(&conn, img, id, kind, Some(0.5)).unwrap();
+        }
+
+        let mut got: Vec<String> = counts_scoped(&conn, None, None)
+            .unwrap()
+            .into_iter()
+            .map(|(_, name, _)| name)
+            .collect();
+        got.sort();
+        let mut want = vec!["人像".to_string(), "二次元".to_string()];
+        want.sort();
+        assert_eq!(got, want);
+        assert!(!got.iter().any(|n| n == "iQOO 10" || n == "上海"));
     }
 }

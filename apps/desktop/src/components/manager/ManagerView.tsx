@@ -1903,8 +1903,6 @@ export function ManagerView(props: Props) {
           onSelectTag={mgr.selectTag}
           onRenameTag={(t) => setTagRenameFor({ id: t.id, name: t.name })}
           onDeleteTag={(t) => void doDeleteTag(t)}
-          places={mgr.places}
-          onSelectPlace={mgr.selectPlace}
           dropLibId={dropLibId}
           onDropPathOnLibrary={onDropPathOnLibrary}
         />

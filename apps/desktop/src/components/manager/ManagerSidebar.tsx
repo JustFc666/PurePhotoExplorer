@@ -19,7 +19,7 @@ import type { MouseEvent as ReactMouseEvent } from 'react'
 
 import { ConfirmDialog } from '../chrome/ConfirmDialog'
 import { ContextMenu, useContextMenu } from '../chrome/ContextMenu'
-import type { FolderNode, LibraryItem, PlaceItem, TagItem } from '../../ipc/manager'
+import type { FolderNode, LibraryItem, TagItem } from '../../ipc/manager'
 import { FS_COMPUTER_KEY, fsResolveDir, type FsNode, type TreeIcons } from '../../ipc/browse'
 import type { FsTreeApi } from '../../hooks/useFsTree'
 import { useShellIcons } from '../../hooks/useShellIcons'
@@ -383,10 +383,6 @@ interface Props {
   onRenameTag: (t: TagItem) => void
   /** 右键标签：删除整个标签 */
   onDeleteTag: (t: TagItem) => void
-  /** 全部地点 + 张数（侧栏「地点」分区，后端离线解析出的城市名） */
-  places: PlaceItem[]
-  /** 点地点 = 只看在那里拍的照片 */
-  onSelectPlace: (name: string) => void
 }
 
 /** 地址栏的悬停说明 —— 右键菜单是隐形的，得有个地方告诉用户它能干什么 */
@@ -434,8 +430,6 @@ export function ManagerSidebar({
   onSelectTag,
   onRenameTag,
   onDeleteTag,
-  places,
-  onSelectPlace,
 }: Props) {
   const { expand } = tree
   const computer = tree.roots.find((n) => n.kind === 'computer')
@@ -738,42 +732,6 @@ export function ManagerSidebar({
                 <span className="pv-mg-rowcount">{fmt(t.count)}</span>
               </div>
             ))
-          )}
-
-          {/*
-            地点分区（2026-10-19）：城市名是后端**离线地名库**从 GPS 算出来的，
-            只读 —— 没有右键菜单（用户改不了照片是在哪儿拍的）。
-          */}
-          {places.length > 0 && (
-            <>
-              <div className="pv-mg-taghead">
-                <span className="pv-mg-tagtitle">地点</span>
-                <span className="pv-mg-tagcount">{places.length}</span>
-              </div>
-              {places.map((p) => (
-                <div
-                  key={p.name}
-                  className={`pv-mg-row${
-                    scope.kind === 'place' && scope.name === p.name ? ' is-on' : ''
-                  }`}
-                  style={{ paddingLeft: 4 }}
-                  role="button"
-                  tabIndex={0}
-                  title={`只看在${p.name}拍的照片`}
-                  onClick={() => onSelectPlace(p.name)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') onSelectPlace(p.name)
-                  }}
-                >
-                  <span className="pv-mg-chev is-leaf" />
-                  <span className="pv-mg-ico-glyph" aria-hidden>
-                    📍
-                  </span>
-                  <span className="pv-mg-rowname">{p.name}</span>
-                  <span className="pv-mg-rowcount">{fmt(p.count)}</span>
-                </div>
-              ))}
-            </>
           )}
 
           {/* 内置的「全部照片」不是数据库里的行，是「不加任何条件」这个语义 */}
