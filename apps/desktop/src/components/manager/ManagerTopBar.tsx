@@ -169,6 +169,13 @@ interface Props {
   /** 能不能多选（浏览模式不可） */
   canSelect: boolean
   hasSelection: boolean
+  /**
+   * 选中有**文件**（不含目录）。
+   *
+   * ⚠️ 目录现在也能被选中（为了「加进图库」），但打印/复制/移动/删除都是
+   * 文件级动作 —— 拿目录路径过去只会得到「失败 1 张」这种莫名其妙的提示。
+   */
+  hasFileSelection: boolean
   /** 有可另存的目标（选中了图片）才启用「文件 → 另存为…」 */
   canSaveAs: boolean
   onSaveAs: () => void
@@ -223,6 +230,7 @@ export function ManagerTopBar(props: Props) {
     canRescan,
     canSelect,
     hasSelection,
+    hasFileSelection,
     canSaveAs,
     onSaveAs,
     onOpenFolder,
@@ -294,27 +302,27 @@ export function ManagerTopBar(props: Props) {
           label: '打印…',
           hint: 'Ctrl+P',
           // 打印的是**选中的那几张**（预览里可翻页），一张没选就无从下手
-          disabled: !hasSelection,
+          disabled: !hasFileSelection,
           separatorBefore: true,
           onSelect: onPrint,
         },
         {
           id: 'copy-to',
           label: '复制到文件夹…',
-          disabled: !hasSelection,
+          disabled: !hasFileSelection,
           onSelect: onCopyTo,
         },
         {
           id: 'move-to',
           label: '移动到文件夹…',
-          disabled: !hasSelection,
+          disabled: !hasFileSelection,
           onSelect: onMoveTo,
         },
         {
           id: 'delete',
           label: '删除…',
           hint: 'Delete',
-          disabled: !hasSelection,
+          disabled: !hasFileSelection,
           onSelect: onDeleteFile,
         },
         {

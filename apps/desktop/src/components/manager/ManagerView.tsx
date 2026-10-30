@@ -635,10 +635,20 @@ export function ManagerView(props: Props) {
    * - Ctrl / Shift / Cmd 保持原来的切换语义。
    * 浏览模式不参与选择。
    */
+  /**
+   * 单击选择。
+   *
+   * ⭐ 2026-10-30：**文件夹行也参与选择**（用户要求「选中目录再右键操作」）。
+   * 以前 `kind === 'dir'` 直接 return，于是目录卡片点一下毫无反应 ——
+   * 而「把这个目录加进图库」恰恰是最常做的事。
+   *
+   * ⚠️ 浏览模式（未入库）整体 `canSelect === false`（照片不参与批量操作），
+   * 但**目录必须例外**，否则浏览模式里选不了文件夹，右键只能作用于单张。
+   */
   const toggle = useCallback(
     (item: GridItem, e: ReactMouseEvent) => {
-      // 文件夹行不参与选择（它没有文件级操作）
-      if (!mgr.canSelect || item.kind === 'dir') return
+      const dir = item.kind === 'dir'
+      if (!dir && !mgr.canSelect) return
       if (e.ctrlKey || e.metaKey || e.shiftKey) mgr.toggleSelect(item.key)
       else if (selected.has(item.key)) mgr.clearSelection()
       else mgr.toggleSelect(item.key)
@@ -649,6 +659,12 @@ export function ManagerView(props: Props) {
   const selectedItems = mgr.items.filter((i) => selected.has(i.key))
   const selectedBytes = selectedItems.reduce((sum, i) => sum + (i.size ?? 0), 0)
   const selectedCount = selectedItems.length
+  /** 选中里的**文件**（目录不参与导出/打印/删除这些文件级动作） */
+  const selectedFileItems = useMemo(
+    () => selectedItems.filter((i) => i.kind !== 'dir'),
+    [selectedItems],
+  )
+  const selectedFileCount = selectedFileItems.length
   /** 选中项是否**全都**已打旗标（决定顶栏按钮是「标记」还是「取消标记」） */
 
   // ── 批量导出 ──
@@ -917,6 +933,8 @@ export function ManagerView(props: Props) {
 
   /** 顶栏按钮用：当前**选中**的行 */
   const selectedPaths = useMemo(() => filePathsOf(selectedItems), [selectedItems])
+  /** 只含文件路径 —— 「导出」这类动作不能吃到目录 */
+  const selectedFilePaths = useMemo(() => filePathsOf(selectedFileItems), [selectedFileItems])
 
   const doExport = useCallback(async (paths: string[]) => {
     if (exporting) return
@@ -1508,7 +1526,8 @@ export function ManagerView(props: Props) {
       if (already) {
         targets = mgr.items.filter((i) => selected.has(i.key))
       } else {
-        if (mgr.canSelect) mgr.selectOnly(item.key)
+        // 目录在浏览模式也允许被设成唯一选中（`canSelect` 那边是给照片用的）
+        if (mgr.canSelect || item.kind === 'dir') mgr.selectOnly(item.key)
         targets = [item]
       }
       setCardCtxItems(targets)
@@ -1561,27 +1580,40 @@ export function ManagerView(props: Props) {
      *
      * 目录不参与多选（`toggle` 对 dir 直接 return），所以这里只需看单个目标。
      */
-    const only = cardCtxItems.length === 1 ? cardCtxItems[0] : undefined
-    const dirOnly = only?.kind === 'dir' ? only : null
-    if (dirOnly?.path) {
-      const dirPath = dirOnly.path
-      const dirName = dirOnly.name
+    /*
+     * 目录卡片：右键给「加进图库」三选一 + 浏览。
+     *
+     * ⭐ 2026-10-30 起目录也能**多选**（`toggle` 允许 dir 参与选择）——
+     * 选了几个目录再右键，三条加库动作就对整批生效：
+     * 「用文件夹名」每个目录各建一个库；「加入图库」把它们都挂到同一个库。
+     * 「新建图库」只能对一个目录（多个目录该叫什么名？无从判断），多选时置灰。
+     */
+    const allDirs = cardCtxItems.length > 0 && cardCtxItems.every((i) => i.kind === 'dir')
+    const dirs = cardCtxItems.filter((i) => i.kind === 'dir' && i.path)
+    if (allDirs) {
+      const one = dirs.length === 1 ? dirs[0] : null
       return [
         {
           id: 'dir-add-name',
-          label: '加进图库：用文件夹名',
-          hint: dirName,
-          onSelect: () => addDirToLibrary(dirPath, 'name'),
+          label:
+            dirs.length > 1 ? `加进图库：各自用文件夹名（${dirs.length} 个）` : '加进图库：用文件夹名',
+          hint: one?.name,
+          onSelect: () => {
+            for (const d of dirs) if (d.path) addDirToLibrary(d.path, 'name')
+          },
         },
         {
           id: 'dir-add-new',
           label: '加进新图库…',
-          hint: '自定义名称',
-          onSelect: () => addDirToLibrary(dirPath, 'new'),
+          hint: one ? '自定义名称' : '只能选一个目录',
+          disabled: !one,
+          onSelect: () => {
+            if (one?.path) addDirToLibrary(one.path, 'new')
+          },
         },
         {
           id: 'dir-add-existing',
-          label: '加进已有图库',
+          label: dirs.length > 1 ? `加入图库（${dirs.length} 个目录）` : '加进已有图库',
           // 子菜单只支持一层；一条图库都没有时给一条禁用说明项
           children:
             mgr.libraries.length > 0
@@ -1589,16 +1621,23 @@ export function ManagerView(props: Props) {
                   id: `dir-lib-${l.id}`,
                   // 不显示张数（用户 2026-10-30：二级菜单里只要图库名）
                   label: l.name,
-                  onSelect: () => addDirToLibrary(dirPath, 'existing', { id: l.id, name: l.name }),
+                  onSelect: () => {
+                    for (const d of dirs) {
+                      if (d.path) addDirToLibrary(d.path, 'existing', { id: l.id, name: l.name })
+                    }
+                  },
                 }))
               : [{ id: 'dir-lib-none', label: '（还没有其他图库）', disabled: true }],
         },
         {
           id: 'dir-browse',
           label: '浏览此目录',
-          hint: '不入库',
+          hint: one ? '不入库' : '只能选一个目录',
           separatorBefore: true,
-          onSelect: () => gotoWithReveal(dirPath, dirName),
+          disabled: !one,
+          onSelect: () => {
+            if (one?.path) gotoWithReveal(one.path, one.name)
+          },
         },
       ]
     }
@@ -1979,10 +2018,10 @@ export function ManagerView(props: Props) {
     // 空选中时**静默**（不要去弹「这些图片没有可用的本地路径」——
     // 用户只是随手按了下快捷键，不是要执行操作）
     print: () => {
-      if (selectedPaths.length > 0) doPrint(selectedPaths)
+      if (selectedFilePaths.length > 0) doPrint(selectedFilePaths)
     },
     del: () => {
-      if (selectedItems.length > 0) void doDelete(selectedItems)
+      if (selectedFileItems.length > 0) void doDelete(selectedFileItems)
     },
   }
   useEffect(() => {
@@ -2040,6 +2079,7 @@ export function ManagerView(props: Props) {
         busy={mgr.busy}
         canRescan={mgr.canRescan}
         hasSelection={selectedCount > 0}
+        hasFileSelection={selectedFileCount > 0}
         onOpenFolder={() => void pickOpenFolder()}
         dirPath={curDir?.path ?? null}
         dirName={curDir?.name ?? ''}
@@ -2051,10 +2091,10 @@ export function ManagerView(props: Props) {
         }}
         libraries={mgr.libraries.map((l) => ({ id: l.id, name: l.name }))}
         // 文件级操作都作用在**当前选中**上（右键走各自的 cardCtxItems）
-        onPrint={() => doPrint(selectedPaths)}
-        onCopyTo={() => void doCopyTo(selectedPaths)}
-        onMoveTo={() => void doMoveTo(selectedItems)}
-        onDeleteFile={() => void doDelete(selectedItems)}
+        onPrint={() => doPrint(selectedFilePaths)}
+        onCopyTo={() => void doCopyTo(selectedFilePaths)}
+        onMoveTo={() => void doMoveTo(selectedFileItems)}
+        onDeleteFile={() => void doDelete(selectedFileItems)}
         onRescan={() => void mgr.rescan()}
         onSelectAll={mgr.selectAll}
         onClearSelection={mgr.clearSelection}
@@ -2210,16 +2250,21 @@ export function ManagerView(props: Props) {
                     浏览模式也显示已选统计 + 导出：导出/转格式/摆正/打印都是**文件级**操作，
                     不需要索引行。评分/标记/删除/重命名要索引 id，这里不给。
                   */}
-                  {selectedCount > 0 && (
+                  {/*
+                    只统计**文件**：目录现在也能被选中（用于「加进图库」），
+                    但它不能导出 —— 把目录路径塞进 `doExport` 会得到
+                    「已复制 0 个」这种莫名其妙的提示。
+                  */}
+                  {selectedFileCount > 0 && (
                     <>
                       <span className="pv-mg-dim">
-                        已选 {selectedCount} 张 · {formatFileSize(selectedBytes)}
+                        已选 {selectedFileCount} 张 · {formatFileSize(selectedBytes)}
                       </span>
                       <button
                         type="button"
                         className="pv-btn"
                         disabled={exporting}
-                        onClick={() => void doExport(selectedPaths)}
+                        onClick={() => void doExport(selectedFilePaths)}
                         title="把选中的原图复制到你指定的文件夹（只复制，不改动原图）"
                       >
                         {exporting ? '导出中…' : '导出'}
@@ -2411,7 +2456,8 @@ export function ManagerView(props: Props) {
                   tier={mgr.tier}
                   index={i}
                   selected={selected.has(item.key)}
-                  selectable={mgr.canSelect}
+                  // 目录即便在浏览模式也可选（见 `toggle` 的注释）
+                  selectable={mgr.canSelect || item.kind === 'dir'}
                   // 只有被原地改写过的文件才有非零版本号 → 其余卡片完全不动
                   rev={mgr.thumbRevOf(item.path)}
                   // 窗口内的直接预取；`ThumbCanvas` 自己还会按「真的可见」提权
@@ -2444,7 +2490,7 @@ export function ManagerView(props: Props) {
                     }}
                     title={item.path ?? item.name}
                   >
-                    {mgr.canSelect ? (
+                    {mgr.canSelect || item.kind === 'dir' ? (
                       <span className={`pv-mg-listcheck${on ? ' is-on' : ''}`} aria-hidden>
                         {on ? '✓' : ''}
                       </span>
@@ -2505,7 +2551,9 @@ export function ManagerView(props: Props) {
         */}
         {selectedCount > 0 && (
           <span className="pv-mg-dim pv-mg-selinfo">
-            已选 {selectedCount} 张 · {formatFileSize(selectedBytes)}
+            {selectedItems.every((i) => i.kind === 'dir')
+              ? `已选 ${selectedCount} 个文件夹`
+              : `已选 ${selectedCount} 张 · ${formatFileSize(selectedBytes)}`}
           </span>
         )}
       </footer>
