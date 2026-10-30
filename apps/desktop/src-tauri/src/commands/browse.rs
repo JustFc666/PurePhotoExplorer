@@ -253,7 +253,15 @@ fn probe_size(
         return (None, None);
     }
     pv_decode::probe_dimensions(reg, Path::new(path))
-        .map(|(w, h)| (Some(i64::from(w)), Some(i64::from(h))))
+        .map(|(w, h)| {
+            // 6/8（竖拍）要把宽高换过来 —— 这和 `Store::probe_dims` 是同一个约定：
+            // DTO 里的宽高一律是**显示尺寸**，否则浏览模式的卡片比例也是反的。
+            let (w, h) = (i64::from(w), i64::from(h));
+            match pv_meta::read_orientation(Path::new(path)) {
+                Some(6) | Some(8) => (Some(h), Some(w)),
+                _ => (Some(w), Some(h)),
+            }
+        })
         .unwrap_or((None, None))
 }
 

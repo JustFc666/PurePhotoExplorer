@@ -351,6 +351,17 @@ pub async fn manager_open(
             Ok(())
         })
         .map_err(merr)?;
+    /*
+     * EXIF 方向回填（2026-10-30）：老库的 `orientation` 全是 NULL，
+     * `width/height` 又是按**原始像素**填的 —— 竖拍照片一直是横的。
+     * 这一步读一次 EXIF、写方向，并把 6/8 那批的宽高换回来（幂等，补完即空）。
+     */
+    state
+        .with_manager_mut(|s| {
+            s.backfill_orientation(2000);
+            Ok(())
+        })
+        .map_err(merr)?;
     // 地点同样要回填（坐标 → 离线城市名）。放在时间之后：`image_places`
     // 读的是 `image_exif` 里已有的 GPS，本身不读文件，代价极小（纯查表）。
     state

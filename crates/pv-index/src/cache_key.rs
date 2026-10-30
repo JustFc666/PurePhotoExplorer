@@ -115,6 +115,18 @@ impl CacheKey {
 pub fn compute_key(source: &CacheSource, tier: ThumbTier) -> CacheKey {
     let mut hasher = blake3::Hasher::new();
 
+    /*
+     * 解码流水线的**版本盐**。
+     *
+     * 缓存键的主要内容是「路径 + 大小 + mtime」，解码算法本身不在里面 ——
+     * 于是算法一改（比如 2026-10-30 开始按 EXIF 方向摆正），磁盘上那些
+     * 旧缩略图**还会继续命中**：新图是正的、老图是躺的，看起来像随机故障。
+     *
+     * ⛔ 改了任何影响「像素长什么样」的东西（方向、色彩、压缩参数、缩放算法）
+     *    都要把这里 +1，让旧条目自然淘汰（不删文件，按需重算）。
+     */
+    hasher.update(b"decode-v2-exif-orient");
+
     match source {
         CacheSource::Plain { path, size, mtime_ns } => {
             hasher.update(b"plain");

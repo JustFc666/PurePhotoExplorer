@@ -37,7 +37,8 @@ pub use encode::{
 pub use raw::EmbeddedPreviewPipeline;
 pub use thumbs::{decode_scaled, make_thumbnail, make_thumbnail_with_bitmap, probe_dimensions};
 pub use transform::{
-    crop_normalized, crop_to_aspect, rotate180, rotate90_ccw, rotate90_cw, rotate90_steps,
+    apply_orientation, crop_normalized, crop_to_aspect, flip_horizontal, flip_vertical, rotate180,
+    rotate90_ccw, rotate90_cw, rotate90_steps,
 };
 
 /// 把 io 错误转成领域错误（带路径上下文）。

@@ -63,6 +63,102 @@ pub fn rotate90_ccw(src: &RgbaImage) -> RgbaImage {
     out
 }
 
+/// 水平镜像（左右翻转）。
+pub fn flip_horizontal(src: &RgbaImage) -> RgbaImage {
+    let (w, h) = (src.width, src.height);
+    let mut out = RgbaImage {
+        width: w,
+        height: h,
+        data: vec![0u8; src.data.len()],
+    };
+    let row = (w * 4) as usize;
+    for y in 0..h {
+        let base = y as usize * row;
+        for x in 0..w {
+            let si = base + x as usize * 4;
+            let di = base + (w - 1 - x) as usize * 4;
+            out.data[di..di + 4].copy_from_slice(&src.data[si..si + 4]);
+        }
+    }
+    out
+}
+
+/// 垂直镜像（上下翻转）。
+pub fn flip_vertical(src: &RgbaImage) -> RgbaImage {
+    let (w, h) = (src.width, src.height);
+    let mut out = RgbaImage {
+        width: w,
+        height: h,
+        data: vec![0u8; src.data.len()],
+    };
+    let row = (w * 4) as usize;
+    for y in 0..h {
+        let si = y as usize * row;
+        let di = (h - 1 - y) as usize * row;
+        out.data[di..di + row].copy_from_slice(&src.data[si..si + row]);
+    }
+    out
+}
+
+/// 按 EXIF `Orientation`（1~8）把**存储像素**摆正成**显示像素**。
+///
+/// ## 为什么必须有这一层（2026-10-30）
+/// 手机竖拍的照片，传感器写出来的是**横的像素** + 一个 `Orientation=6`
+/// 的小标签，让看图软件替它转 90°。我们之前既不读这个标签、也不转 ——
+/// 于是缩略图/看图/打印/人脸检测里，这类照片全是**躺倒**的
+/// （测试库里 353 张 JPEG 有 17 张是这样）。
+///
+/// ## 八种取值的含义（`dst(x,y) ← src(?, ?)`）
+/// | 值 | 含义 | 源坐标 |
+/// |---|---|---|
+/// | 1 | 正常 | (x, y) |
+/// | 2 | 水平镜像 | (w-1-x, y) |
+/// | 3 | 旋转 180° | (w-1-x, h-1-y) |
+/// | 4 | 垂直镜像 | (x, h-1-y) |
+/// | 5 | 沿主对角线转置 | (y, x) |
+/// | 6 | 顺时针 90° | (y, h-1-x) |
+/// | 7 | 沿副对角线转置 | (w-1-y, h-1-x) |
+/// | 8 | 逆时针 90° | (w-1-y, x) |
+///
+/// ⚠️ 5~8 会把宽高**互换**，所以 `dst` 的尺寸要按 `swap` 算 ——
+/// 忘了这一步就会出现半截黑边或越界。
+///
+/// ⛔ 不要用「链式调用 rotate90_cw + flip」来实现：5/7 的组合顺序很容易搞反，
+/// 而错了以后**图看起来"还是那张脸"**（只是镜像了），肉眼极难发现。
+pub fn apply_orientation(src: &RgbaImage, orientation: u16) -> RgbaImage {
+    if orientation <= 1 || orientation > 8 {
+        return src.clone();
+    }
+    let (w, h) = (src.width, src.height);
+    let swap = matches!(orientation, 5..=8);
+    let (dw, dh) = if swap { (h, w) } else { (w, h) };
+    let mut out = RgbaImage {
+        width: dw,
+        height: dh,
+        data: vec![0u8; src.data.len()],
+    };
+    let srow = (w * 4) as usize;
+    let drow = (dw * 4) as usize;
+    for y in 0..dh {
+        for x in 0..dw {
+            let (sx, sy) = match orientation {
+                2 => (w - 1 - x, y),
+                3 => (w - 1 - x, h - 1 - y),
+                4 => (x, h - 1 - y),
+                5 => (y, x),
+                6 => (y, h - 1 - x),
+                7 => (w - 1 - y, h - 1 - x),
+                8 => (w - 1 - y, x),
+                _ => (x, y),
+            };
+            let si = sy as usize * srow + sx as usize * 4;
+            let di = y as usize * drow + x as usize * 4;
+            out.data[di..di + 4].copy_from_slice(&src.data[si..si + 4]);
+        }
+    }
+    out
+}
+
 /// 按 `steps` 个 90° 顺时针旋转（`steps` 对 4 取模，负数按逆时针处理）。
 pub fn rotate90_steps(src: &RgbaImage, steps: i32) -> RgbaImage {
     match steps.rem_euclid(4) {
@@ -367,5 +463,121 @@ mod tests {
         let out = crop_normalized(&src, 0.0, 0.0, 1.0, 1.0).unwrap();
         assert_eq!((out.width, out.height), (4, 3));
         assert_eq!(out.data, src.data);
+    }
+    // ── EXIF 方向（2026-10-30）─────────────────────────────────────
+
+    /// 造一张「像素值 = 行*10 + 列」的 w×h 图，宽高不等、每格唯一，
+    /// 方向转错立刻能看出来（镜像/转置的顺序错误在纯色图上不可见）。
+    fn grid(w: u32, h: u32) -> RgbaImage {
+        let mut data = vec![0u8; (w * h * 4) as usize];
+        for y in 0..h {
+            for x in 0..w {
+                let i = ((y * w + x) * 4) as usize;
+                data[i] = (y * 10 + x) as u8; // R = 编号
+                data[i + 3] = 255;
+            }
+        }
+        RgbaImage { width: w, height: h, data }
+    }
+
+    fn red_at(img: &RgbaImage, x: u32, y: u32) -> u8 {
+        img.data[((y * img.width + x) * 4) as usize]
+    }
+
+    /// 8 种取值逐个对照 EXIF 规范。源图 3×2：
+    /// ```
+    /// 0 1 2
+    /// 10 11 12
+    /// ```
+    #[test]
+    fn 八种方向都正确() {
+        let src = grid(3, 2); // w=3 h=2
+
+        // 1 正常
+        let o1 = apply_orientation(&src, 1);
+        assert_eq!((o1.width, o1.height), (3, 2));
+        assert_eq!(red_at(&o1, 0, 0), 0);
+        assert_eq!(red_at(&o1, 2, 1), 12);
+
+        // 2 水平镜像：左右互换，尺寸不变
+        let o2 = apply_orientation(&src, 2);
+        assert_eq!((o2.width, o2.height), (3, 2));
+        assert_eq!(red_at(&o2, 0, 0), 2);
+        assert_eq!(red_at(&o2, 2, 0), 0);
+
+        // 3 旋转 180
+        let o3 = apply_orientation(&src, 3);
+        assert_eq!((o3.width, o3.height), (3, 2));
+        assert_eq!(red_at(&o3, 0, 0), 12);
+        assert_eq!(red_at(&o3, 2, 1), 0);
+
+        // 4 垂直镜像：上下互换
+        let o4 = apply_orientation(&src, 4);
+        assert_eq!((o4.width, o4.height), (3, 2));
+        assert_eq!(red_at(&o4, 0, 0), 10);
+        assert_eq!(red_at(&o4, 0, 1), 0);
+
+        // 5 沿主对角线转置：尺寸互换，src(x,y) 到 dst(y,x)
+        let o5 = apply_orientation(&src, 5);
+        assert_eq!((o5.width, o5.height), (2, 3));
+        assert_eq!(red_at(&o5, 0, 0), 0);
+        assert_eq!(red_at(&o5, 1, 0), 10, "src 第 0 列第 1 行 → dst 第 1 列第 0 行");
+        assert_eq!(red_at(&o5, 0, 2), 2);
+
+        // 6 顺时针 90°：src 左下角 → dst 左上角
+        let o6 = apply_orientation(&src, 6);
+        assert_eq!((o6.width, o6.height), (2, 3));
+        assert_eq!(red_at(&o6, 0, 0), 10, "竖拍照片最常见的一种");
+        assert_eq!(red_at(&o6, 1, 0), 0);
+        assert_eq!(red_at(&o6, 0, 2), 12);
+        assert_eq!(red_at(&o6, 1, 2), 2);
+
+        // 7 沿副对角线转置
+        let o7 = apply_orientation(&src, 7);
+        assert_eq!((o7.width, o7.height), (2, 3));
+        assert_eq!(red_at(&o7, 0, 0), 12);
+        assert_eq!(red_at(&o7, 1, 2), 0);
+
+        // 8 逆时针 90°：src 右上角 → dst 左上角
+        let o8 = apply_orientation(&src, 8);
+        assert_eq!((o8.width, o8.height), (2, 3));
+        assert_eq!(red_at(&o8, 0, 0), 2);
+        assert_eq!(red_at(&o8, 1, 0), 12);
+        assert_eq!(red_at(&o8, 0, 2), 0);
+        assert_eq!(red_at(&o8, 1, 2), 10);
+    }
+
+    /// 6 / 8 互逆：转过去再转回来必须是原图（逐字节相等）。
+    #[test]
+    fn 旋转九十度可逆() {
+        let src = grid(5, 3);
+        let back = apply_orientation(&apply_orientation(&src, 6), 8);
+        assert_eq!((back.width, back.height), (5, 3));
+        assert_eq!(back.data, src.data);
+    }
+
+    /// 非法/缺失值（0、9、255）按「正常」处理，不 panic。
+    #[test]
+    fn 非法方向当正常处理() {
+        let src = grid(3, 2);
+        for o in [0u16, 9, 255] {
+            let out = apply_orientation(&src, o);
+            assert_eq!((out.width, out.height), (3, 2));
+            assert_eq!(out.data, src.data, "方向 {o} 应该原样返回");
+        }
+    }
+
+    /// 1×1 和 1×N 这种退化尺寸不能越界 panic。
+    #[test]
+    fn 退化尺寸不越界() {
+        for (w, h) in [(1u32, 1u32), (1, 5), (5, 1)] {
+            let src = grid(w, h);
+            for o in 1..=8u16 {
+                let out = apply_orientation(&src, o);
+                let expect = if o >= 5 { (h, w) } else { (w, h) };
+                assert_eq!((out.width, out.height), expect, "{w}x{h} 方向 {o}");
+                assert_eq!(out.data.len(), src.data.len());
+            }
+        }
     }
 }

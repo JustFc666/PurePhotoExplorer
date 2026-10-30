@@ -214,24 +214,21 @@ fn auto_orient_impl(
             out.skipped += 1; // 没有方向标签 = 已经摆正，无事可做
             continue;
         };
-        // 1 = 正常；其余按需要转的角度映射
-        let steps = match orientation {
-            1 => {
-                out.skipped += 1;
-                continue;
-            }
-            3 => 2,
-            6 => 1,
-            8 => 3,
-            2 | 4 | 5 | 7 => {
-                out.fail(src, format!("方向 {orientation} 需要镜像翻转，暂不支持"));
-                continue;
-            }
-            other => {
-                out.fail(src, format!("无法识别的方向值 {other}"));
-                continue;
-            }
-        };
+        // 1 = 正常；其余都要「重写一遍，把方向烤进像素」
+        //
+        // ⭐ 2026-10-30：解码层已经按 Orientation 摆正了（`registry.decode`），
+        //    所以这里的几何步数就是 **0** —— 再传 1/2/3 会**转两次**。
+        //    写入时方向标记统一重置为 1（`save_impl` 里保证）。
+        //    顺带：镜像类（2/4/5/7）现在也能处理了，以前是直接报不支持。
+        if orientation == 1 {
+            out.skipped += 1;
+            continue;
+        }
+        if !(2..=8).contains(&orientation) {
+            out.fail(src, format!("无法识别的方向值 {orientation}"));
+            continue;
+        }
+        let steps = 0;
 
         let target = if overwrite {
             None

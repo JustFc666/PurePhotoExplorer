@@ -67,6 +67,75 @@ pub fn update_dimensions(conn: &Connection, id: i64, width: i64, height: i64) ->
     Ok(())
 }
 
+/// 写入 EXIF `Orientation`（1~8）。`NULL` = 还没读过。
+///
+/// ⭐ 与 `update_dimensions` 配套使用：`width/height` 存的是**显示尺寸**
+///（6/8 已把宽高换过来），所以这两个值必须来自同一次探测。
+pub fn set_orientation(conn: &Connection, id: i64, orientation: u16) -> Result<()> {
+    conn.execute(
+        "UPDATE images SET orientation = ?2 WHERE id = ?1",
+        params![id, i64::from(orientation)],
+    )?;
+    Ok(())
+}
+
+/// 读一行的方向（`None` = 还没读过）。
+pub fn get_orientation(conn: &Connection, id: i64) -> Result<Option<i64>> {
+    Ok(conn.query_row(
+        "SELECT orientation FROM images WHERE id = ?1",
+        params![id],
+        |r| r.get::<_, Option<i64>>(0),
+    )?)
+}
+
+/// 把方向清回「没读过」（测试/重扫用）。
+pub fn clear_orientation(conn: &Connection, id: i64) -> Result<()> {
+    conn.execute(
+        "UPDATE images SET orientation = NULL WHERE id = ?1",
+        params![id],
+    )?;
+    Ok(())
+}
+
+/// 还没读过方向的 id（老库升级用）。
+///
+/// 这些行的 `width/height` 是**按原始像素**填的 —— 6/8 的竖拍照片是反的，
+/// 所以回填时除了写方向，还要把宽高换回来。
+pub fn list_ids_missing_orientation(conn: &Connection, limit: i64) -> Result<Vec<i64>> {
+    // 顺带把非法值（0 / >8，坏 EXIF）也捞出来 —— 它们会被归一成 1，
+    // 否则库里会一直留着 orientation=0 这种没有意义的值。
+    let mut stmt = conn.prepare(
+        "SELECT id FROM images
+          WHERE orientation IS NULL OR orientation < 1 OR orientation > 8
+          ORDER BY id LIMIT ?1",
+    )?;
+    let ids = stmt
+        .query_map(params![limit], |r| r.get::<_, i64>(0))?
+        .collect::<std::result::Result<Vec<_>, _>>()?;
+    Ok(ids)
+}
+
+/// 某个目录里还没读过方向的 id（重扫这个目录时顺手补上）。
+pub fn list_ids_in_dir_missing_orientation(conn: &Connection, dir_id: i64) -> Result<Vec<i64>> {
+    let mut stmt = conn.prepare(
+        "SELECT id FROM images WHERE dir_id = ?1 AND orientation IS NULL ORDER BY id",
+    )?;
+    let ids = stmt
+        .query_map(params![dir_id], |r| r.get::<_, i64>(0))?
+        .collect::<std::result::Result<Vec<_>, _>>()?;
+    Ok(ids)
+}
+
+/// 还有多少行没读过方向。
+pub fn count_missing_orientation(conn: &Connection) -> Result<i64> {
+    Ok(conn.query_row(
+        "SELECT COUNT(*) FROM images
+          WHERE orientation IS NULL OR orientation < 1 OR orientation > 8",
+        [],
+        |r| r.get(0),
+    )?)
+}
+
 /// 写入拍摄时间，并标记「这一行的 EXIF 已检查过」。
 ///
 /// - `taken_at = Some(ts)` → 写入并标记

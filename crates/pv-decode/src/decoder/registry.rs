@@ -104,7 +104,24 @@ impl DecoderRegistry {
     }
 
     /// 解码
+    /// 解码并**按 EXIF `Orientation` 摆正**（上层默认都该用这个）。
+    ///
+    /// 手机竖拍是「横的像素 + Orientation=6」，不摆正的话缩略图、看图、打印、
+    /// 人脸检测拿到的都是躺倒的画面（2026-10-30 修）。
+    ///
+    /// ⛔ 只有确实需要**文件里的原始像素**时才用 [`decode_asis`] ——
+    /// 目前只有「写回原图」那条链需要区分（见 `edit::save_impl` 的注释）。
     pub fn decode(&self, path: &Path, target: DecodeTarget) -> Result<RgbaImage> {
+        let img = self.decode_asis(path, target)?;
+        match pv_meta::read_orientation(path) {
+            // 1 / 缺省 / 读不到 → 不转
+            Some(o) if (2..=8).contains(&o) => Ok(crate::transform::apply_orientation(&img, o)),
+            _ => Ok(img),
+        }
+    }
+
+    /// 解码出**未经方向摆正**的原始像素（几乎没人该直接调用）。
+    pub fn decode_asis(&self, path: &Path, target: DecodeTarget) -> Result<RgbaImage> {
         let head = read_head(path, 512)?;
         let probe = pv_core::format::probe_header(&head);
         let format = probe.format;

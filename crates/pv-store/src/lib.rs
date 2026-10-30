@@ -208,6 +208,16 @@ pub struct Store {
     resolver: Box<dyn VolumeResolver>,
 }
 
+/// EXIF 方向归一化：只有 1~8 有意义，其余（0 / 9+ / 读不到）一律当 1（正常）。
+///
+/// 0 是坏 EXIF —— 主流软件也都不转，跟着「不转」才是和别的软件一致。
+fn normalize_orientation(raw: Option<u16>) -> u16 {
+    match raw {
+        Some(v) if (1..=8).contains(&v) => v,
+        _ => 1,
+    }
+}
+
 fn default_registry() -> DecoderRegistry {
     let mut r = DecoderRegistry::new();
     r.register(Box::new(BitmapBackend));
@@ -308,11 +318,23 @@ impl Store {
         Ok(out)
     }
 
-    /// 用解码注册表探一个文件的尺寸；失败/不支持返回 `None`（ callers 自己决定跳过）。
-    fn probe_dims(&self, abs: &Path) -> Option<(i64, i64)> {
-        pv_decode::probe_dimensions(&self.registry, abs)
-            .ok()
-            .map(|(w, h)| (i64::from(w), i64::from(h)))
+    /// 用解码注册表探一个文件的**显示尺寸**和 EXIF 方向；失败/不支持返回 `None`。
+    ///
+    /// ⭐ 2026-10-30：返回的是**摆正之后**的宽高（6/8 已互换）。
+    /// 库里 `width/height` 存显示尺寸，网格比例、卡片上的「宽×高」、
+    /// 裁剪框算法全按它算 —— 存原始像素会让竖拍照片的长宽比整个反掉。
+    fn probe_dims(&self, abs: &Path) -> Option<(i64, i64, u16)> {
+        let (w, h) = pv_decode::probe_dimensions(&self.registry, abs).ok()?;
+        let (w, h) = (i64::from(w), i64::from(h));
+        // 读不到 / 值非法（0、>8）都归一成 1：
+        // 0 是坏 EXIF，别的软件也不会转它，跟着「不转」才是对的。
+        // 同时也把「已检查过」这个事实记下来，别每次重读。
+        let o = normalize_orientation(pv_meta::read_orientation(abs));
+        if matches!(o, 6 | 8) {
+            Some((h, w, o))
+        } else {
+            Some((w, h, o))
+        }
     }
 
     /// 把一批 id 的缺失尺寸补上。返回补上的数量。
@@ -338,8 +360,12 @@ impl Store {
                 Ok(Some(p)) => p,
                 _ => continue,
             };
-            if let Some((w, h)) = self.probe_dims(&abs) {
+            if let Some((w, h, orientation)) = self.probe_dims(&abs) {
                 if repo::images::update_dimensions(&self.conn, *id, w, h).is_ok() {
+                    // 方向必须和宽高**同一次**写入：两者来自同一次探测，
+                    // 分开写就会出现「宽高换了、方向还是 NULL」的中间态，
+                    // 下次回填又会换一遍 → 宽高反复横跳。
+                    let _ = repo::images::set_orientation(&self.conn, *id, orientation);
                     filled += 1;
                 }
             }
@@ -347,16 +373,25 @@ impl Store {
         filled
     }
 
-    /// 补齐某个目录里缺失的尺寸。返回补上的数量。
+    /// 补齐某个目录里缺失的尺寸 / 方向。返回补上的数量。
+    ///
+    /// ⚠️ 判据是「尺寸缺失 **或** 方向没读过」：老库的行尺寸早填过（但按原始像素），
+    /// 方向却还是 NULL —— 只看尺寸的话，重扫这个目录也不会把它们纠正过来
+    /// （2026-10-30 实测：重启前 7 行一直是 NULL）。
     pub fn fill_folder_dimensions(&mut self, dir_id: i64) -> usize {
         let Ok(rows) = repo::images::list_by_dir(&self.conn, dir_id) else {
             return 0;
         };
-        let ids: Vec<i64> = rows
+        let mut ids: Vec<i64> = rows
             .into_iter()
             .filter(|r| r.width.is_none() || r.height.is_none())
             .map(|r| r.id)
             .collect();
+        if let Ok(extra) = repo::images::list_ids_in_dir_missing_orientation(&self.conn, dir_id) {
+            ids.extend(extra);
+        }
+        ids.sort_unstable();
+        ids.dedup();
         if ids.is_empty() {
             return 0;
         }
@@ -378,6 +413,51 @@ impl Store {
         let filled = self.fill_dims_for(&ids);
         let left = repo::images::count_missing_dimensions(&self.conn).unwrap_or(0);
         (filled, left)
+    }
+
+    /// 老库升级：补 EXIF 方向，并把 6/8 那批**当年按原始像素存的宽高换回来**。
+    ///
+    /// ## 为什么不能只靠 `backfill_dimensions`
+    /// 那个只看 `width IS NULL` 的行。老库的宽高早填过了（但填的是原始像素），
+    /// 所以竖拍照片一直是横的、卡片上的长宽比也是反的（2026-10-30 修的）。
+    /// 这里以 `orientation IS NULL` 为「没处理过」的判据，一次过。
+    ///
+    /// 幂等：处理完的行方向不再是 NULL，下次不再进来。
+    /// `limit` 控制单次量（1 万张的库首启别卡太久），没补完的下次接着补。
+    ///
+    /// 返回 (本次处理的行数, 还剩多少)。
+    pub fn backfill_orientation(&mut self, limit: i64) -> (usize, i64) {
+        let Ok(ids) = repo::images::list_ids_missing_orientation(&self.conn, limit) else {
+            return (0, 0);
+        };
+        if ids.is_empty() {
+            return (
+                0,
+                repo::images::count_missing_orientation(&self.conn).unwrap_or(0),
+            );
+        }
+        let mut done = 0usize;
+        for id in ids {
+            let img = match repo::images::get(&self.conn, id) {
+                Ok(Some(i)) => i,
+                _ => continue,
+            };
+            // 卷没挂载 → 拿不到路径，留 NULL 等下次（不能瞎写个 1 糊过去）
+            let Ok(Some(abs)) = self.abs_path(&img) else {
+                continue;
+            };
+            let o = normalize_orientation(pv_meta::read_orientation(&abs));
+            if matches!(o, 6 | 8) {
+                if let (Some(w), Some(h)) = (img.width, img.height) {
+                    let _ = repo::images::update_dimensions(&self.conn, id, h, w);
+                }
+            }
+            if repo::images::set_orientation(&self.conn, id, o).is_ok() {
+                done += 1;
+            }
+        }
+        let left = repo::images::count_missing_orientation(&self.conn).unwrap_or(0);
+        (done, left)
     }
 
     /// 给一批 id 补**拍摄时间**（EXIF `DateTimeOriginal` → Unix 秒）。返回**读到时间**的数量。
@@ -2231,5 +2311,57 @@ mod tests {
         drop(store);
         let _ = std::fs::remove_dir_all(&data);
         let _ = std::fs::remove_dir_all(&src);
+    }
+    /// ⭐ EXIF 方向（2026-10-30）：竖拍照片入库时，`width/height` 必须是**显示尺寸**。
+    ///
+    /// 这张样本（IMGP9873.JPG）传感器写的是 3840×2880 + `Orientation=6`，
+    /// 用户看到的应是 **2880×3840**。存成原始像素的话，卡片长宽比会整个反掉，
+    /// 缩略图/看图/打印里照片还是躺着的。
+    #[test]
+    fn 竖拍入库按方向摆正宽高() {
+        let src_file = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../test-image/IMGP9873.JPG");
+        if !src_file.is_file() {
+            eprintln!("跳过：test-image 里没有 IMGP9873.JPG");
+            return;
+        }
+        let dir = temp_dir("orient_src");
+        std::fs::copy(&src_file, dir.join("rot.jpg")).unwrap();
+
+        let data = temp_dir("data_orient");
+        let resolver = Box::new(FakeResolver {
+            mount: dir.clone(),
+            guid: r"\\?\Volume{orient}\".into(),
+        });
+        let mut store = Store::open(&data, resolver).unwrap();
+        store.open_folder(&dir).unwrap();
+
+        let imgs = store.query(&ImageQuery::default()).unwrap();
+        assert_eq!(imgs.len(), 1);
+        let i = &imgs[0];
+        assert_eq!(
+            (i.width, i.height),
+            (Some(2880), Some(3840)),
+            "宽高必须是显示尺寸（6/8 要换过来）"
+        );
+        let o = repo::images::get_orientation(store.conn(), i.id).unwrap();
+        assert_eq!(o, Some(6), "方向要写进 orientation 列");
+
+        // ── 老库模拟：行里是原始像素 + 方向 NULL，回填要把宽高换过来 ──
+        repo::images::update_dimensions(store.conn(), i.id, 3840, 2880).unwrap();
+        repo::images::clear_orientation(store.conn(), i.id).unwrap();
+        let (done, left) = store.backfill_orientation(100);
+        assert_eq!((done, left), (1, 0), "应当处理 1 行、无剩余");
+        let imgs = store.query(&ImageQuery::default()).unwrap();
+        assert_eq!(
+            (imgs[0].width, imgs[0].height),
+            (Some(2880), Some(3840)),
+            "回填要把 6/8 的宽高换回来"
+        );
+        // 再跑一次：幂等，什么都不做
+        assert_eq!(store.backfill_orientation(100), (0, 0));
+
+        drop(store);
+        let _ = std::fs::remove_dir_all(&data);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

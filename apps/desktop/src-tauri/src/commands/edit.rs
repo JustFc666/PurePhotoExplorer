@@ -171,6 +171,8 @@ pub(crate) fn save_impl(
     let steps = rotation_steps.rem_euclid(4);
 
     // ── 3. 解码原尺寸像素（Export = 不缩限）──
+    // ⭐ `decode` 会先按 EXIF `Orientation` 把画面摆正（2026-10-30）——
+    //    用户看到的、旋转的就是这个方向，所以用它做几何变换才对得上。
     // 代理图（预览）写回会把原图降级成 2048px，必须用 Export 拿全尺寸。
     // ⚠️ RAW 也走这里：它返回的是**内嵌预览的全尺寸**（不是 2048 代理图），
     // 但仍是相机渲染的那份 JPEG，不是传感器数据。
@@ -189,8 +191,12 @@ pub(crate) fn save_impl(
     //   ② **没旋转 → 方向标记原样保留**（像素一个字节没变，改它等于凭空丢失
     //      「这张竖拍照片要转 90°」的信息）。
     //   ③ 两种情况都切断 IFD1 缩略图（那是编辑前的旧画面，且占掉大半体积）。
+    //
+    // ⚠️ 2026-10-30 起「有没有旋转」不再决定要不要重置方向：既然解码时已经
+    //    按 Orientation 摆正过，写出去的像素**永远是显示方向**，
+    //    源文件那个标记若留着，别的软件会再转一次 → 传 1 强制重置。
     let exif = pv_meta::read_exif_raw(path).map(|mut t| {
-        if pv_meta::align_exif_with_pixels(&mut t, steps)
+        if pv_meta::align_exif_with_pixels(&mut t, if steps == 0 { 1 } else { steps })
             == pv_meta::ExifRewriteOutcome::Unparsable
         {
             tracing::debug!(
