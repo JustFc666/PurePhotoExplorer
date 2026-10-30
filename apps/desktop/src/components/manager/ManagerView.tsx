@@ -1867,6 +1867,18 @@ export function ManagerView(props: Props) {
    * 走的是同一个 `mgr.rescan()`（`F5` 也是它）：浏览模式重列目录、
    * 入库模式重扫索引，两条路都不动 `scope`。
    */
+  /**
+   * 当前正在看的**目录**（浏览模式 / 已入库目录），没有就是 `null`。
+   *
+   * 「文件 → 新建图库 / 加入图库」和空白处右键的同名两项都作用在它身上。
+   * ⚠️ 必须定义在 `blankMenuItems` **之前** —— 那个 useMemo 会读它，
+   * 声明在后面就是 TDZ（渲染时 `Cannot access before initialization`）。
+   */
+  const curDir =
+    mgr.scope.kind === 'browse' || mgr.scope.kind === 'folder'
+      ? { path: mgr.scope.path, name: mgr.scope.name }
+      : null
+
   const blankCtx = useContextMenu()
   const blankMenuItems = useMemo<ContextMenuItem[]>(
     () => [
@@ -1876,6 +1888,37 @@ export function ManagerView(props: Props) {
         hint: 'F5',
         disabled: mgr.isIdle || mgr.busy,
         onSelect: () => void mgr.rescan(),
+      },
+      /*
+       * 「新建图库 / 加入图库」= 把**当前这个目录**入库（用户 2026-10-30）。
+       * 和「文件」菜单里那两项完全同一套动作（都走 `addDirToLibrary` /
+       * `setNewLibFor`），不是另写一份 —— 免得两处行为漂移。
+       */
+      {
+        id: 'blank-new-lib',
+        label: '新建图库',
+        hint: curDir?.name,
+        separatorBefore: true,
+        disabled: !curDir,
+        onSelect: () => {
+          if (curDir) setNewLibFor({ path: curDir.path, folderName: curDir.name })
+        },
+      },
+      {
+        id: 'blank-add-lib',
+        label: '加入图库',
+        disabled: !curDir,
+        // 只列图库名，不带张数（和文件菜单的子菜单保持一致）
+        children:
+          mgr.libraries.length > 0
+            ? mgr.libraries.map((l) => ({
+                id: `blank-lib-${l.id}`,
+                label: l.name,
+                onSelect: () => {
+                  if (curDir) addDirToLibrary(curDir.path, 'existing', { id: l.id, name: l.name })
+                },
+              }))
+            : [{ id: 'blank-lib-none', label: '（还没有图库）', disabled: true }],
       },
       {
         id: 'sel-all',
@@ -1900,7 +1943,7 @@ export function ManagerView(props: Props) {
         onSelect: () => playSlideshow(),
       },
     ],
-    [mgr, selectedCount, playPaths.length, playSlideshow],
+    [mgr, curDir, addDirToLibrary, selectedCount, playPaths.length, playSlideshow],
   )
 
   /** 打开空白菜单；「我的电脑」启动态不弹（那里没有可刷新的东西）。 */
@@ -1925,14 +1968,6 @@ export function ManagerView(props: Props) {
    * `mgr.scope` 的联合类型，访问 `.path` 会报 TS2339。
    */
   const browseScope = mgr.scope.kind === 'browse' ? mgr.scope : null
-  /**
-   * 当前正在看的**目录**（浏览模式或已入库目录），没有就是 `null`。
-   * 「文件 → 新建图库 / 加入图库」作用在它身上。
-   */
-  const curDir =
-    mgr.scope.kind === 'browse' || mgr.scope.kind === 'folder'
-      ? { path: mgr.scope.path, name: mgr.scope.name }
-      : null
 
   /**
    * 文件菜单的快捷键：`Ctrl+O` 打开文件夹、`Ctrl+P` 打印、`Delete` 删除。
