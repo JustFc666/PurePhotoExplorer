@@ -1397,10 +1397,12 @@ export function ManagerView(props: Props) {
   /**
    * 旋转 / 翻转并**写回原文件**。
    *
-   * ## 为什么必须二次确认
-   * 这是本页面唯一「直接改写用户原始文件」的操作，且不可撤销。
-   * 另外 RAW / HEIC / WebP / TIFF 本来就写不回去，确认框里先说明白，
-   * 免得用户以为「跳过」是程序坏了。
+   * ## 为什么不弹确认框（2026-10-30 用户要求）
+   * 旋转/翻转是**高频**操作，每按一次都弹「会覆盖原文件、不可撤销」的警告
+   * 只是噪音 —— 用户早就知道自己在干什么。结果照旧由 `runBatch` 的提示条反馈
+   * （成功张数 / 跳过张数 / 失败明细都在那）。
+   *
+   * ⚠️ RAW / HEIC / WebP / TIFF **写不回去会被跳过**，这是后端行为，前端不拦。
    *
    * ## 顺序
    * 后端是**先旋转、后翻转**；这里每种组合只发一次调用，所以顺序天然一致。
@@ -1415,15 +1417,6 @@ export function ManagerView(props: Props) {
         setExportNotice({ tone: 'warn', text: '这些图片没有可用的本地路径' })
         return
       }
-      const ok = await confirm(
-        `把 ${paths.length} 张「${label}」并**写回原文件**？\n\n` +
-          `· 会重新编码并覆盖原文件，**不可撤销**\n` +
-          `· 只有 JPEG / PNG / BMP 能覆盖；RAW、HEIC、WebP、TIFF 会被跳过\n` +
-          `· 想保留原图请先「另存为」一份\n\n` +
-          `建议先在副本上试一次。`,
-        { title: '旋转 / 翻转并保存', kind: 'warning', okLabel: '写回', cancelLabel: '取消' },
-      )
-      if (!ok) return
       await runBatch(label, () => managerTransformImages(paths, opts))
       // 文件被真的改写了（size / mtime 都变）：
       // 1) 只给**这几张**打版本号 —— 全量刷新会让 500 张卡片一起重取并闪烁
