@@ -132,8 +132,15 @@ interface Props {
   onSaveAs: () => void
   /** 打开文件夹（只导航，不改变图库成员） */
   onOpenFolder: () => void
-  /** 选中的目录加入图库（原「添加文件夹」的行为） */
-  onAddFolder: () => void
+  /**
+   * 「加进图库」三条（2026-10-30 用户要求）：和侧栏目录右键菜单保持一致。
+   * 文件菜单里没有"当前目录"这个概念，所以每条都先弹目录选择框。
+   */
+  onAddToLibraryByName: () => void
+  onAddToNewLibrary: () => void
+  onAddToExistingLibrary: (id: number, name: string) => void
+  /** 已有图库（「加进已有图库 ▸」的子菜单） */
+  libraries: { id: number; name: string; count: number }[]
   onRescan: () => void
   /** 打印选中的图（复用单图模式的版面预览） */
   onPrint: () => void
@@ -174,7 +181,10 @@ export function ManagerTopBar(props: Props) {
     canSaveAs,
     onSaveAs,
     onOpenFolder,
-    onAddFolder,
+    onAddToLibraryByName,
+    onAddToNewLibrary,
+    onAddToExistingLibrary,
+    libraries,
     onRescan,
     onPrint,
     onCopyTo,
@@ -208,7 +218,46 @@ export function ManagerTopBar(props: Props) {
       label: '文件',
       items: [
         { id: 'open-folder', label: '打开文件夹…', hint: 'Ctrl+O', onSelect: onOpenFolder },
-        { id: 'add-lib', label: '加入图库…', onSelect: onAddFolder },
+        /*
+         * 「加入图库」从一条拆成三条 —— 和侧栏目录右键菜单**同一套动作**：
+         * 用文件夹名（一键）/ 新图库（自定义名）/ 已有图库（子菜单选目标）。
+         * 原来那条「加入图库…」其实是"用文件夹名"，用户没法选目标图库。
+         */
+        {
+          id: 'add-lib-name',
+          label: '加进图库：用文件夹名',
+          hint: '一步',
+          onSelect: onAddToLibraryByName,
+        },
+        {
+          id: 'add-lib-new',
+          label: '加进新图库…',
+          hint: '自定义名称',
+          onSelect: onAddToNewLibrary,
+        },
+        /*
+         * 顶栏菜单是**一层平铺**的下拉（没有二级子菜单），所以「加进已有图库」
+         * 直接把图库铺开，用 `加进已有图库 · 库名` 的写法区分。
+         * ⛔ 别为了这一项去给顶部菜单加子菜单机制 —— 侧栏右键菜单（ContextMenu）
+         *    本来就支持子菜单，那边保持「加进已有图库 ▸」的样式。
+         */
+        ...(libraries.length > 0
+          ? libraries.map((l, i) => ({
+              id: `add-lib-${l.id}`,
+              label: `加进已有图库 · ${l.name}`,
+              hint: `${l.count} 张`,
+              separatorBefore: i === 0,
+              onSelect: () => onAddToExistingLibrary(l.id, l.name),
+            }))
+          : [
+              {
+                id: 'add-lib-none',
+                label: '加进已有图库',
+                hint: '还没有其他图库',
+                disabled: true,
+                separatorBefore: true,
+              },
+            ]),
         {
           id: 'print',
           label: '打印…',

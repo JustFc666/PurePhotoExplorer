@@ -573,18 +573,66 @@ export function ManagerView(props: Props) {
     return () => window.removeEventListener('focus', onFocus)
   }, [props.active, mgr.scope.kind])
 
-  /** 对话框方式把某个目录加入图库（顶栏「文件 → 添加文件夹…」）。等价于「用文件夹名」那一项。 */
-  const pickFolder = useCallback(async () => {
-    const picked = await openDialog({
-      directory: true,
-      multiple: false,
-      title: '选择要加入图库的文件夹',
-    })
-    if (typeof picked !== 'string') return
-    const trimmed = picked.replace(/[\\/]+$/, '')
-    const name = trimmed.split(/[\\/]/).pop() || picked
-    await mgr.addFolderToLibrary(picked, name, { kind: 'byFolderName' })
-  }, [mgr])
+  /**
+   * 「加进图库」三种方式（2026-10-30 用户要求，和侧栏目录右键菜单一致）：
+   *
+   * - `name`     用文件夹名当图库名（同名复用，一步到位）
+   * - `new`      弹输入框自定义图库名
+   * - `existing` 直接挂到指定的已有图库
+   *
+   * ⭐ 这里是**唯一**的入口，`文件 → 加进图库` 三条和目录卡片右键都用它，
+   * 免得两处行为漂移（以前顶栏只会「用文件夹名」，右键才有另外两种）。
+   */
+  const addDirToLibrary = useCallback(
+    (
+      path: string,
+      mode: 'name' | 'new' | 'existing',
+      lib?: { id: number; name: string },
+    ) => {
+      const trimmed = path.replace(/[\\/]+$/, '')
+      const folderName = trimmed.split(/[\\/]/).pop() || path
+      if (mode === 'new') {
+        // 收名字 → 确认后走 `newLibFor` 对话框里的 `addFolderToLibrary`
+        setNewLibFor({ path, folderName })
+        return
+      }
+      if (mode === 'existing') {
+        if (!lib) return
+        void mgr.addFolderToLibrary(path, folderName, {
+          kind: 'existing',
+          id: lib.id,
+          name: lib.name,
+        })
+        return
+      }
+      void mgr.addFolderToLibrary(path, folderName, { kind: 'byFolderName' })
+    },
+    [mgr],
+  )
+
+  /**
+   * 文件菜单那三条：先弹目录选择框，再按选中方式入库。
+   *
+   * （文件菜单里没有"当前目录"这个上下文，所以必须先问是哪个目录；
+   *   目录卡片右键则是已知路径，直接进 `addDirToLibrary`。）
+   */
+  const pickFolderForLibrary = useCallback(
+    async (mode: 'name' | 'new' | 'existing', lib?: { id: number; name: string }) => {
+      const picked = await openDialog({
+        directory: true,
+        multiple: false,
+        title:
+          mode === 'new'
+            ? '选择要加进新图库的文件夹'
+            : mode === 'existing'
+              ? `选择要加进「${lib?.name ?? ''}」的文件夹`
+              : '选择要加入图库的文件夹',
+      })
+      if (typeof picked !== 'string') return
+      addDirToLibrary(picked, mode, lib)
+    },
+    [addDirToLibrary],
+  )
 
   /**
    * 文件 →「打开文件夹…」：选一个目录**导航过去看**（Ctrl+O 的常规语义）。
@@ -1535,6 +1583,57 @@ export function ManagerView(props: Props) {
   }, [])
 
   const cardMenuItems = useMemo<ContextMenuItem[]>(() => {
+    /*
+     * 目录卡片：右键给「加进图库」三选一 + 浏览。
+     *
+     * ⚠️ 原来目录卡片走的是**图片那一套**菜单（评分 / 标签 / 旋转…），
+     * 对文件夹全是灰的、还容易点空 —— 而用户最想做的事（把这个目录加进图库）
+     * 反而只有侧栏里才有。2026-10-30 用户要求补上，且与侧栏目录右键保持一致。
+     *
+     * 目录不参与多选（`toggle` 对 dir 直接 return），所以这里只需看单个目标。
+     */
+    const only = cardCtxItems.length === 1 ? cardCtxItems[0] : undefined
+    const dirOnly = only?.kind === 'dir' ? only : null
+    if (dirOnly?.path) {
+      const dirPath = dirOnly.path
+      const dirName = dirOnly.name
+      return [
+        {
+          id: 'dir-add-name',
+          label: '加进图库：用文件夹名',
+          hint: dirName,
+          onSelect: () => addDirToLibrary(dirPath, 'name'),
+        },
+        {
+          id: 'dir-add-new',
+          label: '加进新图库…',
+          hint: '自定义名称',
+          onSelect: () => addDirToLibrary(dirPath, 'new'),
+        },
+        {
+          id: 'dir-add-existing',
+          label: '加进已有图库',
+          // 子菜单只支持一层；一条图库都没有时给一条禁用说明项
+          children:
+            mgr.libraries.length > 0
+              ? mgr.libraries.map((l) => ({
+                  id: `dir-lib-${l.id}`,
+                  label: l.name,
+                  hint: `${l.count} 张`,
+                  onSelect: () => addDirToLibrary(dirPath, 'existing', { id: l.id, name: l.name }),
+                }))
+              : [{ id: 'dir-lib-none', label: '（还没有其他图库）', disabled: true }],
+        },
+        {
+          id: 'dir-browse',
+          label: '浏览此目录',
+          hint: '不入库',
+          separatorBefore: true,
+          onSelect: () => gotoWithReveal(dirPath, dirName),
+        },
+      ]
+    }
+
     const withPath = cardCtxItems.filter((i) => !!i.path)
     /**
      * ⚠️ 右键菜单的批量操作必须用**右键作用对象**的路径，不能用「选中集合」：
@@ -1755,6 +1854,8 @@ export function ManagerView(props: Props) {
     ]
   }, [
     cardCtxItems,
+    addDirToLibrary,
+    gotoWithReveal,
     copyPaths,
     doSetPersonCover,
     doAutoOrient,
@@ -1928,7 +2029,12 @@ export function ManagerView(props: Props) {
         canRescan={mgr.canRescan}
         hasSelection={selectedCount > 0}
         onOpenFolder={() => void pickOpenFolder()}
-        onAddFolder={() => void pickFolder()}
+        onAddToLibraryByName={() => void pickFolderForLibrary('name')}
+        onAddToNewLibrary={() => void pickFolderForLibrary('new')}
+        onAddToExistingLibrary={(id, name) =>
+          void pickFolderForLibrary('existing', { id, name })
+        }
+        libraries={mgr.libraries.map((l) => ({ id: l.id, name: l.name, count: l.count }))}
         // 文件级操作都作用在**当前选中**上（右键走各自的 cardCtxItems）
         onPrint={() => doPrint(selectedPaths)}
         onCopyTo={() => void doCopyTo(selectedPaths)}
