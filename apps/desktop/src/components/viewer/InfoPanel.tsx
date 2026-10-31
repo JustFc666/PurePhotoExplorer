@@ -10,6 +10,7 @@
 
 import { useState, type ReactNode } from 'react'
 import { formatFileSize, openExternalUrl, type ExifData, type GpsData, type ImageInfo } from '../../ipc'
+import { errText } from '../../lib/errText'
 
 /** Unix 秒 → `YYYY-MM-DD HH:mm`（本地时区，手工格式化避免受 WebView 语言环境影响） */
 function formatDateTime(unixSec: number): string {
@@ -99,7 +100,9 @@ export function InfoPanel({ info, onClose }: InfoPanelProps) {
     if (!gps) return
     setMapError(null)
     openExternalUrl(mapUrl(gps)).catch((err: unknown) => {
-      setMapError(err instanceof Error ? err.message : String(err))
+      // `open_external_url` 是后端命令，失败值是 `ErrorDto` 对象而非 `Error` 实例，
+      // 所以不能只认 `instanceof Error` —— 那样会显示 "[object Object]"。
+      setMapError(errText(err))
     })
   }
 

@@ -72,6 +72,7 @@ import {
   THUMB_TIERS,
 } from '../../hooks/useManager'
 import type { ThumbTier } from '../../ipc/manager'
+import { errText } from '../../lib/errText'
 
 /* ── 页面表：组分隔，组内页按顺序 ─────────────────────────── */
 /**
@@ -708,7 +709,7 @@ function TagPage() {
       await aiVocabExport(path)
       setMsg(`已导出：${path}`)
     } catch (e) {
-      setMsg(`导出失败：${e instanceof Error ? e.message : String(e)}`)
+      setMsg(`导出失败：${errText(e)}`)
     }
   }
 
@@ -736,7 +737,7 @@ function TagPage() {
           : ''
       setMsg(`已导入：${r.updated} 个词条的启用状态变了${un}`)
     } catch (e) {
-      setMsg(`导入失败：${e instanceof Error ? e.message : String(e)}`)
+      setMsg(`导入失败：${errText(e)}`)
     }
   }
 
@@ -901,7 +902,7 @@ function FacePage() {
         setMsg(scope ? `已删除「${scope}」的 ${n} 张人脸` : `已删除 ${n} 张人脸与全部人物`)
         load()
       })
-      .catch((e: unknown) => setMsg(String(e)))
+      .catch((e: unknown) => setMsg(errText(e)))
   }
 
   return (
@@ -1022,7 +1023,7 @@ function CachePage() {
         setStats(s)
         setMsg('缓存已清理，下次浏览会重新生成')
       })
-      .catch((e: unknown) => setMsg(String(e)))
+      .catch((e: unknown) => setMsg(errText(e)))
       .finally(() => setBusy(false))
   }
 

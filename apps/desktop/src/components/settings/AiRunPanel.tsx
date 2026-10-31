@@ -26,6 +26,7 @@ import {
   type LibraryAiStatus,
   type LibraryItem,
 } from '../../ipc/manager'
+import { errText } from '../../lib/errText'
 
 interface Props {
   task: 'tag' | 'face'
@@ -98,7 +99,7 @@ export function AiRunPanel({ task, title, hint }: Props) {
         window.setTimeout(tick, 500)
       } catch (e) {
         if (alive) {
-          setErr(e instanceof Error ? e.message : String(e))
+          setErr(errText(e))
           setBusy(false)
         }
       }
@@ -141,7 +142,7 @@ export function AiRunPanel({ task, title, hint }: Props) {
       await aiRunTask(task, picked)
       setBusy(true)
     } catch (e) {
-      setErr(e instanceof Error ? e.message : String(e))
+      setErr(errText(e))
       setBusy(false)
     }
   }
@@ -329,7 +330,7 @@ export function AiRunPanel({ task, title, hint }: Props) {
                 await aiRunTask('face', picked)
                 setBusy(true)
               } catch (e) {
-                setErr(e instanceof Error ? e.message : String(e))
+                setErr(errText(e))
               }
             })()
           }}

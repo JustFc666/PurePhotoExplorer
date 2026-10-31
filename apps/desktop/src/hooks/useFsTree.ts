@@ -15,6 +15,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 
 import { FS_COMPUTER_KEY, fsListDirs, fsRoots, type FsNode } from '../ipc/browse'
+import { errText } from '../lib/errText'
 
 /** 节点的稳定 key（路径优先，「我的电脑」用占位符）。 */
 export function nodeKey(node: FsNode): string {
@@ -78,7 +79,7 @@ export function useFsTree(): FsTreeApi {
         if (alive) setRoots(r)
       })
       .catch((e: unknown) => {
-        if (alive) setError(e instanceof Error ? e.message : String(e))
+        if (alive) setError(errText(e))
       })
       .finally(() => {
         if (alive) setLoadingRoots(false)
@@ -122,7 +123,7 @@ export function useFsTree(): FsTreeApi {
     (node: FsNode) => {
       expandNode(node)
       loadChildren(node).catch((e: unknown) => {
-        setError(e instanceof Error ? e.message : String(e))
+        setError(errText(e))
       })
     },
     [expandNode, loadChildren],
@@ -141,7 +142,7 @@ export function useFsTree(): FsTreeApi {
       })
       // 折叠再展开时不再重复请求 —— `loadChildren` 内部按 key 去重且已有缓存
       loadChildren(node).catch((e: unknown) => {
-        setError(e instanceof Error ? e.message : String(e))
+        setError(errText(e))
       })
     },
     [loadChildren],

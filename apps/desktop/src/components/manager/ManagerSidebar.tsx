@@ -27,6 +27,7 @@ import type { LibChoice, Scope } from '../../hooks/useManager'
 import { ArchiveIcon } from '../icons/ArchiveIcon'
 import { FolderIcon } from '../icons/FolderIcon'
 import { GalleryIcon } from '../icons/GalleryIcon'
+import { errText } from '../../lib/errText'
 
 function fmt(n: number): string {
   return n.toLocaleString('zh-CN')
@@ -478,7 +479,7 @@ export function ManagerSidebar({
       await tree.revealTo(r.path)
       onGotoDir(r.path, r.name)
     } catch (e) {
-      setAddrErr(e instanceof Error ? e.message : String(e))
+      setAddrErr(errText(e))
     }
   }
 

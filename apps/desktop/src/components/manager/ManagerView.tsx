@@ -1081,7 +1081,7 @@ export function ManagerView(props: Props) {
       setExportNotice({
         tone: 'err',
         text: '导出失败',
-        detail: e instanceof Error ? e.message : String(e),
+        detail: errText(e),
       })
     } finally {
       setExporting(false)
@@ -1132,7 +1132,7 @@ export function ManagerView(props: Props) {
         setExportNotice({
           tone: 'err',
           text: `${title}失败`,
-          detail: e instanceof Error ? e.message : String(e),
+          detail: errText(e),
         })
       } finally {
         setExporting(false)
@@ -1340,7 +1340,7 @@ export function ManagerView(props: Props) {
         setPrintBatch(null)
       } catch (e) {
         // 不关浮层：用户改个版面就能重试，不必从头再点一遍
-        setPrintError(e instanceof Error ? e.message : String(e))
+        setPrintError(errText(e))
       } finally {
         setPrinting(false)
       }
@@ -1514,7 +1514,7 @@ export function ManagerView(props: Props) {
       setExportNotice({
         tone: 'err',
         text: '删除失败',
-        detail: e instanceof Error ? e.message : String(e),
+        detail: errText(e),
       })
     } finally {
       setExporting(false)
@@ -1855,7 +1855,7 @@ export function ManagerView(props: Props) {
               setExportNotice({
                 tone: 'err',
                 text: '定位失败',
-                detail: e instanceof Error ? e.message : String(e),
+                detail: errText(e),
               }),
             )
           }

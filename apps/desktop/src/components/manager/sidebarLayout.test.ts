@@ -21,6 +21,8 @@ import sidebarSrc from './ManagerSidebar.tsx?raw'
 import managerViewSrc from './ManagerView.tsx?raw'
 import libDropSrc from '../../hooks/libDrop.ts?raw'
 import useManagerSrc from '../../hooks/useManager.ts?raw'
+// 排序偏好的读写 2026-11 拆到 `manager/prefs.ts`，护栏跟着搬
+import managerPrefsSrc from '../../hooks/manager/prefs.ts?raw'
 import appSrc from '../../App.tsx?raw'
 import cssSrc from '../../styles/manager.css?raw'
 import { describe, expect, it } from 'vitest'
@@ -182,7 +184,7 @@ describe('智能图库', () => {
   it('默认按拍摄时间排（相册的直觉顺序）', () => {
     // 初值来自持久化偏好，未设置时回落到拍摄时间
     expect(useManagerSrc).toContain('useState<ManagerSort>(readSortPref)')
-    expect(useManagerSrc).toContain("return 'taken'")
+    expect(managerPrefsSrc).toContain("return 'taken'")
   })
 
   it('`+` 右键出智能图库预设', () => {

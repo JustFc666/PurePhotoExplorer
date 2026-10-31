@@ -12,6 +12,9 @@
 import { describe, expect, it } from 'vitest'
 import slideSrc from './useSlideshow.ts?raw'
 import managerSrc from './useManager.ts?raw'
+// 排序偏好已拆到 `manager/prefs.ts`（2026-11）：事件名与初值校验都在那里，
+// 所以护栏要查那个文件，而不是继续在 useManager 里找字符串。
+import managerPrefsSrc from './manager/prefs.ts?raw'
 import appSrc from '../App.tsx?raw'
 import shortcutSrc from './useShortcuts.ts?raw'
 import settingsSrc from '../components/settings/SettingsWindow.tsx?raw'
@@ -167,10 +170,12 @@ describe('复制 / 移动到文件夹', () => {
 describe('设置面板', () => {
   it('默认排序改完要通知常驻挂载的图库视图', () => {
     expect(settingsSrc).toContain('applySortPref')
-    expect(managerSrc).toContain("export const EVENT_SET_SORT = 'pv:set-sort'")
+    expect(managerPrefsSrc).toContain("export const EVENT_SET_SORT = 'pv:set-sort'")
     expect(managerSrc).toContain('window.addEventListener(EVENT_SET_SORT, onSet)')
     // 初值来自持久化的偏好，不是硬编码
     expect(managerSrc).toContain('useState<ManagerSort>(readSortPref)')
+    // 图库自己换排序只写不广播 —— 广播的话监听端会再被自己触发一次
+    expect(managerSrc).toContain('writeSortPref(s)')
   })
 
   it('缩略图缓存能读能清', () => {

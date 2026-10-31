@@ -14,6 +14,7 @@
 import { useEffect, useRef, useState } from 'react'
 
 import { aiRunTask, aiTaskStatus, aiTaskStop, type AiTaskStatus } from '../../ipc/manager'
+import { errText } from '../../lib/errText'
 
 interface Props {
   /** 图库名（后端按名字匹配；空字符串表示全部图库） */
@@ -87,7 +88,7 @@ export function AiPipelineDialog({ library, onClose, onDone }: Props) {
     let alive = true
     void aiRunTask('pipeline', library).catch((e: unknown) => {
       if (alive) {
-        setErr(e instanceof Error ? e.message : String(e))
+        setErr(errText(e))
         setBusy(false)
       }
     })
@@ -113,7 +114,7 @@ export function AiPipelineDialog({ library, onClose, onDone }: Props) {
         window.setTimeout(tick, 500)
       } catch (e) {
         if (alive) {
-          setErr(e instanceof Error ? e.message : String(e))
+          setErr(errText(e))
           setBusy(false)
         }
       }

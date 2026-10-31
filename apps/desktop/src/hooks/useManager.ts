@@ -15,6 +15,18 @@
  * ### 2. 入库的目录**单层**扫、**只看本目录**
  * - 扫描走 `manager_open_folder`（**不递归**）—— 用递归版点一下盘符就会遍历整块盘；
  * - 查询用 `dirIds: [folderId]` 精确匹配，**不含子目录**。
+ *
+ * ## 文件已按域拆开（2026-11）
+ * - `manager/types.ts`    → `Scope` / `LibChoice` / `ViewMode` / `GridItem` / `ManagerApi`
+ * - `manager/constants.ts`→ 页码、探测批大小、防抖时长等调参常量
+ * - `manager/prefs.ts`    → 排序与档位的 localStorage 读写（设置窗口也用）
+ * - `manager/utils.ts`    → `absOfFolder` / `normPath` / `errText`
+ *
+ * 本文件只留 hook 本体。⛔ 别把类型再搬回来 —— 上千行逻辑里夹类型声明，
+ * 想知道「界面能拿到什么」就得翻遍全文。
+ *
+ * ⚠️ 对外**路径不变**：下方 `export ... from` 把上面那些原样再导出，
+ * 调用方继续 `from 'hooks/useManager'` 即可，不必跟着改。
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -54,7 +66,6 @@ import {
   type ManagerSort,
   type PlaceItem,
   type Stats,
-  type TagHit,
   type TagItem,
   type ThumbTier,
 } from '../ipc/manager'
@@ -70,454 +81,29 @@ import {
 import { mergeDimensions, mergeTakenAt } from './mergeDimensions'
 import { compareName, descForSort, makeComparator } from './sortItems'
 import { resolveHasTags } from './filterRules'
+import {
+  ARCHIVE_EXT_RE,
+  DIM_CHUNK,
+  FIRST_SCREEN_PROBE,
+  PAGE_LIMIT,
+  SEARCH_DEBOUNCE_MS,
+} from './manager/constants'
+import { absOfFolder, errText, normPath } from './manager/utils'
+import { EVENT_SET_SORT, MANAGER_SORTS, readSortPref, readThumbTier, saveThumbTier, writeSortPref } from './manager/prefs'
+import type { GridItem, LibChoice, ManagerApi, Scope, ViewMode } from './manager/types'
 
-/**
- * 单页拉取条数。
- *
- * ⚠️ 从 500 提到 20000（≈ 不截断）：卡片有 `content-visibility: auto`，
- * 离屏卡片不参与 layout/paint，所以「多挂几百张」的代价主要在
- * React 建 fiber + 节点内存，而不是渲染。实测 1224 张可接受。
- * ⛔ 再往上（几万）要换**按行开窗** —— 只有把离屏节点删出 DOM 才能让内存与 N 脱钩。
- */
-const PAGE_LIMIT = 20_000
-
-/**
- * 浏览大目录时，**首屏只要求后端探这么多个文件的尺寸**。
- *
- * 一个 1224 个文件的目录如果等全部尺寸探完才返回，界面要空白几秒到十几秒
- * （机械盘上每个文件头探测要 10–30ms）。用户其实只需要先看到第一屏。
- * 60 ≈ 三屏，够滚动时一直有尺寸可看；剩下的在后台分批补。
- */
-const FIRST_SCREEN_PROBE = 60
-
-/** 后台补尺寸的批大小。一批 240 个 ≈ 2–5 秒，批之间让出一帧保证滚动不卡。 */
-const DIM_CHUNK = 240
-
-/**
- * 压缩包扩展名（与后端 `pv_archive::ARCHIVE_EXTS` 保持一致）。
- *
- * 只用于「进这个路径之前先判断要不要拉子目录」这种**省一次 IPC** 的小事。
- * ⛔ 不要拿它做业务判断（能不能打开、是不是图片），那些一律看后端返回。
- */
-const ARCHIVE_EXT_RE = /\.(zip|cbz|rar|cbr|7z|cb7)$/i
-
-/** 文件名搜索的防抖时长（ms）——敲每个字符都查一次会白跑很多次 SQL。 */
-const SEARCH_DEBOUNCE_MS = 250
-
-/** 当前浏览范围。把**显示名**一起带上，标题就不用回头去查表。 */
-export type Scope =
-  /** 还没选任何目录（**启动默认态**）：主区空着，等用户去「我的电脑」里点 */
-  | { kind: 'none' }
-  | { kind: 'all' }
-  | { kind: 'folder'; id: number; path: string; name: string }
-  | { kind: 'library'; id: number; name: string }
-  | { kind: 'browse'; path: string; name: string }
-  /**
-   * 按标签筛选（侧栏「标签」分区 / 标签条点一级类目）。
-   *
-   * `libraryId` = **在哪个图库的语境下筛的**。人像条要用它把人像限制在当前图库，
-   * 否则从「rednote」点进「人像」会看到全库 34 个人（2026-10-29 用户报的混合问题）。
-   */
-  | { kind: 'tag'; name: string; libraryId?: number }
-  /** 按地点筛选（侧栏「地点」分区点进来，值是离线城市名） */
-  | { kind: 'place'; name: string }
-  /**
-   * 按**标签组**筛选：AI 标签条点二级类目时用。
-   * 一个二级类目（如「花」）下有多个词条（樱花/荷花/玫瑰…），
-   * 命中任一即可 —— 复用后端的 `tags_any`。
-   */
-  | { kind: 'tagGroup'; label: string; names: string[]; libraryId?: number }
-
-/**
- * 「加入图库」时把目录归到哪里。
- *
- * - `byFolderName`：用**文件夹名**当图库名（同名图库已存在就挂上去）
- * - `new`：用户输入的新图库名（同名同样复用）
- * - `existing`：挂到指定的已有图库
- */
-export type LibChoice =
-  | { kind: 'byFolderName' }
-  | { kind: 'new'; name: string }
-  | { kind: 'existing'; id: number; name: string }
-
-/** 主区视图形态。 */
-export type ViewMode = 'grid' | 'list'
-
-/**
- * 网格 / 胶片条的**统一行模型**。
- *
- * 两种来源（已入库的索引行、浏览模式的临时文件）都归一到它，
- * 卡片与胶片条就只认这一种形状，不必各自分支。
- */
-export interface GridItem {
-  /** React key（索引行 = id，浏览项 = 绝对路径） */
-  key: string
-  /** 索引 id；浏览模式为 `null` —— 于是不可选中、没有索引类操作 */
-  id: number | null
-  /** 绝对路径；已入库但卷未挂载时为 `null` */
-  path: string | null
-  name: string
-  size: number | null
-  /**
-   * 文件修改时间（Unix 纳秒）。
-   *
-   * 浏览模式靠它排「修改时间」；图库模式由后端 SQL 排，
-   * 前端拿不到也不需要（所以是 null）。
-   */
-  mtime: number | null
-  /**
-   * 拍摄时间（Unix 秒）。
-   *
-   * 入库行来自索引 `taken_at`；浏览项在用户选「按拍摄时间」时才由
-   * 后台批量读 EXIF 补上，之前是 null（排序会回退到 mtime）。
-   */
-  takenAt: number | null
-  /** 像素尺寸（入库行来自索引；浏览项来自后端探测文件头）；缺为 null */
-  width: number | null
-  height: number | null
-  format: string | null
-  /** 星级 0–5（只有入库行有；浏览项恒为 0，也不能打星） */
-  rating: number
-  /** 旗标 0/1（同上） */
-  flag: number
-  /**
-   * 有没有标签（入库行由列表 SQL 的 `EXISTS(image_tags)` 算出）。
-   * 卡片用它决定显示「标签」还是「无匹配」；浏览项恒为 false。
-   */
-  hasTags: boolean
-  /** true = 浏览模式的临时项（未入库） */
-  transient: boolean
-  /**
-   * `dir` = 浏览模式里的**子文件夹**（双击进入，无缩略图）。
-   * `archive` = 压缩包（zip/cbz/rar/cbr/7z/cb7），同样双击进入，
-   *   进去看到的是**包内图片**（虚拟路径 `包!内部`）。
-   * 两者都排在文件前面（照资源管理器的习惯）。
-   */
-  kind: 'file' | 'dir' | 'archive'
-}
-
-/**
- * 索引里的文件夹 → 绝对路径。
- *
- * `folders` 存的是「卷挂载点 + 相对路径」，拼起来才能得到绝对路径
- * （**索引里不存盘符**是这个项目的既定设计，手册 §5.5）。
- * 重扫一个已入库目录时要用它还原路径。
- */
-function absOfFolder(f: FolderNode): string | null {
-  if (!f.mountPath) return null
-  const base = f.mountPath.replace(/\\/g, '/').replace(/\/+$/, '')
-  return f.relPath ? `${base}/${f.relPath}` : base
-}
-
-/** 路径归一化：`\`→`/`、去掉尾部斜杠、转小写（Windows 路径不区分大小写）。 */
-function normPath(p: string): string {
-  return p.replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase()
-}
-
-export interface ManagerApi {
-  /** 后端已打开（建库完成） */
-  ready: boolean
-  busy: boolean
-  error: string | null
-  /** 最近打开过（入库）的目录，状态栏显示用 */
-  root: string | null
-  scanInfo: string | null
-
-  /** 主区要渲染的行（两种来源归一后的结果） */
-  items: GridItem[]
-  /**
-   * 命中总数：入库模式 = 查询命中数；
-   * 浏览模式 = 目录里的图片数 **+ 子文件夹数**（网格里两者都显示，
-   * 只算图片的话状态栏会出现「1 / 0 个项目」这种怪数字）。
-   */
-  total: number
-  /** 浏览模式下被截断（目录里比显示的多） */
-  browseTruncated: boolean
-
-  /** 已加入图库的目录 */
-  addedFolders: FolderNode[]
-  libraries: LibraryItem[]
-  /** 图库 → 成员目录（图库树二级展开用） */
-  libMembers: Record<number, FolderNode[]>
-  stats: Stats | null
-
-  scope: Scope
-  /**
-   * 「基础范围」的 key（剥掉标签筛选后的 图库/目录/浏览路径）。
-   * 标签条靠它判断范围是否切换；⛔ 别用标签列表指纹（会被莫名触发）。
-   */
-  scopeBaseKey: string
-  /** 当前是否处于「浏览（未入库）」模式 */
-  isBrowsing: boolean
-  /** 还没选任何目录（启动默认态）—— 主区要显示引导文案 */
-  isIdle: boolean
-  /** 是否允许多选（浏览 / 未选 都不可 —— 没有可做的索引操作） */
-  canSelect: boolean
-  /** 选中的格式（空 = 不限） */
-  formats: string[]
-  sort: ManagerSort
-  tier: ThumbTier
-  viewMode: ViewMode
-  /** 搜索框的即时输入值（防抖前） */
-  searchInput: string
-  /**
-   * 当前选中的**行 key**（`GridItem.key`）。
-   *
-   * ⚠️ 用 key 而不是索引 id：**浏览模式（未入库）每一行 `id` 都是 `null`**，
-   * 按 id 存根本选不中。key 在两种模式下都唯一（入库 = `String(id)`，浏览 = 绝对路径）。
-   */
-  selectedKeys: string[]
-  /** 当前范围能不能重扫（只有已入库的目录才有意义） */
-  canRescan: boolean
-
-  /** **浏览**一个目录（点侧栏树）：临时预览，**不索引、不出缓存** */
-  browseDir: (path: string, name: string) => Promise<void>
-  /**
-   * 把一个目录**加入图库**：单层扫描 → 写索引 → 归入某个图库 → 切到它。
-   *
-   * ⚠️ 先扫描再挂图库：目录不在 `folders` 表里就挂不上。
-   */
-  /**
-   * 扫目录并加入图库。
-   *
-   * `recursive = true` → 连同**全部子目录**一起入库（用户在「是否包含子文件夹」
-   * 里答了「包含」）。默认 false：只加这一层。
-   */
-  addFolderToLibrary: (
-    path: string,
-    folderName: string,
-    lib: LibChoice,
-    recursive?: boolean,
-  ) => Promise<void>
-  /** 把目录加进**指定 id** 的图库（拖放 / 「添加文件夹…」用） */
-  addFolderToLibraryById: (
-    path: string,
-    folderName: string,
-    libId: number,
-    libName: string,
-  ) => Promise<void>
-  /** 改图库名（重名时抛错，调用方负责留在弹窗里让用户改） */
-  renameLibrary: (id: number, name: string) => Promise<void>  /**
-   * 新建**智能图库**（规则文本，语法见 `pv-lib::rule`）。
-   *
-   * 建完自动切过去 —— 用户刚建完就想看里面有什么；
-   * 规则命中 0 张时主区会显示空态，也正好说明规则太窄。
-   */
-  createSmartLibrary: (name: string, rule: string) => Promise<number>
-  /** 删除图库（只删分组；删的是当前图库时范围退回「全部照片」） */
-  deleteLibrary: (id: number) => Promise<void>
-  /** 全部标签 + 使用次数（侧栏「标签」分区） */
-  tags: TagItem[]
-  /** 一级类目 → 去重后的图片张数（AI 标签条上一级chip的数字） */
-  tagGroups: Record<string, number>
-  /** 切到某个标签：主区只显示带这个标签的图 */
-  selectTag: (name: string) => void
-  /** 给一批图加标签（不存在则新建）。返回建立的挂载数 */
-  addTags: (ids: number[], names: string[]) => Promise<number>
-  /** 从一批图移除某个标签（按 id） */
-  removeTag: (ids: number[], tagId: number) => Promise<number>
-  /** 这批图各自已有哪些标签（标签选择器判断全选/半选） */
-  tagCountsFor: (ids: number[]) => Promise<TagHit[]>
-  /** 标签改名（重名抛错，调用方留在输入框里让用户改） */
-  renameTag: (id: number, name: string) => Promise<void>
-  /** 删除标签（拆挂载 + 删标签行，照片不动） */
-  deleteTag: (id: number) => Promise<void>
-  /** 全部地点 + 张数（侧栏「地点」分区，离线城市名） */
-  places: PlaceItem[]
-  /** 切到某个地点：主区只显示在那里拍的照片 */
-  selectPlace: (name: string) => void
-  /** 重扫当前已入库的目录（**不改图库归属**） */
-  rescan: () => Promise<void>
-  /** 回到「我的电脑」：清空主区（启动默认态） */
-  goHome: () => void
-  selectAllScope: () => void
-  selectLibrary: (id: number, name: string) => void
-  /** 切到一个已入库的目录（侧栏「已加入图库」列表点击） */
-  selectAddedFolder: (f: FolderNode) => void
-  /** 地址栏跳转：已入库走索引，未入库走临时预览 */
-  gotoDir: (path: string, name: string) => Promise<void>
-  /**
-   * 从图库移除一个目录**及其整棵子树**（删索引 + 删缩略图缓存，**不碰原图**）。
-   *
-   * ⚠️ 破坏性操作，调用方必须先弹确认框。
-   */
-  removeAddedFolder: (f: FolderNode) => Promise<void>
-  toggleFormat: (fmt: string) => void
-  clearFormats: () => void
-  /** 库里出现过的相机机型（顶部「相机」下拉） */
-  cameras: ManagerCamera[]
-  /** 已选相机（空 = 不限） */
-  camera: string[]
-  toggleCamera: (model: string) => void
-  clearCameras: () => void
-  /** 按一组标签筛选（标签条点一级/二级） */
-  selectTagGroup: (label: string, names: string[]) => void
-  /** 取消标签组筛选，回到进入前的范围（标签条的「全部」） */
-  clearTagGroup: () => void
-  /** 拍摄年份（顶部「年份」下拉） */
-  years: ManagerYear[]
-  yearFilter: number[]
-  toggleYear: (y: number) => void
-  clearYears: () => void
-  /** 已选地点（顶部「地点」下拉，多选） */
-  placeFilter: string[]
-  togglePlace: (name: string) => void
-  clearPlaces: () => void
-  /** 标签有无：null=不限 / 'has'=有标签 / 'none'=无标签 */
-  tagFilter: 'has' | 'none' | null
-  setTagFilter: (v: 'has' | 'none' | null) => void
-  setSearchInput: (v: string) => void
-  setSort: (s: ManagerSort) => void
-  /** 当前方向的**实际**值（已含用户在同一列上翻转的覆盖） */
-  sortDesc: boolean
-  /**
-   * 列头点击用：换列 → 用该列默认方向；**同一列再点 → 翻转**。
-   *
-   * 与 `setSort` 分开是因为顶栏「排序」菜单里再点同一项不该翻转方向
-   * （菜单没有方向指示，翻了用户看不出来）。
-   */
-  toggleSort: (s: ManagerSort) => void
-  setTier: (t: ThumbTier) => void
-  setViewMode: (v: ViewMode) => void
-  toggleSelect: (key: string) => void
-  /** 只选这一张（普通单击的语义） */
-  selectOnly: (key: string) => void
-  selectAll: () => void
-  clearSelection: () => void
-  /** 区间选择（Shift + 单击）：从 anchorKey 一路选到 key（追加，不清空已有选择） */
-  selectRange: (anchorKey: string, key: string) => void
-  /** 批量打星（0–5）。只改索引；改完自动重查（星级筛选要立刻生效）。 */
-  setRating: (ids: number[], rating: number) => Promise<number>
-  /** 批量打旗标（0/1）。只改索引；改完自动重查。 */
-  setFlag: (ids: number[], flag: number) => Promise<number>
-  /** 强制重查当前范围（批量删除/重命名后调用，索引已经变了）。 */
-  reload: () => void
-  /**
-   * 只重拉**侧栏元数据**（图库列表 / 已加入目录 / 成员 / 统计），不重查主区。
-   *
-   * ⭐ 新建图库后必须调它 —— 侧栏的 `libraries` 是挂载时拉的一份快照，
-   * 不刷新就看不到刚建的那个。它顺带 `queryVersion + 1`，所以主区不会错。
-   */
-  refreshLibraries: () => Promise<void>
-  /**
-   * 让**指定文件**的缩略图重取一次（原地改写后调用）。
-   *
-   * 只标记这几张，不是全量：刷新时让 500 张卡片同时重取既浪费又会闪烁。
-   */
-  bumpThumbs: (paths: string[]) => void
-  /**
-   * 取某个文件的缩略图版本号（0 = 从没被原地改写过）。
-   *
-   * 文件被**原地改写**（旋转/翻转保存）时 `imageId` / `path` / 行 key 都没变，
-   * 只有 mtime 变了 —— 没有版本号的话 `ThumbCanvas` 的缓存键不变，
-   * 界面会一直显示**旧画面**。
-   */
-  thumbRevOf: (path: string | null) => number
-  /** 当前范围的显示名（主区标题用） */
-  /**
-   * 按人物筛选（点人像头像）：与标签筛选同层语义，只改网格内容与标题。
-   * 再点同一个人 = 取消。
-   */
-  personFilter: { id: number; name: string } | null
-  setPersonFilter: (p: { id: number; name: string } | null) => void
-  scopeTitle: string
-}
-
-/** 网格排序的全部取值（设置面板的「默认排序」也用它校验 localStorage 里的历史值）。 */
-export const MANAGER_SORTS = [
-  'taken',
-  'name',
-  'size',
-  'mtime',
-  'format',
-  'rating',
-  'dims',
-  'flag',
-  'added',
-  'random',
-] as const
-
-/** 默认排序的持久化键 */
-const SORT_KEY = 'pv.mg.sort'
-/**
- * 「设置面板改了默认排序」的事件名。
- *
- * 为什么不用 React 状态往上提：`useManager` 在 `ManagerView` 里，而设置面板在
- * `App` 里 —— 中间隔着好几层组件。一个 window 事件比一路 prop 回调干净，
- * 而且 `ManagerView` 是常驻挂载的，事件是唯一能让它**立刻**反应过来的办法。
- */
-export const EVENT_SET_SORT = 'pv:set-sort'
-
-/** 读「默认排序」偏好（没存过 / 存的值不认识 → 拍摄时间）。 */
-export function readSortPref(): ManagerSort {
-  try {
-    const v = localStorage.getItem(SORT_KEY)
-    if (v && (MANAGER_SORTS as readonly string[]).includes(v)) return v as ManagerSort
-  } catch {
-    /* localStorage 不可用 → 用默认值 */
-  }
-  return 'taken'
-}
-
-/** 记住排序偏好，并通知常驻挂载的图库视图立刻跟着变。 */
-export function applySortPref(s: ManagerSort): void {
-  try {
-    localStorage.setItem(SORT_KEY, s)
-  } catch {
-    /* 忽略：只影响下次启动的默认值 */
-  }
-  window.dispatchEvent(new CustomEvent(EVENT_SET_SORT, { detail: s }))
-}
-
-/* ── 缩略图档位偏好（2026-10-24 新增：以前只在内存里，重启就回默认）─────
- * 档位与像素值的对应关系来自 `pv_index::ThumbTier`，这里只做展示与记忆。
- * 改完不需要事件通知：设置窗口只管写，图库视图下次进入时读它。 */
-const TIER_KEY = 'pv.mg.tier'
-
-export const THUMB_TIERS: Array<{ value: ThumbTier; label: string; px: number }> = [
-  { value: 'sm', label: '小', px: 116 },
-  { value: 'md', label: '中', px: 168 },
-  { value: 'lg', label: '大', px: 236 },
-  { value: 'xl', label: '特大', px: 320 },
-]
-
-const TIER_VALUES = THUMB_TIERS.map((t) => t.value)
-
-/** 读缩略图档位偏好（没存过 / 值不认识 → 中）。 */
-export function readThumbTier(): ThumbTier {
-  try {
-    const v = localStorage.getItem(TIER_KEY)
-    if (v && (TIER_VALUES as string[]).includes(v)) return v as ThumbTier
-  } catch {
-    /* localStorage 不可用 → 默认值 */
-  }
-  return 'md'
-}
-
-/** 记住缩略图档位偏好。 */
-export function saveThumbTier(t: ThumbTier): void {
-  try {
-    localStorage.setItem(TIER_KEY, t)
-  } catch {
-    /* 忽略：只影响下次启动 */
-  }
-}
-
-/**
- * 把未知异常变成一句人话。
- *
- * ⚠️ 后端命令失败时抛的是**序列化后的 `ErrorDto` 对象**（有 `message` 字段），
- * 直接 `String(e)` 只会得到 `[object Object]`；这里优先取 `message`。
- * 也导出给视图层用（别在各处各写一遍）。
- */
-export function errText(e: unknown): string {
-  if (typeof e === 'string') return e
-  if (e && typeof e === 'object' && 'message' in e) {
-    const m = (e as { message?: unknown }).message
-    if (typeof m === 'string') return m
-  }
-  return String(e)
-}
+/* ── 再导出：对外 API 面与拆分前完全一致 ─────────────────────────── */
+export type { GridItem, LibChoice, ManagerApi, Scope, ViewMode } from './manager/types'
+export {
+  EVENT_SET_SORT,
+  MANAGER_SORTS,
+  THUMB_TIERS,
+  applySortPref,
+  readSortPref,
+  readThumbTier,
+  saveThumbTier,
+} from './manager/prefs'
+export { errText } from './manager/utils'
 
 export function useManager(): ManagerApi {
   const [ready, setReady] = useState(false)
@@ -620,11 +206,8 @@ export function useManager(): ManagerApi {
     setSortState(s)
     // 换列 → 回到该列的默认方向（否则「按大小降序」的覆盖会被带到「按文件名」）
     setSortDesc(null)
-    try {
-      localStorage.setItem(SORT_KEY, s)
-    } catch {
-      /* 忽略 */
-    }
+    // 只写不广播：本 hook 就在 `EVENT_SET_SORT` 的监听端，广播等于自激一次
+    writeSortPref(s)
   }, [])
 
   const toggleSort = useCallback(
