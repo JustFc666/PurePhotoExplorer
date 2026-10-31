@@ -5,9 +5,23 @@ use crate::models::Tag;
 use rusqlite::{params, params_from_iter, Connection};
 
 /// 取（必要时创建）同名标签，返回其 id。**同名幂等**（依赖 `tags.name UNIQUE`）。
+///
+/// ## `kind` 只升不降
+/// 同名标签已存在时**不改** `kind` —— 一个标签是手工标签还是 AI 标签，由**第一次**
+/// 建立时定下，后续挂载不改变它的身份。
+///
+/// ⭐ 唯一例外：原来是 `kind='exif'`（机型 / 地点派生，侧栏**故意隐藏**），
+/// 现在被当作真标签（`user` / `ai`）使用 —— 必须摘掉隐藏标记，否则用户手动打的
+/// 标签在侧栏「标签」分区里永远看不见（`counts_scoped` 有 `WHERE t.kind <> 'exif'`）。
+///
+/// ⛔ 反过来**不许降级**：`exif` 写入不能把已有 `user` / `ai` 标签重新藏起来。
 pub fn ensure(conn: &Connection, name: &str, kind: Option<&str>) -> Result<i64> {
     conn.execute(
-        "INSERT OR IGNORE INTO tags(name, kind) VALUES (?1, ?2)",
+        "INSERT INTO tags(name, kind) VALUES (?1, ?2)
+         ON CONFLICT(name) DO UPDATE SET kind = excluded.kind
+           WHERE (tags.kind IS NULL OR tags.kind = 'exif')
+             AND excluded.kind IS NOT NULL
+             AND excluded.kind <> 'exif'",
         params![name, kind],
     )?;
     Ok(conn.query_row("SELECT id FROM tags WHERE name = ?1", params![name], |r| r.get(0))?)
@@ -524,13 +538,8 @@ mod scoped_counts_tests {
     use super::*;
     use crate::open_test_db;
 
-    /// 侧栏「标签」分区**不列 EXIF 派生标签**（机型 / 地点）。
-    ///
-    /// 用户 2026-10-30：48 个机型/城市名把真正的 AI 标签挤到下面去了。
-    /// 它们没丢：机型走筛选栏「相机」、地点走「地点」下拉。
-    #[test]
-    fn 侧栏标签不含机型与地点() {
-        let conn = open_test_db().unwrap();
+    /// 造一张图（含卷 + 目录），返回 `image_id`。计数范围查询只要能 JOIN 到图即可。
+    fn seed_image(conn: &Connection) -> i64 {
         conn.execute(
             "INSERT OR IGNORE INTO volumes(id, volume_guid) VALUES (1, 'v1')",
             [],
@@ -543,7 +552,17 @@ mod scoped_counts_tests {
         .unwrap();
         conn.execute("INSERT INTO images(dir_id, rel_name) VALUES (1, 'a.jpg')", [])
             .unwrap();
-        let img = conn.last_insert_rowid();
+        conn.last_insert_rowid()
+    }
+
+    /// 侧栏「标签」分区**不列 EXIF 派生标签**（机型 / 地点）。
+    ///
+    /// 用户 2026-10-30：48 个机型/城市名把真正的 AI 标签挤到下面去了。
+    /// 它们没丢：机型走筛选栏「相机」、地点走「地点」下拉。
+    #[test]
+    fn 侧栏标签不含机型与地点() {
+        let conn = open_test_db().unwrap();
+        let img = seed_image(&conn);
 
         for (name, kind) in [("人像", "ai"), ("二次元", "ai"), ("iQOO 10", "exif"), ("上海", "exif")] {
             let id = ensure(&conn, name, Some(kind)).unwrap();
@@ -560,5 +579,47 @@ mod scoped_counts_tests {
         want.sort();
         assert_eq!(got, want);
         assert!(!got.iter().any(|n| n == "iQOO 10" || n == "上海"));
+    }
+
+    /// 同名标签一旦被当作**真标签**（`user` / `ai`）使用，就要摘掉 `exif` 隐藏标记。
+    ///
+    /// ## 这个 bug 怎么来的
+    /// `ensure` 原先是 `INSERT OR IGNORE` —— 同名已存在时**整行不动**，
+    /// 于是 `kind` 永远停在第一次建出来的值上。老库里「iQOO 10」「上海」这类
+    /// EXIF 派生标签是 `kind='exif'`，而 `counts_scoped` 有 `WHERE t.kind <> 'exif'`。
+    ///
+    /// 结果：用户手动打一个与机型/城市同名的标签 → 卡片上有、侧栏「标签」里
+    /// 永远找不到（不是空库才有的问题，用户自己的库里就有这 48 个名字）。
+    ///
+    /// ## 两个方向都要守住
+    /// - 被真标签使用时**必须摘标记**（否则看不见）
+    /// - 反之 `exif` 写入**不许把真标签重新藏起来**（否则丢标签）
+    #[test]
+    fn 同名标签被真标签使用时摘掉隐藏标记() {
+        let conn = open_test_db().unwrap();
+        let img = seed_image(&conn);
+
+        // 老库状态：机型标签是 exif 派生，侧栏看不见。
+        let exif_id = ensure(&conn, "iQOO 10", Some("exif")).unwrap();
+        add_image_tag(&conn, img, exif_id, "exif", None).unwrap();
+        assert!(counts_scoped(&conn, None, None).unwrap().is_empty());
+
+        // 用户手动打了同名标签：还是同一个 tag（不能建出第二个），但要能看见。
+        let user_id = ensure(&conn, "iQOO 10", Some("user")).unwrap();
+        assert_eq!(user_id, exif_id, "同名必须是同一个标签");
+        add_image_tag(&conn, img, user_id, "user", None).unwrap();
+
+        let got = counts_scoped(&conn, None, None).unwrap();
+        assert_eq!(got.len(), 1, "机型名现在也是真标签了，侧栏要列出来");
+        assert_eq!(got[0].1, "iQOO 10");
+        assert_eq!(got[0].2, 1, "同一张图两个来源也只算一张");
+
+        // 反向：之后再有 exif 写入，不许把用户标签重新藏起来。
+        ensure(&conn, "iQOO 10", Some("exif")).unwrap();
+        assert_eq!(
+            counts_scoped(&conn, None, None).unwrap().len(),
+            1,
+            "exif 写入不能降级已有 user 标签"
+        );
     }
 }
