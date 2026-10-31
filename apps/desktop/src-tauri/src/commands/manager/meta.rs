@@ -88,11 +88,10 @@ pub async fn manager_image_tags(
                 place,
             })
         })
-        .map_err(|e| ErrorDto {
-            code: "db_error".into(),
-            message: e,
-            user_visible: true,
-        })
+        // ⚠️ 以前这里手写 `ErrorDto { code: "db_error", ... }`，与其余命令的
+        // `managerError` 并存。前端从没按 code 分支（grep `db_error` 零命中），
+        // 两套码只是噪音 → 统一走 `merr`。
+        .map_err(merr)
 }
 
 /// 拍摄年份列表（顶部「年份」下拉）：按年份倒序。
@@ -106,11 +105,7 @@ pub async fn manager_years(state: State<'_, AppState>) -> Result<Vec<YearDto>, E
                 .map(|(year, count)| YearDto { year, count })
                 .collect::<Vec<_>>())
         })
-        .map_err(|e| ErrorDto {
-            code: "db_error".into(),
-            message: e,
-            user_visible: true,
-        })
+        .map_err(merr)
 }
 
 /// 相机机型列表（顶部「相机」下拉）：库里真实出现过的，按张数降序。
@@ -123,7 +118,8 @@ pub async fn manager_cameras(state: State<'_, AppState>) -> Result<Vec<CameraDto
             .map(|(model, count)| CameraDto { model, count })
             .collect::<Vec<_>>())
     })
-    .map_err(|e| ErrorDto { code: "ai_error".into(), message: e, user_visible: true })
+    // ⚠️ 曾经写成 `code: "ai_error"`（复制粘贴自 AI 那侧），跟数据库毫无关系。
+    .map_err(merr)
 }
 
 /// 一级类目的**去重**图片数（AI 标签条上「人像 52」这个数字）。
@@ -153,7 +149,8 @@ pub async fn manager_tags(
     state: State<'_, AppState>,
     library_id: Option<i64>,
     dir_id: Option<i64>,
-) -> Result<Vec<TagDto>, ErrorDto> {    state
+) -> Result<Vec<TagDto>, ErrorDto> {
+    state
         .with_manager(|s| {
             Ok(s.tags_scoped(library_id, dir_id)
                 .map_err(|e| e.to_string())?

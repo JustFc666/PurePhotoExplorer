@@ -32,7 +32,9 @@ pub async fn manager_libraries(state: State<'_, AppState>) -> Result<Vec<Library
         .map_err(merr)
 }
 
-/// 全库统计：张数 / 总字节 / 分格式。
+/// 图库 ↔ 目录的归属关系（扁平表：一行一个「图库包含某目录」）。
+///
+/// 前端用它算「这个目录**直接**属于哪几个图库」；子树归属不在这里展开。
 #[tauri::command]
 pub async fn manager_library_members(
     state: State<'_, AppState>,
