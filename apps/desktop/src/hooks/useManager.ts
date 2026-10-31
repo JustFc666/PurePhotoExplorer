@@ -356,6 +356,15 @@ export interface ManagerApi {
   setTagFilter: (v: 'has' | 'none' | null) => void
   setSearchInput: (v: string) => void
   setSort: (s: ManagerSort) => void
+  /** 当前方向的**实际**值（已含用户在同一列上翻转的覆盖） */
+  sortDesc: boolean
+  /**
+   * 列头点击用：换列 → 用该列默认方向；**同一列再点 → 翻转**。
+   *
+   * 与 `setSort` 分开是因为顶栏「排序」菜单里再点同一项不该翻转方向
+   * （菜单没有方向指示，翻了用户看不出来）。
+   */
+  toggleSort: (s: ManagerSort) => void
   setTier: (t: ThumbTier) => void
   setViewMode: (v: ViewMode) => void
   toggleSelect: (key: string) => void
@@ -363,6 +372,8 @@ export interface ManagerApi {
   selectOnly: (key: string) => void
   selectAll: () => void
   clearSelection: () => void
+  /** 区间选择（Shift + 单击）：从 anchorKey 一路选到 key（追加，不清空已有选择） */
+  selectRange: (anchorKey: string, key: string) => void
   /** 批量打星（0–5）。只改索引；改完自动重查（星级筛选要立刻生效）。 */
   setRating: (ids: number[], rating: number) => Promise<number>
   /** 批量打旗标（0/1）。只改索引；改完自动重查。 */
@@ -408,6 +419,8 @@ export const MANAGER_SORTS = [
   'mtime',
   'format',
   'rating',
+  'dims',
+  'flag',
   'added',
   'random',
 ] as const
@@ -581,14 +594,37 @@ export function useManager(): ManagerApi {
    * 直接暴露 `useState` 的 setter 也能用，但每次切换都写一次 `localStorage`
    * 正是「记住了」的实现 —— 放在这里，调用点（顶栏/状态栏）不用管持久化。
    */
+  /**
+   * 用户在同一列上**手动翻转**的方向；`null` = 用该列的默认方向（`descForSort`）。
+   *
+   * 为什么方向要单独存：`ManagerSort` 只是「按哪一列」，不含方向。
+   * 列头点第二次要能升/降互换，这个覆盖值就是那次的翻转结果。
+   */
+  const [sortDesc, setSortDesc] = useState<boolean | null>(null)
+  /** 实际生效的方向（后端 SQL 与浏览模式的内存排序都读它） */
+  const descending = sortDesc ?? descForSort(sort)
+
   const setSort = useCallback((s: ManagerSort) => {
     setSortState(s)
+    // 换列 → 回到该列的默认方向（否则「按大小降序」的覆盖会被带到「按文件名」）
+    setSortDesc(null)
     try {
       localStorage.setItem(SORT_KEY, s)
     } catch {
       /* 忽略 */
     }
   }, [])
+
+  const toggleSort = useCallback(
+    (s: ManagerSort) => {
+      if (s !== sort) {
+        setSort(s)
+        return
+      }
+      setSortDesc(!descending)
+    },
+    [sort, descending, setSort],
+  )
   /**
    * 设置面板改「默认排序」时**立刻生效**。
    *
@@ -1247,9 +1283,8 @@ export function useManager(): ManagerApi {
 
     const q: ManagerQuery = {
       sort,
-      // 文件名 / 文件类型升序更符合直觉；其余（时间/大小）降序 = 新的 / 大的在前。
-      // ⚠️ 必须与 `sortItems.ts::descForSort` 一致，否则「浏览」与「图库」方向相反。
-      desc: descForSort(sort),
+      // 实际方向（含用户在同一列上的翻转），与浏览模式的内存排序同一份口径
+      desc: descending,
       limit: PAGE_LIMIT,
       offset: 0,
     }
@@ -1297,7 +1332,7 @@ export function useManager(): ManagerApi {
     // scopeKey / formatKey 用字符串而不是对象：scope 每次都是新对象，
     // 直接进依赖会无限查询
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ready, queryVersion, scopeKey, formatKey, cameraKey, yearKey, placeKey, tagFilter, personFilter, searchTerm, sort])
+  }, [ready, queryVersion, scopeKey, formatKey, cameraKey, yearKey, placeKey, tagFilter, personFilter, searchTerm, sort, descending])
 
   // 换范围 / 换筛选就清空多选 —— 留着上一批的选中项，之后点「导出」会导出看不见的图
   useEffect(() => {
@@ -1353,7 +1388,7 @@ export function useManager(): ManagerApi {
         transient: true,
         kind: 'file',
       }))
-      files.sort(makeComparator<GridItem>(sort, descForSort(sort)))
+      files.sort(makeComparator<GridItem>(sort, descending))
       // 文件夹没有大小/时间可排，永远按名字（且永远在前）
       dirs.sort((a, b) => compareName(a.name, b.name))
       return [...dirs, ...files]
@@ -1441,6 +1476,38 @@ export function useManager(): ManagerApi {
     () => setSelected(new Set(items.filter((i) => i.kind !== 'dir').map((i) => i.key))),
     [items],
   )
+  /**
+   * 区间选择（`Shift + 单击`）：把 anchor 到 key 之间的**全部项**加进已选。
+   *
+   * ## 为什么是「追加」而不是「替换」
+   * 资源管理器的 Shift 是替换语义，但那是**单段选择**的思维。这里按住 Shift
+   * 连点几下可以拼出好几段（先选 1–20，再选 50–80），对「大量选取」更实用，
+   * 而且不会一不小心把前面选的清掉。
+   *
+   * 找不到 anchor（比如切过范围、那项已经不在列表里）就退化成「只选这一项」——
+   * 总比什么都不发生好。
+   */
+  const selectRange = useCallback(
+    (anchorKey: string, key: string) => {
+      setSelected((prev) => {
+        const next = new Set(prev)
+        const a = items.findIndex((i) => i.key === anchorKey)
+        const b = items.findIndex((i) => i.key === key)
+        if (a < 0 || b < 0) {
+          next.add(key)
+          return next
+        }
+        const [lo, hi] = a <= b ? [a, b] : [b, a]
+        for (let i = lo; i <= hi; i++) {
+          const it = items[i]
+          if (it) next.add(it.key)
+        }
+        return next
+      })
+    },
+    [items],
+  )
+
   const clearSelection = useCallback(() => setSelected(new Set()), [])
 
   /**
@@ -1578,12 +1645,15 @@ export function useManager(): ManagerApi {
     clearTagGroup,
     setSearchInput,
     setSort,
+    sortDesc: descending,
+    toggleSort,
     setTier,
     setViewMode,
     toggleSelect,
     selectOnly,
     selectAll,
     clearSelection,
+    selectRange,
     setRating,
     setFlag,
     reload,

@@ -22,6 +22,8 @@ export const SORT_OPTIONS: SortOption[] = [
   { value: 'mtime', label: '修改时间' },
   { value: 'size', label: '文件大小' },
   { value: 'format', label: '文件类型' },
+  { value: 'dims', label: '分辨率' },
   { value: 'added', label: '入库时间', libraryOnly: true },
   { value: 'rating', label: '评分', libraryOnly: true },
+  { value: 'flag', label: '标记', libraryOnly: true },
 ]

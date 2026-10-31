@@ -660,14 +660,39 @@ export function ManagerView(props: Props) {
    * ⚠️ 浏览模式（未入库）整体 `canSelect === false`（照片不参与批量操作），
    * 但**目录必须例外**，否则浏览模式里选不了文件夹，右键只能作用于单张。
    */
+  /**
+   * 区间选择的锚点（上一次「普通单击 / Ctrl 单击」落在哪一项）。
+   *
+   * `Shift + 单击` 从它一路选到当前项。**Shift 本身不移动锚点** ——
+   * 这样连点几下就能反复扩大/缩小同一段范围，跟资源管理器一致。
+   */
+  const selAnchor = useRef<string | null>(null)
+  // 选择被清空（点空白 / Esc / 切范围）后锚点就失效了，留着会选出一段莫名其妙的东西
+  if (mgr.selectedKeys.length === 0) selAnchor.current = null
+
   const toggle = useCallback(
     (item: GridItem, e: ReactMouseEvent) => {
       // 文件夹与压缩包都是「容器」：浏览模式下也要能选中（右键对它们操作）
       const container = item.kind === 'dir' || item.kind === 'archive'
       if (!container && !mgr.canSelect) return
-      if (e.ctrlKey || e.metaKey || e.shiftKey) mgr.toggleSelect(item.key)
-      else if (selected.has(item.key)) mgr.clearSelection()
-      else mgr.toggleSelect(item.key)
+
+      // Shift：从锚点一路选过来（「大量选取」）
+      if (e.shiftKey) {
+        mgr.selectRange(selAnchor.current ?? item.key, item.key)
+        return
+      }
+      if (e.ctrlKey || e.metaKey) {
+        mgr.toggleSelect(item.key)
+        selAnchor.current = item.key
+        return
+      }
+      if (selected.has(item.key)) {
+        mgr.clearSelection()
+        selAnchor.current = null
+      } else {
+        mgr.toggleSelect(item.key)
+        selAnchor.current = item.key
+      }
     },
     [mgr, selected],
   )
@@ -2717,23 +2742,39 @@ export function ManagerView(props: Props) {
               */}
               <div className="pv-mg-listhead">
                 <span />
-                {listPrefs.visible.map((c) => (
-                  <span
-                    key={c.id}
-                    className={`pv-mg-listhcell is-${c.align}`}
-                    title={c.hint ? `${c.label} — ${c.hint}` : c.label}
-                  >
-                    <span className="pv-mg-listhtxt">{c.label}</span>
+                {listPrefs.visible.map((c) => {
+                  const sorted = mgr.sort === c.sortKey
+                  return (
                     <span
-                      className="pv-mg-listgrip"
-                      role="separator"
-                      aria-orientation="vertical"
-                      onMouseDown={(e) => onColGripDown(e, c.id)}
-                      onDoubleClick={() => listPrefs.resetWidth(c.id)}
-                      title="拖动调整列宽，双击恢复默认"
-                    />
-                  </span>
-                ))}
+                      key={c.id}
+                      className={`pv-mg-listhcell is-${c.align}${sorted ? ' is-sorted' : ''}`}
+                    >
+                      <button
+                        type="button"
+                        className="pv-mg-listhbtn"
+                        onClick={() => mgr.toggleSort(c.sortKey)}
+                        title={`${c.label}${c.hint ? ` — ${c.hint}` : ''}\n点击按这一列排序${
+                          sorted ? '（再点一次反向）' : ''
+                        }`}
+                        aria-sort={sorted ? (mgr.sortDesc ? 'descending' : 'ascending') : 'none'}
+                      >
+                        <span className="pv-mg-listhtxt">{c.label}</span>
+                        {/* 三角：当前排序列显示实心方向，其它列淡显（提示「可以点」） */}
+                        <span className="pv-mg-listsort" aria-hidden>
+                          {sorted ? (mgr.sortDesc ? '▼' : '▲') : '▲'}
+                        </span>
+                      </button>
+                      <span
+                        className="pv-mg-listgrip"
+                        role="separator"
+                        aria-orientation="vertical"
+                        onMouseDown={(e) => onColGripDown(e, c.id)}
+                        onDoubleClick={() => listPrefs.resetWidth(c.id)}
+                        title="拖动调整列宽，双击恢复默认"
+                      />
+                    </span>
+                  )
+                })}
               </div>
 
               {mgr.items.map((item) => {

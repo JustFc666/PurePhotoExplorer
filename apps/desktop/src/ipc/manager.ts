@@ -23,6 +23,10 @@ export type ManagerSort =
   | 'mtime'
   /** 按格式标签（jpeg/png/raw…），同类型聚在一起 */
   | 'format'
+  /** 按分辨率（宽 × 高 的像素总数） */
+  | 'dims'
+  /** 按旗标（0 / 1） */
+  | 'flag'
   | 'rating'
   | 'added'
   | 'random'

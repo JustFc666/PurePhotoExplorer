@@ -28,9 +28,24 @@ export interface Sortable {
   format: string | null
   /** 拍摄时间（Unix 毫秒/秒都行，只要同单位）。缺 = null，比较时会回退到 mtime */
   takenAt: number | null
+  /** 分辨率排序要用（缺省按 0 算，排在最前） */
+  width?: number | null
+  height?: number | null
+  /** 星级 / 旗标排序要用 */
+  rating?: number
+  flag?: number
 }
 
-/** 这个排序是不是「降序」（时间、大小：新的/大的在前）。 */
+/**
+ * 这个排序的**默认**方向是不是降序。
+ *
+ * - 名字 / 格式：升序（A→Z 才符合「找某个东西」的直觉）
+ * - 时间 / 大小 / 分辨率：降序（新的、大的在前）
+ * - 星级 / 旗标：降序（高分的在前）
+ *
+ * ⚠️ 这只是「切到这一列时的初始方向」。用户在同一列上再点一次会翻转，
+ * 那个覆盖值存在 `useManager` 的 `sortDesc` 里，不改变这里的默认。
+ */
 export function descForSort(sort: ManagerSort): boolean {
   return sort !== 'name' && sort !== 'format'
 }
@@ -63,6 +78,18 @@ export function makeComparator<T extends Sortable>(
         break
       case 'size':
         r = (a.size ?? 0) - (b.size ?? 0)
+        break
+      case 'dims':
+        // 像素**总数**：竖图 4000×3000 和横图 3000×4000 是同一档，
+        // 单比宽或单比高会把它们分成两类，很反直觉。
+        r =
+          (a.width ?? 0) * (a.height ?? 0) - (b.width ?? 0) * (b.height ?? 0)
+        break
+      case 'rating':
+        r = (a.rating ?? 0) - (b.rating ?? 0)
+        break
+      case 'flag':
+        r = (a.flag ?? 0) - (b.flag ?? 0)
         break
       case 'mtime':
         r = (a.mtime ?? 0) - (b.mtime ?? 0)

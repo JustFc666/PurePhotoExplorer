@@ -25,6 +25,10 @@ pub enum SortKey {
     Format,
     /// 评分
     Rating,
+    /// 分辨率（宽 × 高 的像素总数）
+    Dims,
+    /// 旗标（0 / 1）
+    Flag,
     /// 入库时间
     Added,
     /// 随机（⚠️ 每次求值不同，分页语义不稳定）
@@ -132,6 +136,11 @@ fn sort_expr(k: SortKey) -> &'static str {
         // 空格式兜底成空串，避免 NULL 在升序里被排到最前（看起来像「未知类型在最上面」）
         SortKey::Format => "COALESCE(images.format, '')",
         SortKey::Rating => "images.rating",
+        // 用**像素总数**而不是宽或高之一：竖图横图混排时，「哪张更清晰」
+        // 只有面积说得清（4000×3000 和 3000×4000 是同一档）。
+        // 老库可能有 width/height 为 NULL 的行，兜底成 0。
+        SortKey::Dims => "(COALESCE(images.width, 0) * COALESCE(images.height, 0))",
+        SortKey::Flag => "images.flag",
         SortKey::Added => "images.added_ts",
         SortKey::Random => "RANDOM()",
     }
@@ -694,6 +703,48 @@ mod tests {
         assert_eq!(hit("35mm"), 1, "镜头");
         // ⚠️ 没有 EXIF 的图不该因为 `COALESCE` 把整表命中
         assert_eq!(hit("不存在的关键词"), 0);
+    }
+
+    /// 分辨率排序（2026-10-31 加，列表视图的「分辨率」列要用）。
+    ///
+    /// ⚠️ 用**像素总数**而不是宽/高单列：竖图 4000×3000 和横图 3000×4000 是
+    /// 同一档，单比宽会把它们分成两类，看起来像排序坏了。
+    #[test]
+    fn 按分辨率排序() {
+        let (c, ..) = setup();
+        c.execute("UPDATE images SET width = 100, height = 100 WHERE rel_name = 'a1.jpg'", [])
+            .unwrap();
+        c.execute("UPDATE images SET width = 500, height = 500 WHERE rel_name = 'a2.png'", [])
+            .unwrap();
+        c.execute("UPDATE images SET width = 50, height = 50 WHERE rel_name = 'a3.cr3'", [])
+            .unwrap();
+        // b1.jpg 故意留着 width/height = NULL —— 必须当成 0 排在最后，不能崩
+
+        let q = ImageQuery {
+            sort: SortKey::Dims,
+            dir: SortDir::Desc,
+            ..Default::default()
+        };
+        assert_eq!(
+            names(&list(&c, &q).unwrap()),
+            ["a2.png", "a1.jpg", "a3.cr3", "b1.jpg"]
+        );
+    }
+
+    /// 旗标排序：升/降序都要能用（列表的「标记」列）。
+    #[test]
+    fn 按旗标排序() {
+        let (c, ..) = setup();
+        c.execute("UPDATE images SET flag = 1 WHERE rel_name = 'a3.cr3'", [])
+            .unwrap();
+
+        let q = ImageQuery {
+            sort: SortKey::Flag,
+            dir: SortDir::Desc,
+            ..Default::default()
+        };
+        let got = names(&list(&c, &q).unwrap());
+        assert_eq!(got[0], "a3.cr3", "打了旗标的排最前");
     }
 
     #[test]

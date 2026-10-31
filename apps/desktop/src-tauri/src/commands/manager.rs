@@ -60,6 +60,8 @@ fn parse_sort(s: Option<&str>) -> SortKey {
         Some("mtime") => SortKey::Mtime,
         Some("format") => SortKey::Format,
         Some("rating") => SortKey::Rating,
+        Some("dims") => SortKey::Dims,
+        Some("flag") => SortKey::Flag,
         Some("added") => SortKey::Added,
         Some("random") => SortKey::Random,
         _ => SortKey::TakenAt,

@@ -13,6 +13,8 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 
+import type { ManagerSort } from '../ipc/manager'
+
 /** 列 id。新增列时**只能往后加**（localStorage 里存的是 id，删了会丢配置）。 */
 export type ListColumnId =
   | 'name'
@@ -41,6 +43,13 @@ export interface ListColumnDef {
   locked?: boolean
   /** 表头的悬停说明（为什么这一列有时候是空的） */
   hint?: string
+  /**
+   * 点这一列的表头时按什么排。
+   *
+   * ⚠️ 目前每列都有；留 `null` 的口子是给「不属于数据、只做展示」的未来列用
+   * （比如缩略图预览）—— 那种列不该有三角。
+   */
+  sortKey: ManagerSort
 }
 
 /**
@@ -58,6 +67,7 @@ export const LIST_COLUMNS: ListColumnDef[] = [
     min: 120,
     align: 'left',
     locked: true,
+    sortKey: 'name',
   },
   {
     id: 'format',
@@ -67,9 +77,10 @@ export const LIST_COLUMNS: ListColumnDef[] = [
     align: 'left',
     locked: true,
     hint: '按文件内容判定，与扩展名无关',
+    sortKey: 'format',
   },
-  { id: 'size', label: '大小', width: 92, min: 60, align: 'right', locked: true },
-  { id: 'mtime', label: '修改日期', width: 148, min: 108, align: 'left' },
+  { id: 'size', label: '大小', width: 92, min: 60, align: 'right', locked: true, sortKey: 'size' },
+  { id: 'mtime', label: '修改日期', width: 148, min: 108, align: 'left', sortKey: 'mtime' },
   {
     id: 'takenAt',
     label: '拍摄日期',
@@ -77,10 +88,11 @@ export const LIST_COLUMNS: ListColumnDef[] = [
     min: 108,
     align: 'left',
     hint: '来自 EXIF；浏览模式下要等后台读完才有',
+    sortKey: 'taken',
   },
-  { id: 'dims', label: '分辨率', width: 116, min: 84, align: 'left' },
-  { id: 'flag', label: '标记', width: 56, min: 44, align: 'center' },
-  { id: 'rating', label: '分级', width: 84, min: 56, align: 'left' },
+  { id: 'dims', label: '分辨率', width: 116, min: 84, align: 'left', sortKey: 'dims' },
+  { id: 'flag', label: '标记', width: 56, min: 44, align: 'center', sortKey: 'flag' },
+  { id: 'rating', label: '分级', width: 84, min: 56, align: 'left', sortKey: 'rating' },
 ]
 
 export const COLUMN_BY_ID: Record<ListColumnId, ListColumnDef> = Object.fromEntries(

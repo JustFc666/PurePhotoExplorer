@@ -9,7 +9,7 @@
  * ## 规则原文
  * 1. 普通单击 = **加选**（连续点缩略图即多选，不必按 Ctrl）；
  *    再点**已选中的那张** = 取消**本次全部**选择；点**网格空白处** = 全部取消；
- *    Ctrl/Shift 单击 = 只切换这一张。
+ *    Ctrl 单击 = 只切换这一张；**Shift 单击 = 从锚点一路选过来**（2026-10-31 改）。
  * 2. 单张重命名 = **直接在卡片文件名上原地编辑**，文本**全选**（打字即覆盖），
  *    Enter 提交 / Esc 取消 / 失焦提交；扩展名由上层自动保留。
  */
@@ -21,11 +21,26 @@ import { describe, expect, it } from 'vitest'
 
 describe('图库多选规则', () => {
   it('普通单击是加选，不是「只选这一张」', () => {
+    // 点已选中的那张 → 取消本次全部；否则 → 加选
     expect(managerViewSrc).toMatch(
-      /if\s*\(e\.ctrlKey \|\| e\.metaKey \|\| e\.shiftKey\)\s*mgr\.toggleSelect\(item\.key\)\s*else if\s*\(selected\.has\(item\.key\)\)\s*mgr\.clearSelection\(\)\s*else\s*mgr\.toggleSelect\(item\.key\)/,
+      /if\s*\(selected\.has\(item\.key\)\)\s*\{\s*mgr\.clearSelection\(\)[\s\S]{0,120}?else\s*\{\s*mgr\.toggleSelect\(item\.key\)/,
     )
     // 旧的「单击只选一张」写法不许回来
     expect(managerViewSrc).not.toMatch(/else\s+mgr\.selectOnly\(item\.key\)/)
+  })
+
+  it('Ctrl 单击只切换这一张', () => {
+    expect(managerViewSrc).toMatch(
+      /if\s*\(e\.ctrlKey \|\| e\.metaKey\)\s*\{\s*mgr\.toggleSelect\(item\.key\)/,
+    )
+  })
+
+  it('Shift 单击是区间选择，不是「等价于 Ctrl」', () => {
+    // ⚠️ 这条是 2026-10-31 加的：Shift 以前和 Ctrl 一个分支（只切换一张），
+    //    用户要的是「大量选取」，所以必须走 `selectRange`。
+    expect(managerViewSrc).toMatch(/if\s*\(e\.shiftKey\)\s*\{[\s\S]{0,160}?mgr\.selectRange\(/)
+    // 且不能再退回「Shift 和 Ctrl 写在一起」
+    expect(managerViewSrc).not.toMatch(/e\.ctrlKey \|\| e\.metaKey \|\| e\.shiftKey/)
   })
 
   it('点网格空白处取消全部选择', () => {
