@@ -194,10 +194,13 @@ pub(crate) fn save_impl(
     //   ② IFD1 缩略图一律切断（那是编辑前的旧画面，且占掉大半体积）——
     //      `align_with_pixels` 内部无条件做这件事，与方向有没有改无关。
     //
-    // ⚠️ 传的字面量是 1 而不是 `steps`：`steps` 已在 171 行取过 `rem_euclid(4)`，
-    //    任何取值（0..=3）在 `align_with_pixels` 里都只会得出「置 1」这一个结果，
-    //    写成 `if steps == 0 { 1 } else { steps }` 只会让读的人误以为有两条分支。
-    //    ⛔ 别改回按 `steps` 判断 —— 那正是 2026-10-30 修掉的 bug。
+    // ⚠️ 传的字面量是 1，不是 `steps`：
+    //    `align_with_pixels(…, 0)` 的语义是「**没转过 → 方向标记原样保留**」，
+    //    而这里恰恰不能保留（像素已经摆正了）。所以只要走到这一步就得传非 0。
+    //    2026-10-30 之前传的就是 `steps`，于是「只裁剪、不旋转」（steps = 0）
+    //    那条路上旧标记被原样带走 → 竖拍照片在别的软件里被再转一次。
+    //    ⛔ 别改回传 `steps` —— 那正是 2026-10-30 修掉的 bug。
+    //    （传 2 / 3 结果也是「置 1」，但写成 1 才读得出「我要无条件重置」这个意图。）
     let exif = pv_meta::read_exif_raw(path).map(|mut t| {
         if pv_meta::align_exif_with_pixels(&mut t, 1) == pv_meta::ExifRewriteOutcome::Unparsable
         {
@@ -324,6 +327,48 @@ mod tests {
         Some(dst)
     }
 
+    /// 把 EXIF 里的 `Orientation` 改成 `v`（**只给测试用**）。
+    ///
+    /// 存在的理由：样本 `DSC9515.JPG` 的 Orientation 恰好是 1，而
+    /// 「原样保留」和「无条件置 1」在 1 上得出的结果完全一样 —— 用它能测出
+    /// 「EXIF 搬过来了」，但测不出「旧方向标记有没有被清掉」。要区分这两条
+    /// 实现必须造一个方向 ≠ 1 的源文件，所以得能改这个标签。
+    ///
+    /// 返回 `false` 表示这份 EXIF 里没有 Orientation 条目（用例就无从做起）。
+    fn set_orientation(tiff: &mut [u8], v: u16) -> bool {
+        let big = match tiff.get(..2) {
+            Some(b"MM") => true,
+            Some(b"II") => false,
+            _ => return false,
+        };
+        let rd16 = |b: &[u8]| {
+            if big {
+                u16::from_be_bytes([b[0], b[1]])
+            } else {
+                u16::from_le_bytes([b[0], b[1]])
+            }
+        };
+        let rd32 = |b: &[u8]| {
+            if big {
+                u32::from_be_bytes([b[0], b[1], b[2], b[3]])
+            } else {
+                u32::from_le_bytes([b[0], b[1], b[2], b[3]])
+            }
+        };
+        let ifd0 = rd32(&tiff[4..8]) as usize;
+        let n = rd16(&tiff[ifd0..ifd0 + 2]) as usize;
+        for k in 0..n {
+            let e = ifd0 + 2 + k * 12;
+            if rd16(&tiff[e..e + 2]) == 0x0112 {
+                // SHORT 值内联在条目自身偏移 +8
+                let b = if big { v.to_be_bytes() } else { v.to_le_bytes() };
+                tiff[e + 8..e + 10].copy_from_slice(&b);
+                return true;
+            }
+        }
+        false
+    }
+
     /// ⭐ 用户 2026-10-11 需求：「另存为的时候带上 exif 信息」。
     ///
     /// 直接调**产品函数** `save_impl`（不是手工串链路），确保真接上了。
@@ -345,9 +390,60 @@ mod tests {
         assert_eq!(after.f_number, before.f_number, "光圈");
         assert_eq!(after.date_time_original, before.date_time_original, "拍摄时间");
         assert_eq!(after.gps, before.gps, "GPS");
-        // 没旋转 → 方向信息原样保留（改了等于数据损失）
-        assert_eq!(after.orientation, before.orientation, "未旋转时方向不该变");
+        // ⚠️ 这里**不是**「没旋转所以原样保留」：解码已经按 Orientation 摆正过，
+        //    写出的像素永远是显示方向，所以标记一律置 1（见 `save_impl` 第 5 步）。
+        //    样本本身是 1，所以这条断言区分不出两种实现 —— 真正的回归用例是
+        //    下面那条「没旋转时旧的方向标记也要清掉」。
+        assert_eq!(after.orientation.as_deref(), Some("正常"), "输出的方向标记必须是正常");
 
+        let _ = std::fs::remove_file(&dst);
+    }
+
+    /// 没旋转（`steps = 0`）时，**旧的方向标记也必须清掉**。
+    ///
+    /// 2026-10-30 的真 bug：解码改成「按 Orientation 摆正」之后，这里仍然
+    /// 按 `steps` 传参，于是「只裁剪、不旋转」那条路（steps = 0）走的是
+    /// `align_with_pixels` 的「没转过 → 原样保留」分支 → 输出文件带着旧标记、
+    /// 像素却已经摆正 → 竖拍照片在别的软件里被**再转一次**。
+    #[test]
+    fn 没旋转时旧的方向标记也要清掉() {
+        let dir = std::env::temp_dir().join("pv-save-test");
+        std::fs::create_dir_all(&dir).unwrap();
+        let pid = std::process::id();
+        let src = dir.join(format!("{pid}-orient6-src.jpg"));
+        let dst = dir.join(format!("{pid}-orient6-out.jpg"));
+        for p in [&src, &dst] {
+            let _ = std::fs::remove_file(p);
+        }
+
+        // 借真实样本的 EXIF（自带机型/时间/GPS），只把方向改成 6 = 竖拍
+        let sample = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../../test-image/DSC9515.JPG");
+        if !sample.is_file() {
+            return;
+        }
+        let mut raw = pv_meta::read_exif_raw(&sample).expect("样本应有 EXIF");
+        assert!(set_orientation(&mut raw, 6), "样本 EXIF 里应有 Orientation 条目");
+
+        let img = RgbaImage::new(32, 24).unwrap();
+        pv_decode::write_rgba_atomic_with_exif(
+            &img,
+            pv_core::format::ImageFormat::Jpeg,
+            &src,
+            Some(&raw),
+        )
+        .unwrap();
+        assert_eq!(pv_meta::read_orientation(&src), Some(6), "源文件应带竖拍标记");
+
+        // 不旋转不裁剪 → steps = 0（正是当年漏掉的那条分支）
+        save_impl(&registry(), &src, 0, "free", None, Some(dst.clone())).unwrap();
+        assert_eq!(
+            pv_meta::read_exif(&dst).and_then(|e| e.orientation).as_deref(),
+            Some("正常"),
+            "像素已按旧标记摆正过，标记必须变成正常，否则会被再转一次"
+        );
+
+        let _ = std::fs::remove_file(&src);
         let _ = std::fs::remove_file(&dst);
     }
 
@@ -460,7 +556,8 @@ mod tests {
     }
 
     #[test]
-    fn 比例标识解析正确() {        assert_eq!(aspect_ratio("1:1"), Some(1.0));
+    fn 比例标识解析正确() {
+        assert_eq!(aspect_ratio("1:1"), Some(1.0));
         assert!((aspect_ratio("16:9").unwrap() - 16.0 / 9.0).abs() < 1e-9);
         assert!((aspect_ratio("9:16").unwrap() - 9.0 / 16.0).abs() < 1e-9);
         assert!((aspect_ratio("2.35:1").unwrap() - 2.35).abs() < 1e-9);
