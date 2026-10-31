@@ -37,8 +37,8 @@ import { useGridWindow } from '../../hooks/useGridWindow'
 import { errText, useManager, type GridItem } from '../../hooks/useManager'
 import { useManagerBatch } from '../../hooks/manager/batchActions'
 import { useLibDrop } from '../../hooks/libDrop'
+import { useTagPopover } from '../../hooks/manager/useTagPopover'
 import { ContextMenu, useContextMenu } from '../chrome/ContextMenu'
-import type { ContextMenuItem } from '../chrome/ContextMenu'
 import { FilterDropdown, FilterRow } from './FilterDropdown'
 import { ConfirmDialog } from '../chrome/ConfirmDialog'
 import { PromptDialog } from '../chrome/PromptDialog'
@@ -56,11 +56,6 @@ import { ManagerTopBar } from './ManagerTopBar'
 import { PersonStrip } from './PersonStrip'
 import { AiPipelineDialog } from './AiPipelineDialog'
 import { PersonWall, PERSON_POP_W } from './PersonWall'
-import {
-  managerImageTags,
-  aiVocab,
-  type VocabTerm,
-} from '../../ipc/manager'
 import { managerSetPersonCover } from '../../ipc/people'
 import { PhotoCard } from './PhotoCard'
 import {
@@ -783,180 +778,14 @@ export function ManagerView(props: Props) {
   // 所有用到它的 useCallback 之前调用。这里只留菜单自身的开关。
   const cardCtx = useContextMenu()
 
-  /**
-   * 卡片「标签」按钮弹出的小菜单：标签名 + 置信度。
-   *
-   * 自己管一份位置/项，不复用 `useContextMenu` —— 因为数据是**异步**取的，
-   * 先弹「读取中…」再替换成真列表，体验上比"点了没反应 200ms"好。
-   */
-  const [tagPop, setTagPop] = useState<{ x: number; y: number; items: ContextMenuItem[] } | null>(
-    null,
-  )
+  /* ── 卡片「标签」弹层 + AI 词表（2026-11 拆到 useTagPopover）──
+     词表只读一次（几 KB）；弹层的分组/排序见 `./tagMenu`（纯函数，有单测）。 */
+  const { tagPop, setTagPop, vocab, terms: vocabTerms, showTags } = useTagPopover(mgr.ready)
+  /** 词表索引的三份视图（标签条与弹层共用同一份，别在这里另建） */
+  const { map: vocabMap, l1Names, allL1 } = vocab
 
-
-
-  /* ── AI 打标配置与词表（2026-10-21）──
-     词表只读一次（385 条，几 KB）；配置在打开面板时刷一次。 */
-  const [vocabTerms, setVocabTerms] = useState<VocabTerm[]>([])
   /** 人像墙浮层的锚点（null = 关闭）。2026-10-25 用户定稿：用浮层，不新开页面 */
   const [personPop, setPersonPop] = useState<{ x: number; y: number } | null>(null)
-
-  // ⚠️ 必须等 `mgr.ready`（= manager_open 完成）再拉：先挂载就调会报
-  //    「管理器尚未打开」，词表拿不到 → 标签全归到「EXIF / 其他」。
-  useEffect(() => {
-    if (!mgr.ready) return
-    let alive = true
-    aiVocab()
-      .then((v) => {
-        if (!alive) return
-        setVocabTerms(v)
-      })
-      .catch((e) => {
-        if (alive) console.warn('词表读取失败', e)
-      })
-    return () => {
-      alive = false
-    }
-  }, [mgr.ready])
-
-  /** 词条 → 类目映射（标签条两级钻取用） */
-  const vocabMap = useMemo(
-    () => new Map(vocabTerms.map((t) => [t.term, { l1: t.l1, l2: t.l2 }])),
-    [vocabTerms],
-  )
-
-  /** 全部一级名（用来区分"这条标签是一级还是二级"） */
-  const l1Names = useMemo(() => new Set(vocabTerms.map((t) => t.l1)), [vocabTerms])
-  /** 全部一级（按词表出现顺序）—— 标签条要铺满，没有图的显示 0 */
-  const allL1 = useMemo(() => {
-    const out: string[] = []
-    for (const v of vocabTerms) if (!out.includes(v.l1)) out.push(v.l1)
-    return out
-  }, [vocabTerms])
-
-  /**
-   * 卡片「标签」按钮：弹出这张图的标签。
-   *
-   * 版式（用户 2026-10-22 定）：
-   * ```
-   * 标签 · 9 个
-   * 自然            0.45      ← 一级：带自己的置信度
-   * 　峡谷          0.42      ← 二级：缩进
-   * 　河流          0.41
-   * ──
-   * 相机            ASUS_I001DA
-   * 地点            上海
-   * ```
-   * 一级行现在有分数了（打标时把一级也当标签写库，分数取「一级自身」与「组内最高二级」的较大者）。
-   */
-  const showTags = useCallback(
-    async (id: number, e: React.MouseEvent) => {
-      e.preventDefault()
-      e.stopPropagation()
-      const x = e.clientX
-      const y = e.clientY
-      setTagPop({ x, y, items: [{ id: 'loading', label: '读取标签…', disabled: true }] })
-      try {
-        const res = await managerImageTags(id)
-        const all = Array.isArray(res) ? res : res.tags
-        const camera = Array.isArray(res) ? null : res.camera
-        const place = Array.isArray(res) ? null : res.place
-
-        if (all.length === 0 && !camera && !place) {
-          setTagPop({
-            x,
-            y,
-            items: [{ id: 'none', label: '这张图没有匹配到任何标签', disabled: true }],
-          })
-          return
-        }
-
-        // 拆成「一级标签」和「二级标签」
-        const l1Tags = new Map<string, number | null>()
-        const leaves: { name: string; l1: string; conf: number | null; src: string }[] = []
-        for (const t of all) {
-          if (t.source === 'exif') continue
-          const v = vocabMap.get(t.name)
-          if (l1Names.has(t.name) && !v) {
-            l1Tags.set(t.name, t.confidence)
-          } else {
-            leaves.push({
-              name: t.name,
-              l1: v?.l1 ?? (t.source === 'ocr' ? '文字' : '其他'),
-              conf: t.confidence,
-              src: t.source,
-            })
-          }
-        }
-
-        // 按一级归组；没有一级标签的组补一个"无分数"的一级行
-        const groups = new Map<string, typeof leaves>()
-        for (const t of leaves) {
-          const arr = groups.get(t.l1) ?? []
-          arr.push(t)
-          groups.set(t.l1, arr)
-        }
-        const order = [...groups.keys()].sort(
-          (a, b) => (l1Tags.get(b) ?? -1) - (l1Tags.get(a) ?? -1),
-        )
-        // 有一级标签但没有任何二级的，也要显示
-        for (const name of l1Tags.keys()) if (!groups.has(name)) order.push(name)
-
-        const total = all.filter((t) => t.source !== 'exif').length + (camera ? 1 : 0) + (place ? 1 : 0)
-        const items: ContextMenuItem[] = [{ id: 'hdr', label: `标签 · ${total} 个`, disabled: true }]
-
-        let first = true
-        for (const l1 of order) {
-          const score = l1Tags.get(l1)
-          items.push({
-            id: `l1-${l1}`,
-            label: l1,
-            hint: score != null ? score.toFixed(2) : '',
-            separatorBefore: !first,
-            disabled: true,
-          })
-          first = false
-          for (const [i, t] of (groups.get(l1) ?? []).entries()) {
-            items.push({
-              id: `t-${l1}-${i}`,
-              label: `　${vocabMap.get(t.name)?.l2 ?? t.name}`,
-              hint:
-                t.conf != null
-                  ? t.conf.toFixed(2)
-                  : t.src === 'ocr'
-                    ? '文字'
-                    : t.src === 'face'
-                      ? '人脸'
-                      : '手动',
-              onSelect: () => setTagPop(null),
-            })
-          }
-        }
-
-        // EXIF：相机 / 地点，右列是值（不是分数）
-        for (const [k, [label, value]] of (
-          [
-            ['相机', camera],
-            ['地点', place],
-          ] as const
-        ).entries()) {
-          if (!value) continue
-          items.push({
-            id: `exif-${k}`,
-            label,
-            hint: value,
-            separatorBefore: k === 0,
-            onSelect: () => setTagPop(null),
-          })
-        }
-
-        setTagPop({ x, y, items })
-      } catch {
-        setTagPop({ x, y, items: [{ id: 'err', label: '读取标签失败', disabled: true }] })
-      }
-    },
-    [vocabMap, l1Names],
-  )
 
 
   /** 顶栏按钮用：当前**选中**的行 */
