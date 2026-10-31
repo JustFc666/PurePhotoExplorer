@@ -79,6 +79,106 @@ fn 端到端_生成PNG并解码出正确像素() {
     let _ = std::fs::remove_file(&p);
 }
 
+/// 构造一张 **16 位 RGBA** PNG（每个样本 2 字节，大端）。
+///
+/// 高字节固定为 `HI`、低字节固定为 `LO`，这样"有没有剥高字节"一眼可辨：
+/// 正确降位后 8 位值应等于 `HI`，而不是 `HI*256+LO` 被当成两个像素。
+fn make_16bit_png(path: &std::path::Path, hi: u8, lo: u8) -> Result<()> {
+    use png::{BitDepth, ColorType};
+
+    let (w, h) = (4u32, 2u32);
+    let mut data = Vec::new();
+    for _ in 0..(w * h) {
+        // 大端：高字节在前
+        for _ch in 0..3 {
+            data.push(hi);
+            data.push(lo);
+        }
+        data.push(hi); // alpha
+        data.push(lo);
+    }
+
+    let file = std::fs::File::create(path).unwrap();
+    let mut enc = png::Encoder::new(std::io::BufWriter::new(file), w, h);
+    enc.set_color(ColorType::Rgba);
+    enc.set_depth(BitDepth::Sixteen);
+    let mut writer = enc.write_header().unwrap();
+    writer.write_image_data(&data).unwrap();
+    writer.finish().unwrap();
+    Ok(())
+}
+
+/// ⭐ 回归（2026-11）：**16 位 PNG 必须降位成 8 位**，否则整条下游全按错误的
+/// 步长索引 → 花屏/半张图，而且没有任何一处会报错。
+///
+/// 根因是 `png 0.17` 把默认变换从 `EXPAND | STRIP_16` 改成了 `IDENTITY`，
+/// 不剥 16 位样本的高字节：`data.len()` 变成 `w*h*8`，而 `RgbaImage` 的
+/// 不变量是 `w*h*4`。修法是显式 `set_transformations(normalize_to_color8())`。
+#[test]
+fn 端到端_16位PNG降位为8位而不是花屏() {
+    let p = tmp_path("pv_e2e_16bit.png");
+    // 高字节 0xAB、低字节 0xCD → 正确降位取高字节 = 171
+    make_16bit_png(&p, 0xAB, 0xCD).expect("生成 16 位 PNG");
+
+    let backend: &dyn ImageDecoder = &BitmapBackend;
+    let img = backend
+        .decode(&p, DecodeTarget::new(DecodePurpose::Export))
+        .expect("解码 16 位 PNG");
+
+    assert_eq!((img.width, img.height), (4, 2));
+    // 不变量：长度严格是 w*h*4。旧实现这里是 8 字节/像素（128）。
+    assert_eq!(
+        img.data.len(),
+        4 * 2 * 4,
+        "RgbaImage 必须是 w*h*4 —— 长度翻倍说明 16 位样本没剥高字节"
+    );
+    // 取高字节 → 0xAB = 171（若误取低字节会得到 0xCD = 205）
+    assert_eq!(
+        img.pixel(0, 0),
+        Some([0xAB, 0xAB, 0xAB, 0xAB]),
+        "16 位样本应取高字节降位"
+    );
+    assert_eq!(img.pixel(3, 1), Some([0xAB, 0xAB, 0xAB, 0xAB]));
+
+    let _ = std::fs::remove_file(&p);
+}
+
+/// ⭐ 回归（2026-11）：**调色板 PNG 不能报"暂不支持"**。
+///
+/// `EXPAND` 会把 `Indexed` 展开成 RGB/RGBA —— 在此之前 `decode_png` 的
+/// match 没有 `Indexed` 分支，直接落进 `other` 返回 `UnsupportedFormat`。
+/// 而调色板 PNG 很常见（GIF 转换、各种体积优化工具的输出）。
+#[test]
+fn 端到端_调色板PNG能解码() {
+    use png::{BitDepth, ColorType};
+
+    let p = tmp_path("pv_e2e_palette.png");
+    let (w, h) = (2u32, 2u32);
+    // 调色板：0=红 1=绿 2=蓝
+    let palette = vec![255u8, 0, 0, 0, 255, 0, 0, 0, 255];
+    let indices = vec![0u8, 1, 2, 0];
+
+    let file = std::fs::File::create(&p).unwrap();
+    let mut enc = png::Encoder::new(std::io::BufWriter::new(file), w, h);
+    enc.set_color(ColorType::Indexed);
+    enc.set_depth(BitDepth::Eight);
+    enc.set_palette(palette);
+    let mut writer = enc.write_header().unwrap();
+    writer.write_image_data(&indices).unwrap();
+    writer.finish().unwrap();
+
+    let backend: &dyn ImageDecoder = &BitmapBackend;
+    let img = backend
+        .decode(&p, DecodeTarget::new(DecodePurpose::Export))
+        .expect("调色板 PNG 应能解码");
+    assert_eq!((img.width, img.height), (2, 2));
+    assert_eq!(img.pixel(0, 0), Some([255, 0, 0, 255]), "索引 0 → 红");
+    assert_eq!(img.pixel(1, 0), Some([0, 255, 0, 255]), "索引 1 → 绿");
+    assert_eq!(img.pixel(0, 1), Some([0, 0, 255, 255]), "索引 2 → 蓝");
+
+    let _ = std::fs::remove_file(&p);
+}
+
 #[test]
 fn 端到端_注册表可路由到PNG后端() {
     let p = tmp_path("pv_e2e_registry.png");

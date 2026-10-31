@@ -75,7 +75,11 @@ pub fn decode_scaled(reg: &DecoderRegistry, path: &Path, max_edge: u32) -> Resul
 /// 把 RGBA 合成到**白底**并置为不透明（JPEG 无 alpha 通道）。
 ///
 /// 不透明像素原样返回；越界/极端值不会 panic（用 u32 中间量）。
-fn flatten_on_white(img: &RgbaImage) -> RgbaImage {
+///
+/// ⚠️ **两处共用，别各写一份**：缩略图转 JPEG（本模块）与「另存为 JPEG」
+/// （`encode::encode_jpeg`）。两处实现一旦分叉，用户会看到「缩略图里透明的
+/// 地方是白的、另存出来却是黑的」，而这种不一致极难归因。
+pub(crate) fn flatten_on_white(img: &RgbaImage) -> RgbaImage {
     let mut out = img.clone();
     for px in out.data.chunks_exact_mut(4) {
         let a = px[3] as u32;

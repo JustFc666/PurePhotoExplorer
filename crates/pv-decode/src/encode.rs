@@ -185,17 +185,55 @@ fn is_sharing_violation(e: &std::io::Error) -> bool {
 // ─────────────────────────── 各格式编码器 ───────────────────────────
 
 fn encode_jpeg(img: &RgbaImage, exif: Option<&[u8]>) -> Result<Vec<u8>> {
+    // ⚠️ JPEG 的宽高字段是 **u16**（上限 65535）。`as u16` 会静默截断成另一个值
+    // （70000 → 4464），而 `jpeg-encoder` 只校验 `data.len() >= w*h*4` ——
+    // 截断后要求变小，校验反而**通过**，于是它按错误的行宽逐行取样，
+    // 产出「尺寸对、内容错」的图。长截图/全景拼接真能超过 65535，
+    // 所以必须显式拒绝，而不是让它静默出错图。
+    if img.width > u16::MAX as u32 || img.height > u16::MAX as u32 {
+        return Err(PvError::Encode(format!(
+            "图片尺寸 {}×{} 超出 JPEG 上限（单边最多 65535 像素）—— 请另存为 PNG",
+            img.width, img.height
+        )));
+    }
+
     let mut out = Vec::new();
     let mut enc = jpeg_encoder::Encoder::new(&mut out, JPEG_QUALITY);
     // 基线 JPEG 不支持 4 通道；不设这个会直接报错
     enc.set_progressive(false);
-    enc.encode(
-        &img.data,
-        img.width as u16,
-        img.height as u16,
-        jpeg_encoder::ColorType::Rgba,
-    )
-    .map_err(|e| PvError::Encode(format!("JPEG 编码失败: {e}")))?;
+
+    /*
+     * 基线 JPEG 没有 alpha 通道，而 `jpeg-encoder` 遇到 `ColorType::Rgba` 时
+     * **直接忽略第 4 个字节** —— 既不预乘也不合成背景。于是 PNG 里
+     * 「透明且 RGB=0」的那些像素会被原样写成**纯黑**：抠图、贴纸、圆角截图
+     * 另存成 JPEG 时会出现大片黑块（用户很自然会以为是"保存坏了"）。
+     *
+     * 修法：真有透明像素时先按**白底**做 alpha 合成，再用 3 通道编码。
+     * 全不透明的图（绝大多数照片）跳过这一步，直接走原路径 ——
+     * 否则每张照片都要多分配一份 `w*h*3` 的缓冲、多扫一遍像素。
+     */
+    let has_alpha = img.data.chunks_exact(4).any(|p| p[3] != 255);
+    if has_alpha {
+        // 复用缩略图那条路径的**同一份**合成实现（`thumbs::flatten_on_white`）。
+        // 两处各写一遍的话，迟早会一个按白底、一个按黑底合成 ——
+        // 于是「缩略图里的透明区域是白的、另存出来的 JPEG 是黑的」。
+        let flat = crate::thumbs::flatten_on_white(img);
+        enc.encode(
+            &flat.data,
+            img.width as u16,
+            img.height as u16,
+            jpeg_encoder::ColorType::Rgba,
+        )
+        .map_err(|e| PvError::Encode(format!("JPEG 编码失败: {e}")))?;
+    } else {
+        enc.encode(
+            &img.data,
+            img.width as u16,
+            img.height as u16,
+            jpeg_encoder::ColorType::Rgba,
+        )
+        .map_err(|e| PvError::Encode(format!("JPEG 编码失败: {e}")))?;
+    }
 
     if let Some(tiff) = exif {
         if !insert_jpeg_exif(&mut out, tiff) {
@@ -362,6 +400,67 @@ mod tests {
         assert!(bytes.len() > 100, "编码结果过小: {}", bytes.len());
         assert_eq!(&bytes[..2], &[0xFF, 0xD8], "JPEG 应以 SOI 开头");
         assert_eq!(&bytes[bytes.len() - 2..], &[0xFF, 0xD9], "JPEG 应以 EOI 结尾");
+    }
+
+    /// ⭐ 回归（2026-11）：**单边超 65535 的图必须报错，不能静默产出错图**。
+    ///
+    /// 旧实现 `img.width as u16` 会把 70000 截断成 4464，而 `jpeg-encoder`
+    /// 只校验 `data.len() >= w*h*4` —— 截断后要求变小，校验反而通过，
+    /// 于是按错误行宽逐行取样，写出「尺寸对、内容错」的 JPEG。
+    /// 长截图 / 全景拼接真能到这个量级，用户会以为是自己文件坏了。
+    #[test]
+    fn JPEG编码超65535像素时返回错误而不是静默错图() {
+        // 70000×1 只占 280 KB，不必真造一张大图
+        let img = RgbaImage::new(70_000, 1).unwrap();
+        let err = encode_jpeg(&img, None).unwrap_err();
+        let msg = format!("{err}");
+        assert!(msg.contains("65535"), "错误信息应点明上限，实际: {msg}");
+    }
+
+    /// ⭐ 回归（2026-11）：**透明像素另存 JPEG 时要合成白底，不能变黑块**。
+    ///
+    /// `jpeg-encoder` 遇到 `ColorType::Rgba` 会直接忽略 alpha（既不预乘也不合成），
+    /// 而 PNG 里「透明」的像素 RGB 往往是 0 —— 于是抠图/贴纸/圆角截图另存 JPEG
+    /// 会出现大片纯黑，看起来像"保存坏了"。
+    #[test]
+    fn JPEG另存时透明像素合成为白底() {
+        // 32×16：左半完全透明（RGB 故意为 0），右半不透明纯黑。
+        let (w, h) = (32u32, 16u32);
+        let mut img = RgbaImage::new(w, h).unwrap();
+        for y in 0..h {
+            for x in 0..w {
+                let i = ((y * w + x) * 4) as usize;
+                let (rgb, a) = if x < w / 2 {
+                    ([0u8, 0, 0], 0u8) // 透明黑（旧实现会原样写成纯黑）
+                } else {
+                    ([0u8, 0, 0], 255u8) // 不透明黑
+                };
+                img.data[i..i + 4].copy_from_slice(&[rgb[0], rgb[1], rgb[2], a]);
+            }
+        }
+        let bytes = encode_jpeg(&img, None).unwrap();
+
+        let mut dec = zune_jpeg::JpegDecoder::new(std::io::Cursor::new(&bytes));
+        let rgb = dec.decode().unwrap();
+        let (dw, _dh) = dec.dimensions().unwrap();
+        assert_eq!(dw, w as usize);
+        let px = |x: usize, y: usize| {
+            let i = (y * dw + x) * 3;
+            [rgb[i] as i32, rgb[i + 1] as i32, rgb[i + 2] as i32]
+        };
+
+        // 左侧透明区域 → 白底（JPEG 有损，留 20 的余量）
+        let left = px(4, 8);
+        assert!(
+            left.iter().all(|&c| c >= 235),
+            "透明像素应合成为白底，实际 {left:?}"
+        );
+        // 右侧不透明黑必须仍然是黑 —— 别把整张图都漂白了
+        let right = px(28, 8);
+        assert!(
+            right.iter().all(|&c| c <= 20),
+            "不透明黑不应被提亮，实际 {right:?}"
+        );
     }
 
     #[test]
