@@ -38,6 +38,8 @@ import { errText, useManager, type GridItem } from '../../hooks/useManager'
 import { useManagerBatch } from '../../hooks/manager/batchActions'
 import { useLibDrop } from '../../hooks/libDrop'
 import { useTagPopover } from '../../hooks/manager/useTagPopover'
+import { useSideResize } from '../../hooks/manager/useSideResize'
+import { useColumnResize } from '../../hooks/manager/useColumnResize'
 import { ContextMenu, useContextMenu } from '../chrome/ContextMenu'
 import { FilterDropdown, FilterRow } from './FilterDropdown'
 import { ConfirmDialog } from '../chrome/ConfirmDialog'
@@ -45,7 +47,6 @@ import { PromptDialog } from '../chrome/PromptDialog'
 import { PrintPreview } from '../viewer/PrintPreview'
 import { DriveIcon } from '../icons/DriveIcon'
 import { useShellIcons } from '../../hooks/useShellIcons'
-import { useListPrefs, type ListColumnId } from '../../hooks/listColumns'
 import { renderListCell } from './ListCells'
 import { fsListDirs } from '../../ipc/browse'
 import { baseName, parentPath } from '../../hooks/parentPath'
@@ -60,15 +61,11 @@ import { managerSetPersonCover } from '../../ipc/people'
 import { PhotoCard } from './PhotoCard'
 import {
   DEFAULT_LIB_NAME,
-  FORMAT_LABEL,
   PREFETCH_AHEAD,
   SIDE_DEFAULT,
-  SIDE_MAX,
-  SIDE_MIN,
   filePathsOf,
   fmtCount,
-  readSideWidth,
-  saveSideWidth,
+  formatLabelOf,
 } from './viewConfig'
 import { thumbWidthOf } from '../../hooks/manager/prefs'
 import { buildBlankMenu, buildCardMenu } from './cardMenu'
@@ -365,39 +362,8 @@ export function ManagerView(props: Props) {
     PREFETCH_AHEAD,
   )
 
-  // ── 侧栏宽度：拖拽中间那条缝，松手记到 localStorage，下次打开还是这个宽度 ──
-  const [sideW, setSideW] = useState<number>(readSideWidth)
-  const [resizing, setResizing] = useState(false)
-  const drag = useRef({ startX: 0, startW: SIDE_DEFAULT })
-  const sideWRef = useRef(sideW)
-  sideWRef.current = sideW
-
-  const onSplitDown = useCallback((e: ReactMouseEvent) => {
-    e.preventDefault()
-    drag.current = { startX: e.clientX, startW: sideWRef.current }
-    setResizing(true)
-  }, [])
-
-  useEffect(() => {
-    if (!resizing) return
-    const { startX, startW } = drag.current
-    const onMove = (e: MouseEvent) => {
-      setSideW(Math.min(SIDE_MAX, Math.max(SIDE_MIN, startW + (e.clientX - startX))))
-    }
-    const onUp = () => {
-      setResizing(false)
-      // 写不进去（隐私模式等）就只对本会话生效 —— `saveSideWidth` 内部已吞异常
-      saveSideWidth(sideWRef.current)
-    }
-    window.addEventListener('mousemove', onMove)
-    window.addEventListener('mouseup', onUp)
-    document.body.classList.add('is-col-resizing')
-    return () => {
-      window.removeEventListener('mousemove', onMove)
-      window.removeEventListener('mouseup', onUp)
-      document.body.classList.remove('is-col-resizing')
-    }
-  }, [resizing])
+  // ── 侧栏宽度：拖中间那条缝（2026-11 拆到 useSideResize）──
+  const { sideW, setSideW, resizing, onSplitDown } = useSideResize()
 
   /** 浏览 + 把树展开到那里（树展开失败不算错，主区照样切） */
   const browseWithReveal = useCallback(
@@ -1014,46 +980,9 @@ export function ManagerView(props: Props) {
   /*
    * 列表视图的列（2026-10-31）：显示哪些列、各列多宽，都在
    * `hooks/listColumns.ts` 里定义并持久化；设置窗口改完这里立刻跟着变。
+   * 列宽拖拽搬到 `useColumnResize`（2026-11）：全局监听 + 松手落盘那套自己一处。
    */
-  const listPrefs = useListPrefs()
-  /** 拖列宽时的起点；`null` = 没在拖 */
-  const colDrag = useRef<{ id: ListColumnId; startX: number; startW: number } | null>(null)
-  const [colResizing, setColResizing] = useState(false)
-
-  /*
-   * 拖拽监听挂在 window 上而不是表头元素上：鼠标一旦移出表头（列很窄时几乎
-   * 立刻发生）就收不到 mousemove，宽度会卡住不动。
-   * ⚠️ 依赖数组必须是空 —— 用 ref 读最新的 api，否则拖一下就重绑一次。
-   */
-  const listPrefsRef = useRef(listPrefs)
-  listPrefsRef.current = listPrefs
-  useEffect(() => {
-    const onMove = (e: MouseEvent) => {
-      const d = colDrag.current
-      if (!d) return
-      listPrefsRef.current.setWidthLocal(d.id, d.startW + (e.clientX - d.startX))
-    }
-    const onUp = () => {
-      if (!colDrag.current) return
-      colDrag.current = null
-      setColResizing(false)
-      // 松手才落盘：拖动过程中每移动 1px 都写 localStorage 会明显掉帧
-      listPrefsRef.current.commitWidths()
-    }
-    window.addEventListener('mousemove', onMove)
-    window.addEventListener('mouseup', onUp)
-    return () => {
-      window.removeEventListener('mousemove', onMove)
-      window.removeEventListener('mouseup', onUp)
-    }
-  }, [])
-
-  const onColGripDown = useCallback((e: ReactMouseEvent, id: ListColumnId) => {
-    e.preventDefault()
-    e.stopPropagation()
-    colDrag.current = { id, startX: e.clientX, startW: listPrefsRef.current.widthOf(id) }
-    setColResizing(true)
-  }, [])
+  const { listPrefs, resizing: colResizing, onGripDown: onColGripDown } = useColumnResize()
 
   /**
    * 「我的电脑」主区直接铺盘符（用户 2026-10-30）。
@@ -1451,7 +1380,7 @@ export function ManagerView(props: Props) {
                   <FilterRow
                     key={f.format}
                     checked={mgr.formats.includes(f.format)}
-                    label={FORMAT_LABEL[f.format] ?? f.format.toUpperCase()}
+                    label={formatLabelOf(f.format)}
                     count={f.count}
                     onSelect={() => mgr.toggleFormat(f.format)}
                   />

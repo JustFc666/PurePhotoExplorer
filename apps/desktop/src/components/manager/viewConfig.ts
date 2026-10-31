@@ -56,6 +56,17 @@ export function fmtCount(n: number): string {
   return n.toLocaleString('zh-CN')
 }
 
+/**
+ * 格式名 → 筛选条上那颗芯片的字。
+ *
+ * 后端偶尔会冒出新格式（`FORMAT_LABEL` 还没跟上），这时退化成大写原名 ——
+ * ⛔ 别改成小写原样，或显示 `undefined` / `未知`：`未知` 是留给 `?` 的
+ * （前端认不出容器时的占位），新格式用原名反而能让用户一眼报上来。
+ */
+export function formatLabelOf(fmt: string): string {
+  return FORMAT_LABEL[fmt] ?? fmt.toUpperCase()
+}
+
 /* ── 侧栏宽度（可拖拽，记忆在 localStorage）────────────────── */
 const SIDE_WIDTH_KEY = 'pv.mg.sideWidth'
 export const SIDE_MIN = 160
@@ -71,6 +82,16 @@ export function readSideWidth(): number {
     /* localStorage 不可用（隐私模式）就给默认值 */
   }
   return SIDE_DEFAULT
+}
+
+/**
+ * 把拖拽算出来的宽度夹进合法区间。
+ *
+ * 单独提出来是因为它和「读写 localStorage」不是一回事：这条是每次 `mousemove`
+ * 都要跑的纯算式（两侧边界各一次），那两条只在开始/结束各跑一次。
+ */
+export function clampSideWidth(px: number): number {
+  return Math.min(SIDE_MAX, Math.max(SIDE_MIN, px))
 }
 
 /** 记住侧栏宽度（拖拽结束时调用一次，别在 `mousemove` 里写）。 */
