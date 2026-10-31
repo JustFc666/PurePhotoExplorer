@@ -18,20 +18,17 @@ import {
   EXPORT_FORMATS,
   formatFileSize,
   getAppInfo,
-  getAssociationState,
   getStartupFile,
   isWritableFormat,
   notWritableReason,
   printImage,
   rawExportHint,
   saveEditedImage,
-  setFileAssociation,
-  setFileAssociationBulk,
   type AppInfo,
-  type AssociationState,
   type DecodedImage,
 } from './ipc'
 import { useDragDrop } from './hooks/useDragDrop'
+import { useFileAssociations } from './hooks/useFileAssociations'
 import { getLibDropHover } from './hooks/libDrop'
 import {
   clampFxMs,
@@ -64,8 +61,6 @@ import { AdjustPanel, type SaveState } from './components/viewer/AdjustPanel'
 import { Toolbar } from './components/chrome/Toolbar'
 import { StatusBar } from './components/chrome/StatusBar'
 import {
-  ASSOCIATION_EXTS,
-  ASSOCIATION_FORMATS,
   SUPPORTED_EXTS,
   UNVERIFIED_RAW_EXTS,
   VERIFIED_RAW_EXTS,
@@ -173,93 +168,11 @@ export function App() {
   /** 从齿轮进来时要直接落到哪一页（默认「数据位置」） */
   const [settingsPage, setSettingsPage] = useState<SettingsPage>('data')
 
-  /** 文件关联状态（设置浮层的「默认打开方式」区回显） */
-  const [associations, setAssociations] = useState<AssociationState | null>(null)
-  const [associationBusy, setAssociationBusy] = useState(false)
-  const [associationError, setAssociationError] = useState<string | null>(null)
-
   /**
-   * 查询文件关联状态。
-   *
-   * ⚠️ **打开设置时才查**（而不是启动时、也不是打开帮助时）：
-   * 注册表读取虽快，但这是**低频设置**，没必要占用启动路径；
-   * 而且用户可能在外部改过关联，每次打开都重读更准。
+   * 文件关联（设置浮层「默认打开方式」）：状态与动作都在 hook 里，
+   * 这里只留一个「打开设置时才查」的开关 —— 见 `useFileAssociations`。
    */
-  const refreshAssociations = useCallback(async () => {
-    try {
-      setAssociations(await getAssociationState(ASSOCIATION_EXTS))
-      setAssociationError(null)
-    } catch (err) {
-      setAssociations(null)
-      setAssociationError(decodeError(err, '读取文件关联失败').message)
-    }
-  }, [])
-
-  useEffect(() => {
-    if (showSettings) void refreshAssociations()
-  }, [showSettings, refreshAssociations])
-
-  /**
-   * 「全选 / 全不选」所有可关联格式。
-   *
-   * **只处理需要变更的那些**（拿 `registered` 求差集）—— 幂等重复写注册表
-   * 没有收益，还平添失败面。全部已一致时直接返回，不惊动后端。
-   *
-   * 一次性提交给后端的批量命令：它走静默写入、末尾只广播**一次**
-   * `SHCNE_ASSOCCHANGED`（逐个调用单扩展名命令会广播 N 次）。
-   */
-  const onToggleAllAssociations = useCallback(
-    async (enable: boolean) => {
-      const registered = new Set(associations?.registered ?? [])
-      const pending = ASSOCIATION_FORMATS.filter(([ext]) => registered.has(ext) !== enable)
-      if (pending.length === 0) return
-
-      setAssociationBusy(true)
-      setAssociationError(null)
-      try {
-        const failed = await setFileAssociationBulk(
-          pending.map(([ext, label]) => ({ ext, displayName: `${label} 图片` })),
-          enable,
-        )
-        // 同样以注册表的真实状态为准回显
-        await refreshAssociations()
-        if (failed.length > 0) {
-          setAssociationError(
-            `以下格式设置失败：${failed.map((e) => `.${e}`).join('、')}`,
-          )
-        }
-      } catch (err) {
-        setAssociationError(decodeError(err, '设置文件关联失败').message)
-      } finally {
-        setAssociationBusy(false)
-      }
-    },
-    [associations, refreshAssociations],
-  )
-
-  /**
-   * 勾选 / 取消「打开方式」关联。
-   *
-   * 写的是 `HKCU`（不需要管理员），且**只是加入「打开方式」列表**，
-   * 不是设为默认 —— Windows 不允许程序静默改默认程序，详见 Rust 侧 `win_assoc`。
-   */
-  const onToggleAssociation = useCallback(
-    async (ext: string, label: string, enable: boolean) => {
-      setAssociationBusy(true)
-      setAssociationError(null)
-      try {
-        await setFileAssociation(ext, `${label} 图片`, enable)
-        // 改完立刻重读，让复选框反映注册表的**真实**状态
-        // （而不是乐观地按用户点击翻转 —— 万一写入失败就显示错了）
-        await refreshAssociations()
-      } catch (err) {
-        setAssociationError(decodeError(err, '设置文件关联失败').message)
-      } finally {
-        setAssociationBusy(false)
-      }
-    },
-    [refreshAssociations],
-  )
+  const fileAssoc = useFileAssociations(showSettings)
 
   // 加载应用信息（版本、能力）
   useEffect(() => {
@@ -1329,11 +1242,11 @@ export function App() {
             key={settingsPage}
             initialPage={settingsPage}
             onClose={toggleSettings}
-            associations={associations}
-            onToggleAssociation={onToggleAssociation}
-            onToggleAllAssociations={onToggleAllAssociations}
-            associationBusy={associationBusy}
-            associationError={associationError}
+            associations={fileAssoc.associations}
+            onToggleAssociation={fileAssoc.toggleOne}
+            onToggleAllAssociations={fileAssoc.toggleAll}
+            associationBusy={fileAssoc.busy}
+            associationError={fileAssoc.error}
           />
         )}
 
