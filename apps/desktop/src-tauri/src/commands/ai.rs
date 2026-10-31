@@ -1321,11 +1321,15 @@ pub async fn ai_run_task(
         }
     }
 
-    let python = resolve_python(&state).ok_or_else(|| {
-        err("没找到 Python。这是开发版功能：请在设置里填 Python 路径".into())
-    })?;
-    let root = project_root()
-        .ok_or_else(|| err("找不到项目目录（tools/ai 脚本所在位置）".into()))?;
+    /*
+     * ⛔ **不要在这里要求 Python / 项目目录**（2026-10-31 修）。
+     *
+     * 打标与人脸都已经换成 Rust（ort + DirectML / YuNet + SFace），
+     * 下面三条路径全都不碰 Python。但这两行以前写死在函数开头 ——
+     * venv 一被删（本机 `J:/ai/tts/.venv` 就没了），**所有 AI 任务**都会在
+     * 真正开始之前直接报「没找到 Python」，表现就是「点了 AI 识别没反应」。
+     * 现在只在最后那段历史遗留的 Python 链路里才要求它们。
+     */
 
     // 只有 Python 那条老路会用到这两个阈值；Rust 打标在下面自己读
     let (_th, _th_l1) = state
@@ -1406,6 +1410,20 @@ pub async fn ai_run_task(
         tauri::async_runtime::spawn_blocking(move || run_pipeline_blocking(app2, lib2));
         return Ok(path);
     }
+
+    /*
+     * ⬇️ 以下是**历史遗留的 Python 链路**：`tag` / `face` / `pipeline` 三条
+     * Rust 路径都已经 return 了，走不到这里。留着是为了以后真要加一个
+     * 纯 Python 的新任务时有地方挂 —— 也正因如此，`resolve_python`
+     * 和 `project_root` 的检查只能放在这里，不能提到函数开头。
+     */
+    #[allow(unreachable_code)]
+    let python = resolve_python(&state).ok_or_else(|| {
+        err("没找到 Python。这是开发版功能：请在设置里填 Python 路径".into())
+    })?;
+    #[allow(unreachable_code)]
+    let root = project_root()
+        .ok_or_else(|| err("找不到项目目录（tools/ai 脚本所在位置）".into()))?;
 
     #[allow(unreachable_code)]
     let steps: Vec<Step> = match task.as_str() {
