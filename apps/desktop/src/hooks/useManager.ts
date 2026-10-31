@@ -62,7 +62,6 @@ import {
   type ManagerYear,
   type ImageRow,
   type LibraryItem,
-  type ManagerQuery,
   type ManagerSort,
   type PlaceItem,
   type Stats,
@@ -79,15 +78,10 @@ import {
   type FsNode,
 } from '../ipc/browse'
 import { mergeDimensions, mergeTakenAt } from './mergeDimensions'
-import { compareName, descForSort, makeComparator } from './sortItems'
-import { resolveHasTags } from './filterRules'
-import {
-  ARCHIVE_EXT_RE,
-  DIM_CHUNK,
-  FIRST_SCREEN_PROBE,
-  PAGE_LIMIT,
-  SEARCH_DEBOUNCE_MS,
-} from './manager/constants'
+import { descForSort } from './sortItems'
+import { ARCHIVE_EXT_RE, DIM_CHUNK, FIRST_SCREEN_PROBE, SEARCH_DEBOUNCE_MS } from './manager/constants'
+import { baseKeyOf, baseScopeOf, buildManagerQuery, scopeKeyOf } from './manager/query'
+import { buildGridItems } from './manager/gridItems'
 import { absOfFolder, errText, normPath } from './manager/utils'
 import { EVENT_SET_SORT, MANAGER_SORTS, readSortPref, readThumbTier, saveThumbTier, writeSortPref } from './manager/prefs'
 import type { GridItem, LibChoice, ManagerApi, Scope, ViewMode } from './manager/types'
@@ -812,23 +806,8 @@ export function useManager(): ManagerApi {
    * - 点进去只有 52 张（这个才是真数字）；
    * - 点「截图」标题 149 张、chip 写 139（多出的 10 张来自另一个图库）。
    */
-  const baseScope: Scope =
-    scope.kind === 'tagGroup' ? (scopeBeforeTag.current ?? { kind: 'none' }) : scope
-
-  const scopeKey =
-    scope.kind === 'all'
-      ? 'all'
-      : scope.kind === 'browse'
-        ? `browse:${scope.path}`
-        : scope.kind === 'none'
-          ? 'none'
-          : scope.kind === 'tag'
-            ? `tag:${scope.name}`
-            : scope.kind === 'place'
-              ? `place:${scope.name}`
-              : scope.kind === 'tagGroup'
-                ? `tagGroup:${scope.label}:${[...scope.names].sort().join('|')}`
-              : `${scope.kind}:${scope.id}`
+  const baseScope: Scope = baseScopeOf(scope, scopeBeforeTag.current)
+  const scopeKey = scopeKeyOf(scope)
   /**
    * ⭐ 标签计数跟随当前范围：图库 N 张就只数这 N 张里的标签。
    * 之前用的是全库计数，导致「二次元 11 张」和「测试图库 286 张」显示一模一样的数字。
@@ -885,53 +864,30 @@ export function useManager(): ManagerApi {
   /**
    * 查询 effect —— 入库模式的**唯一取数入口**。
    *
-   * ⚠️ `browse` 与 `none` 必须**提前返回**：
+   * ⚠️ `browse` 与 `none` 由 `buildManagerQuery` 返回 `null` 提前挡掉：
    * - `browse` 的数据来自 `fs_list_images`，查索引会把它覆盖掉；
    * - `none` 是启动默认态（还没选目录），**不该显示任何图片**。
+   *
+   * 拼参数的规则全在 `manager/query.ts`（那里有单测），这里只管发请求与状态。
    */
   useEffect(() => {
-    if (!ready || scope.kind === 'browse' || scope.kind === 'none') return
+    if (!ready) return
+    const q = buildManagerQuery({
+      scope,
+      baseScope,
+      formats,
+      camera,
+      years: yearFilter,
+      placeFilter,
+      personId: personFilter?.id ?? null,
+      tagFilter,
+      searchTerm,
+      sort,
+      desc: descending,
+    })
+    if (!q) return
     let alive = true
     setBusy(true)
-
-    const q: ManagerQuery = {
-      sort,
-      // 实际方向（含用户在同一列上的翻转），与浏览模式的内存排序同一份口径
-      desc: descending,
-      limit: PAGE_LIMIT,
-      offset: 0,
-    }
-    // ⭐ 只看这个目录**本身**，不含子目录（`dirIds` 是精确匹配）
-    if (baseScope.kind === 'folder') q.dirIds = [baseScope.id]
-    if (baseScope.kind === 'library') q.libraryId = baseScope.id
-    // 标签筛选：后端按**标签名**过滤（`tags_any` = 命中任一即可）
-    // ⭐ 如果这个标签是**从某个图库点进去的**，图库范围要一起带上，
-    //    否则「rednote → 人像」会查出全库的人像图（2026-10-29 用户报的混合）。
-    if (scope.kind === 'tag') {
-      q.tagsAny = [scope.name]
-      if (scope.libraryId != null) q.libraryId = scope.libraryId
-    }
-    // 地点筛选：城市名是后端离线解析好的，精确匹配
-    if (scope.kind === 'place') q.places = [scope.name]
-    if (scope.kind === 'tagGroup') {
-      q.tagsAny = scope.names
-      if (scope.libraryId != null) q.libraryId = scope.libraryId
-    }
-    if (formats.length > 0) q.formats = formats
-    if (camera.length > 0) q.camera = camera
-    if (yearFilter.length > 0) q.years = yearFilter
-    // 顶栏「地点」筛选与侧栏 scope=place 互不干扰：这里只作为附加过滤
-    if (placeFilter.length > 0) q.places = placeFilter
-    if (personFilter) q.personId = personFilter.id
-    /*
-     * ⛔ 不能直接 `if (tagFilter) q.hasTags = tagFilter === 'has'`：
-     * 标签条点了「无匹配」再点侧栏某个标签，会拼出「既要有 X 标签、
-     * 又要求这张图没有任何标签」—— 恒空集，而且界面上看不出来
-     * （标签高亮、计数 32，就是没图）。规则见 `filterRules.ts`。
-     */
-    const hasTags = resolveHasTags(tagFilter, q.tagsAny)
-    if (hasTags !== undefined) q.hasTags = hasTags
-    if (searchTerm) q.nameLike = searchTerm
 
     Promise.all([managerQuery(q), managerCount(q)])
       .then(([list, n]) => {
@@ -962,75 +918,21 @@ export function useManager(): ManagerApi {
   const isBrowsing = scope.kind === 'browse'
   const isIdle = scope.kind === 'none'
 
-  /** 两种来源归一成同一行模型（见 [`GridItem`]）。 */
-  const items = useMemo<GridItem[]>(() => {
-    // 启动默认态：不显示任何图片（`rows` 里可能还留着上一次查询的结果）
-    if (scope.kind === 'none') return []
-    if (scope.kind === 'browse') {
-      // 子文件夹排前面（照资源管理器的习惯），然后是图片
-      const dirs: GridItem[] = subdirs.map((d) => ({
-        // 压缩包也走这条分支（无缩略图、无索引行），只是 kind 不同 ——
-        // 卡片据此换图标，双击行为完全一样（进去看）
-        key: `${d.kind === 'archive' ? 'arc' : 'dir'}:${d.path ?? d.name}`,
-        id: null,
-        path: d.path,
-        name: d.name,
-        // 压缩包有大小（卡片右下角显示），文件夹没有
-        size: d.size ?? null,
-        mtime: null,
-        takenAt: null,
-        width: null,
-        height: null,
-        format: null,
-        rating: 0,
-        flag: 0,
-        hasTags: false,
-        transient: true,
-        kind: d.kind === 'archive' ? 'archive' : 'dir',
-      }))
-      // ⭐ 浏览模式的排序在**前端**做：列表是直读磁盘的一次性结果，
-      // 切排序不可能重新扫一遍目录（冷盘 1–10 秒）。一页最多 2 万条，
-      // 内存排序是毫秒级的。
-      const files: GridItem[] = (listing?.items ?? []).map((f) => ({
-        key: f.path,
-        id: null,
-        path: f.path,
-        name: f.name,
-        size: f.size,
-        mtime: f.mtime,
-        takenAt: f.takenAt, // 选「按拍摄时间」时由后台补，否则恒为 null
-        width: f.width,
-        height: f.height,
-        format: f.format,
-        rating: 0,
-        flag: 0,
-        hasTags: false,
-        transient: true,
-        kind: 'file',
-      }))
-      files.sort(makeComparator<GridItem>(sort, descending))
-      // 文件夹没有大小/时间可排，永远按名字（且永远在前）
-      dirs.sort((a, b) => compareName(a.name, b.name))
-      return [...dirs, ...files]
-    }
-    return rows.map((r) => ({
-      key: String(r.id),
-      id: r.id,
-      path: r.absPath,
-      name: r.relName ?? `#${r.id}`,
-      size: r.size,
-      mtime: null,
-      takenAt: r.takenAt,
-      width: r.width,
-      height: r.height,
-      format: r.format,
-      rating: r.rating,
-      flag: r.flag,
-      hasTags: r.hasTags,
-      transient: false,
-      kind: 'file',
-    }))
-  }, [scope.kind, listing, subdirs, rows, sort])
+  /** 两种来源归一成同一行模型（规则见 `manager/gridItems.ts`）。 */
+  const items = useMemo<GridItem[]>(
+    () =>
+      buildGridItems({
+        scopeKind: scope.kind,
+        listing,
+        subdirs,
+        rows,
+        sort,
+        desc: descending,
+      }),
+    // ⚠️ `descending` 必须在依赖里：浏览模式的排序是在这里做的（不走后端查询），
+    // 漏了它 → 同一列上点第二次（只翻方向、`sort` 不变）列表纹丝不动。
+    [scope.kind, listing, subdirs, rows, sort, descending],
+  )
 
   // 浏览模式：图片数 + 子文件夹数（网格里两者都显示）
   const shownTotal = isIdle ? 0 : isBrowsing ? (listing?.total ?? 0) + subdirs.length : total
@@ -1197,17 +1099,9 @@ export function useManager(): ManagerApi {
     /**
      * 「基础范围」的 key（剥掉标签筛选那一层之后的 图库/目录/浏览路径）。
      * 标签条用它判断"范围是不是换了"——换了才退回一级列表。
-     * ⛔ 不要用标签列表的指纹判断：实测它会被莫名触发（2026-10-24 计数器跑到 6 次），
-     *    导致用户点了一级芯片后二级视图被反复弹回一级。
+     * ⛔ 不要用标签列表的指纹判断（原因见 `manager/query.ts::baseKeyOf`）。
      */
-    scopeBaseKey:
-      baseScope.kind === 'library'
-        ? `library:${baseScope.id}`
-        : baseScope.kind === 'folder'
-          ? `folder:${baseScope.id}`
-          : baseScope.kind === 'browse'
-            ? `browse:${baseScope.path}`
-            : baseScope.kind,
+    scopeBaseKey: baseKeyOf(baseScope),
     isBrowsing,
     isIdle,
     // 浏览模式也能选：导出/转格式/摆正/打印都是**文件级**操作，不需要索引行
