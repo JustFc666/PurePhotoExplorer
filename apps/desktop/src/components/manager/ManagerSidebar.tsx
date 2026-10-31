@@ -671,7 +671,7 @@ export function ManagerSidebar({
           </button>
         </div>
         <div className="pv-mg-treelist">
-          {/* ⭐ 图库在前，「全部照片」沉底（用户 2026-10-18）。不再有「自定义图库」分组标题。 */}
+          {/* ⭐ 图库列表（「全部照片」已上移到图库与标签之间，见下方）。不再有「自定义图库」分组标题。 */}
           {libraries.length === 0 && (
             <div className="pv-mg-hint">
               还没有图库。点右边的 ＋ 建一个空的；
@@ -708,7 +708,32 @@ export function ManagerSidebar({
           })}
 
           {/*
-            标签分区（2026-10-19）：放在「图库」和「全部照片」之间。
+            内置的「全部照片」：不是数据库里的行，是「不加任何条件」这个语义。
+            ⭐ 2026-10-31 用户要求**上移到「图库」和「标签」之间** ——
+            原先沉在标签分区下面（一屏标签几十条时要翻很久才够得着），
+            现在紧跟在图库列表后面，它是「所有库的并集」，位置上也说得通。
+          */}
+          <div
+            className={`pv-mg-row${scope.kind === 'all' ? ' is-on' : ''}`}
+            // 上面是图库列表、下面是标签分区，加一点上间距免得贴太紧
+            style={{ paddingLeft: 4, marginTop: 4 }}
+            role="button"
+            tabIndex={0}
+            onClick={onSelectAll}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') onSelectAll()
+            }}
+          >
+            <span className="pv-mg-chev is-leaf" />
+            <span className="pv-mg-ico-glyph" aria-hidden>
+              🖼
+            </span>
+            <span className="pv-mg-rowname">全部照片</span>
+            <span className="pv-mg-rowcount">{fmt(totalCount)}</span>
+          </div>
+
+          {/*
+            标签分区（2026-10-19）：接在「图库 + 全部照片」之后。
             点一下 = 只看这个标签的图；右键可改名/删除整个标签。
           */}
           <div className="pv-mg-taghead">
@@ -744,24 +769,6 @@ export function ManagerSidebar({
             ))
           )}
 
-          {/* 内置的「全部照片」不是数据库里的行，是「不加任何条件」这个语义 */}
-          <div
-            className={`pv-mg-row${scope.kind === 'all' ? ' is-on' : ''}`}
-            style={{ paddingLeft: 4 }}
-            role="button"
-            tabIndex={0}
-            onClick={onSelectAll}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') onSelectAll()
-            }}
-          >
-            <span className="pv-mg-chev is-leaf" />
-            <span className="pv-mg-ico-glyph" aria-hidden>
-              🖼
-            </span>
-            <span className="pv-mg-rowname">全部照片</span>
-            <span className="pv-mg-rowcount">{fmt(totalCount)}</span>
-          </div>
         </div>
       </div>
 
