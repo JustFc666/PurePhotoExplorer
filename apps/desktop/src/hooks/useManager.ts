@@ -276,7 +276,18 @@ export interface ManagerApi {
    *
    * ⚠️ 先扫描再挂图库：目录不在 `folders` 表里就挂不上。
    */
-  addFolderToLibrary: (path: string, folderName: string, lib: LibChoice) => Promise<void>
+  /**
+   * 扫目录并加入图库。
+   *
+   * `recursive = true` → 连同**全部子目录**一起入库（用户在「是否包含子文件夹」
+   * 里答了「包含」）。默认 false：只加这一层。
+   */
+  addFolderToLibrary: (
+    path: string,
+    folderName: string,
+    lib: LibChoice,
+    recursive?: boolean,
+  ) => Promise<void>
   /** 把目录加进**指定 id** 的图库（拖放 / 「添加文件夹…」用） */
   addFolderToLibraryById: (
     path: string,
@@ -841,12 +852,13 @@ export function useManager(): ManagerApi {
    * ⚠️ **顺序**：必须先扫描（目录才会进 `folders` 表），再挂图库。
    */
   const addFolderToLibrary = useCallback(
-    async (path: string, folderName: string, lib: LibChoice) => {
+    async (path: string, folderName: string, lib: LibChoice, recursive = false) => {
       setBusy(true)
       setError(null)
       try {
         await ensureOpen()
-        const r = await managerOpenFolder(path)
+        // `recursive` 由用户在「是否包含子文件夹」里选（见 ManagerView::addDirToLibrary）
+        const r = await managerOpenFolder(path, recursive)
         // `byFolderName` / `new` 都传 libraryId=null，让后端按名字**同名复用**；
         // 只有 `existing` 才显式给 id。
         const libName = lib.kind === 'new' ? lib.name : folderName
@@ -857,8 +869,9 @@ export function useManager(): ManagerApi {
         }
         const target = lib.kind === 'existing' ? lib.name : libName
         setRoot(path)
+        const scope = r.folders > 1 ? `（含 ${r.folders} 个目录）` : ''
         setScanInfo(
-          `已加入「${target}」：新增 ${r.added} · 更新 ${r.changed} · 移除 ${r.removed}`,
+          `已加入「${target}」${scope}：新增 ${r.added} · 更新 ${r.changed} · 移除 ${r.removed}`,
         )
         setScope({ kind: 'folder', id: r.folderId, path, name: folderName })
         setQueryVersion((v) => v + 1)

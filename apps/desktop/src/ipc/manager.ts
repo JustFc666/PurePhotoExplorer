@@ -158,13 +158,15 @@ export async function managerScan(root: string): Promise<ScanSummary> {
   return invoke<ScanSummary>('manager_scan', { root })
 }
 
-/** 打开单个目录的结果。 */
+/** 打开目录的结果。 */
 export interface OpenFolderResult {
   /** 索引里的文件夹 id —— 拿它做「只看这个目录」的查询 */
   folderId: number
   added: number
   changed: number
   removed: number
+  /** 本次登记了几个目录（递归时是整棵子树的目录数，单层恒为 1） */
+  folders: number
 }
 
 /**
@@ -173,8 +175,17 @@ export interface OpenFolderResult {
  * ⚠️ 与 [`managerScan`]（递归首扫）是两件事。文件浏览器里点目录必须走这个 ——
  * 用递归版点一下盘符就会遍历整块盘。
  */
-export async function managerOpenFolder(path: string): Promise<OpenFolderResult> {
-  return invoke<OpenFolderResult>('manager_open_folder', { path })
+export async function managerOpenFolder(
+  path: string,
+  /**
+   * `true` = **连同全部子目录**一起入库（用户答「包含子文件夹」）。
+   *
+   * ⛔ 默认 `false`：文件浏览器里点目录看照片也走这个命令，
+   * 用递归版点一下盘符就会遍历整块盘。
+   */
+  recursive = false,
+): Promise<OpenFolderResult> {
+  return invoke<OpenFolderResult>('manager_open_folder', { path, recursive })
 }
 
 /** 从图库移除的结果。 */

@@ -57,12 +57,14 @@ import { useLibDrop } from '../../hooks/libDrop'
 import { ContextMenu, useContextMenu } from '../chrome/ContextMenu'
 import type { ContextMenuItem } from '../chrome/ContextMenu'
 import { FilterDropdown, FilterRow } from './FilterDropdown'
+import { ConfirmDialog } from '../chrome/ConfirmDialog'
 import { PromptDialog } from '../chrome/PromptDialog'
 import { PrintPreview } from '../viewer/PrintPreview'
 import { DriveIcon } from '../icons/DriveIcon'
 import { useShellIcons } from '../../hooks/useShellIcons'
 import { useListPrefs, type ListColumnId } from '../../hooks/listColumns'
 import { renderListCell } from './ListCells'
+import { fsListDirs } from '../../ipc/browse'
 import { baseName, parentPath } from '../../hooks/parentPath'
 import { ManagerSidebar } from './ManagerSidebar'
 import { AiTagStrip } from './AiTagStrip'
@@ -264,7 +266,26 @@ export function ManagerView(props: Props) {
    * Tauri 的 dialog 插件没有 prompt（只有 message/ask/confirm/open/save），
    * 所以用自己的 [`PromptDialog`]。
    */
-  const [newLibFor, setNewLibFor] = useState<{ path: string; folderName: string } | null>(null)
+  const [newLibFor, setNewLibFor] = useState<{
+    path: string
+    folderName: string
+    /** 用户答过「包含子文件夹」才为 true */
+    recursive: boolean
+  } | null>(null)
+  /**
+   * 「是否包含子文件夹」的三选一（2026-10-31）。
+   *
+   * 用 Promise 包一层 state：调用方 `await` 它拿到结果再继续，
+   * 这样 `addDirToLibrary` 不必拆成「先弹框、再回调里接着做」两段。
+   */
+  const [askTree, setAskTree] = useState<{
+    path: string
+    name: string
+    /** 第一层子目录数（后端一次最多列 400 个，到顶就是「400 以上」） */
+    subdirs: number
+    more: boolean
+    resolve: (v: 'tree' | 'flat' | 'cancel') => void
+  } | null>(null)
 
   /**
    * 侧栏「图库 +」：建一个**空的**图库。
@@ -599,28 +620,65 @@ export function ManagerView(props: Props) {
    * 文件菜单不进这里：它先让你选目录，再问「新建 / 加入已有」，见 `folderMenu`。
    */
   const addDirToLibrary = useCallback(
-    (
+    async (
       path: string,
       mode: 'name' | 'new' | 'existing',
       lib?: { id: number; name: string },
     ) => {
       const trimmed = path.replace(/[\\/]+$/, '')
       const folderName = trimmed.split(/[\\/]/).pop() || path
+
+      /*
+       * ① 先问「是否包含子文件夹」（用户 2026-10-31）——**只在有子目录时才问**。
+       *
+       * 为什么先查一次子目录而不是无脑弹框：绝大多数收录目录都是叶子目录，
+       * 每次入库都弹一下纯属打扰。`fs_list_dirs` 是单层 read_dir，几十毫秒。
+       *
+       * ⚠️ 查询失败（无权限 / 盘掉了）**不算错** → 按单层走。真正的错误
+       * 会在后面的入库里报出来，这里拦一下只会让用户莫名其妙加不进去。
+       */
+      let recursive = false
+      try {
+        const subs = await fsListDirs(path)
+        const n = subs.filter((d) => d.kind === 'dir').length
+        // 后端单层最多列 400 个，到顶说明「至少 400」
+        const more = n >= 400
+        if (n > 0) {
+          const ans = await new Promise<'tree' | 'flat' | 'cancel'>((resolve) => {
+            setAskTree({
+              path,
+              name: folderName,
+              subdirs: n,
+              more,
+              resolve: (v) => {
+                setAskTree(null)
+                resolve(v)
+              },
+            })
+          })
+          if (ans === 'cancel') return
+          recursive = ans === 'tree'
+        }
+      } catch {
+        /* 查不到子目录就按单层走 */
+      }
+
       if (mode === 'new') {
         // 收名字 → 确认后走 `newLibFor` 对话框里的 `addFolderToLibrary`
-        setNewLibFor({ path, folderName })
+        setNewLibFor({ path, folderName, recursive })
         return
       }
       if (mode === 'existing') {
         if (!lib) return
-        void mgr.addFolderToLibrary(path, folderName, {
-          kind: 'existing',
-          id: lib.id,
-          name: lib.name,
-        })
+        void mgr.addFolderToLibrary(
+          path,
+          folderName,
+          { kind: 'existing', id: lib.id, name: lib.name },
+          recursive,
+        )
         return
       }
-      void mgr.addFolderToLibrary(path, folderName, { kind: 'byFolderName' })
+      void mgr.addFolderToLibrary(path, folderName, { kind: 'byFolderName' }, recursive)
     },
     [mgr],
   )
@@ -2015,7 +2073,8 @@ export function ManagerView(props: Props) {
         disabled: libTargets.length !== 1,
         onSelect: () => {
           const t = libTargets[0]
-          if (t) setNewLibFor({ path: t.path, folderName: t.name })
+          // 走统一入口：它会先问「是否包含子文件夹」（直接 setNewLibFor 会绕过那一问）
+          if (t) void addDirToLibrary(t.path, 'new')
         },
       },
       {
@@ -2259,7 +2318,8 @@ export function ManagerView(props: Props) {
         dirPath={curDir?.path ?? null}
         dirName={curDir?.name ?? ''}
         onNewLibraryFromDir={() => {
-          if (curDir) setNewLibFor({ path: curDir.path, folderName: curDir.name })
+          // 统一入口：先问「是否包含子文件夹」（直接 setNewLibFor 会绕过那一问）
+          if (curDir) void addDirToLibrary(curDir.path, 'new')
         }}
         onAddDirToLibrary={(id, name) => {
           if (curDir) addDirToLibrary(curDir.path, 'existing', { id, name })
@@ -2297,10 +2357,15 @@ export function ManagerView(props: Props) {
           onSelectAddedFolder={mgr.selectAddedFolder}
           onGoHome={mgr.goHome}
           onBrowseDir={browseWithReveal}
-          onAddToLibrary={(path, folderName, lib) =>
-            void mgr.addFolderToLibrary(path, folderName, lib)
-          }
-          onAskNewLibraryName={(path, folderName) => setNewLibFor({ path, folderName })}
+          onAddToLibrary={(_path, _folderName, lib) => {
+            // 三处侧栏入口统一走 `addDirToLibrary`，才能都经过「问子文件夹」那一步
+            if (lib.kind === 'existing') {
+              void addDirToLibrary(_path, 'existing', { id: lib.id, name: lib.name })
+            } else {
+              void addDirToLibrary(_path, 'name')
+            }
+          }}
+          onAskNewLibraryName={(path) => void addDirToLibrary(path, 'new')}
           onRemoveFromLibrary={(f) => void mgr.removeAddedFolder(f)}
           onGotoDir={gotoWithReveal}
           // 侧栏「图库 +」：只负责开口，弹窗在下面（portal 到 body，别塞进侧栏）
@@ -2862,6 +2927,31 @@ export function ManagerView(props: Props) {
         )}
       </footer>
 
+      {/*
+        「是否包含子文件夹」——只在目录有子文件夹时出现（见 `addDirToLibrary`）。
+        三个选项是**平级**的，所以用 ConfirmDialog 的三按钮版本：
+        Esc / 点遮罩 = 取消（什么都不做），不会像两按钮那样把「取消」当成「只加本层」。
+      */}
+      {askTree && (
+        <ConfirmDialog
+          title="是否包含子文件夹？"
+          message={
+            `「${askTree.name}」下面还有 ${
+              askTree.more ? '400 个以上' : `${askTree.subdirs} 个`
+            }子文件夹。\n\n` +
+            `包含：连同所有层级一起加入图库，可能是几百上千张，会慢一些。\n` +
+            `只加本层：只收这个目录里的图片，子文件夹稍后可以单独加。`
+          }
+          // ⚠️ 主按钮（Enter 默认）给**轻**的那个：递归入库可能很重，不该是默认动作
+          okLabel="只加本层"
+          extraLabel={`包含子文件夹（${askTree.more ? '400+' : askTree.subdirs}）`}
+          cancelLabel="取消"
+          onOk={() => askTree.resolve('flat')}
+          onExtra={() => askTree.resolve('tree')}
+          onCancel={() => askTree.resolve('cancel')}
+        />
+      )}
+
       {/* 「加进新图库…」的名字输入框 */}
       {newLibFor && (
         <PromptDialog
@@ -2873,7 +2963,12 @@ export function ManagerView(props: Props) {
           onOk={(name) => {
             const target = newLibFor
             setNewLibFor(null)
-            void mgr.addFolderToLibrary(target.path, target.folderName, { kind: 'new', name })
+            void mgr.addFolderToLibrary(
+              target.path,
+              target.folderName,
+              { kind: 'new', name },
+              target.recursive,
+            )
           }}
           onCancel={() => setNewLibFor(null)}
         />

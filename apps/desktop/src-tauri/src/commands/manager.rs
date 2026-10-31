@@ -283,6 +283,9 @@ pub struct OpenFolderDto {
     pub added: u64,
     pub changed: u64,
     pub removed: u64,
+    /// 本次**登记了几个目录**（递归入库时是整棵子树的目录数，单层恒为 1）。
+    /// 前端用它给用户一句「包含 N 个子文件夹」的确认，否则用户不知道到底加了什么。
+    pub folders: u64,
 }
 
 /// 从图库移除的结果。
@@ -499,25 +502,47 @@ pub async fn manager_folders(state: State<'_, AppState>) -> Result<Vec<FolderNod
         .map_err(merr)
 }
 
-/// **打开单个目录**（不递归）：登记卷与目录、扫描该目录里的图片。
+/// 打开目录并（可选）扫描其中的图片，用于「加入图库」。
 ///
-/// ⚠️ 与 `manager_scan`（递归首扫）是两件事，别混用：
-/// 文件浏览器里点一个目录走这里 —— 用递归版点一下盘符就会遍历整块盘。
+/// - `recursive = false`（默认）：**只扫这一层** —— 文件浏览器里点目录看照片走这条，
+///   否则点一下盘符就会遍历整块盘。
+/// - `recursive = true`：**连同全部子目录**一起入库。用户右键「加入图库」时，
+///   如果该目录有子文件夹，前端会先问一句「是否包含子文件夹」，答是才传 true。
+///
+/// ⚠️ 递归版的目录数超过 `pv_scan::tree::MAX_TREE_DIRS` 会**报错**（不静默截断）。
 #[tauri::command]
 pub async fn manager_open_folder(
     state: State<'_, AppState>,
     path: String,
+    recursive: Option<bool>,
 ) -> Result<OpenFolderDto, ErrorDto> {
+    let dir = std::path::Path::new(&path);
+    let recurse = recursive.unwrap_or(false);
+
     state
         .with_manager_mut(|s| {
-            let r = s
-                .open_folder(std::path::Path::new(&path))
-                .map_err(|e| e.to_string())?;
+            if recurse {
+                /*
+                 * 「包含子文件夹」——用户 2026-10-31 要求。
+                 * 走 `open_folder_tree`：整棵子树建进 folders，逐目录扫图 + 补尺寸/时间。
+                 * ⚠️ 目录数超上限会直接报错（`MAX_TREE_DIRS`），不静默截断。
+                 */
+                let t = s.open_folder_tree(dir).map_err(|e| e.to_string())?;
+                return Ok(OpenFolderDto {
+                    folder_id: t.root_folder_id,
+                    added: t.images.added,
+                    changed: t.images.changed,
+                    removed: t.images.removed,
+                    folders: t.folders,
+                });
+            }
+            let r = s.open_folder(dir).map_err(|e| e.to_string())?;
             Ok(OpenFolderDto {
                 folder_id: r.folder_id,
                 added: r.images.added,
                 changed: r.images.changed,
                 removed: r.images.removed,
+                folders: 1,
             })
         })
         .map_err(merr)

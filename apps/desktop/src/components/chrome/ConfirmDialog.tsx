@@ -32,9 +32,18 @@ interface Props {
   message: string
   okLabel?: string
   cancelLabel?: string
+  /**
+   * 可选的**第三个**中性选项（2026-10-31）。
+   *
+   * 起因：「加入图库」要先问一句「要不要包含子文件夹」，这是三个平级的选择
+   * （包含 / 只本层 / 算了），两按钮的确认框表达不了 —— 强行塞成
+   * 「确定=包含、取消=只本层」的话，按 Esc 或点遮罩就会**误入库**。
+   */
+  extraLabel?: string
   /** 破坏性操作：确认按钮标红 */
   danger?: boolean
   onOk: () => void
+  onExtra?: () => void
   onCancel: () => void
 }
 
@@ -43,8 +52,10 @@ export function ConfirmDialog({
   message,
   okLabel = '确定',
   cancelLabel = '取消',
+  extraLabel,
   danger,
   onOk,
+  onExtra,
   onCancel,
 }: Props) {
   const okRef = useRef<HTMLButtonElement>(null)
@@ -86,6 +97,11 @@ export function ConfirmDialog({
           <button type="button" className="pv-btn" onClick={onCancel}>
             {cancelLabel}
           </button>
+          {extraLabel && onExtra && (
+            <button type="button" className="pv-btn" onClick={onExtra}>
+              {extraLabel}
+            </button>
+          )}
           <button
             ref={okRef}
             type="button"

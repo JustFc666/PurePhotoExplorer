@@ -9,13 +9,32 @@ use pv_index::{repo, Connection, IndexError};
 use std::path::{Path, PathBuf};
 
 /// 递归首扫的统计。
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+///
+/// ⚠️ 不能 `Copy`：`folder_ids` 是 Vec。调用方本来就只该拿走一次。
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct TreeSummary {
     /// 处理过的目录数
     pub folders: u64,
     /// 图像增/改/删合计
     pub images: Summary,
+    /// **根目录**在索引里的 id。
+    ///
+    /// 递归入库后要拿它去挂图库（`libraries::add_folder` 认的是 id）。
+    /// 扫描失败/根目录不在本卷下时是 `0`。
+    pub root_folder_id: i64,
+    /// 本次碰过的**全部**文件夹 id。
+    ///
+    /// 上层要逐个补尺寸和拍摄时间 —— 只补根目录的话，子目录里的图
+    /// 既没有宽高（卡片比例错）也没有拍摄时间（排序静默退化）。
+    pub folder_ids: Vec<i64>,
 }
+
+/// 递归扫描的**目录数上限**。
+///
+/// 防的是「用户在盘符根上右键 → 加入图库」这种误操作：`D:\` 底下可能是
+/// 几万个目录、几十万张图，跑起来能卡十几分钟。超限**直接报错**，
+/// 不静默截断 —— 截断会让用户以为「全都加进去了」。
+pub const MAX_TREE_DIRS: usize = 20_000;
 
 fn volume_row(info: &VolumeInfo) -> Volume {
     let mut v = Volume::new(info.volume_guid.clone());
@@ -55,6 +74,17 @@ pub fn scan_tree(
         f.is_root = parent_id.is_none();
         let folder_id = repo::folders::upsert(conn, &f)?;
         summary.folders += 1;
+        // 栈是 DFS，第一次 pop 出来的就是根
+        if summary.root_folder_id == 0 {
+            summary.root_folder_id = folder_id;
+        }
+        summary.folder_ids.push(folder_id);
+
+        if summary.folder_ids.len() > MAX_TREE_DIRS {
+            return Err(IndexError::BadValue(format!(
+                "这个目录下的子目录超过 {MAX_TREE_DIRS} 个，已停止。请分批加入（先加几个子目录）"
+            )));
+        }
 
         // 本目录内的图像
         let s = scan_folder(conn, folder_id, &dir)?;

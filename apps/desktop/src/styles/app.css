@@ -2037,6 +2037,8 @@
   justify-content: flex-end;
   gap: 8px;
   margin-top: 14px;
+  /* 三按钮版本（「是否包含子文件夹」）在窄对话框里会挤，允许折到第二行 */
+  flex-wrap: wrap;
 }
 
 /* ── 单图模式左侧胶片条 ──

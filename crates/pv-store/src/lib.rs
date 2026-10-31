@@ -301,6 +301,27 @@ impl Store {
         Ok(pv_scan::scan_tree(&mut self.conn, self.resolver.as_ref(), root)?)
     }
 
+    /// 打开目录 **并递归包含全部子目录**（用户勾了「包含子文件夹」时用）。
+    ///
+    /// ## 与 [`Store::open_folder`] 的区别
+    /// 那个只登记并扫描**单层**，用于「点一下目录看一眼」；
+    /// 这个会走 `scan_tree` 把整棵子树建进 `folders` 并逐目录扫图。
+    ///
+    /// ## 为什么要逐个目录补尺寸/时间
+    /// `scan_tree` 只做魔数探测（不知道像素尺寸、不读 EXIF）。只补根目录的话，
+    /// **子目录里的图全都没宽高**：卡片比例退回默认、按分辨率排序全是 0、
+    /// 「宽 × 高」标签也空着 —— 而且不会报错，只有用下去才发现不对。
+    ///
+    /// ⚠️ 目录数超 [`pv_scan::tree::MAX_TREE_DIRS`] 会直接报错（不静默截断）。
+    pub fn open_folder_tree(&mut self, dir: &Path) -> Result<pv_scan::TreeSummary> {
+        let t = pv_scan::scan_tree(&mut self.conn, self.resolver.as_ref(), dir)?;
+        for id in &t.folder_ids {
+            self.fill_folder_dimensions(*id);
+            self.fill_folder_times(*id);
+        }
+        Ok(t)
+    }
+
     /// 打开**单个目录**（不递归）：登记卷与目录行、扫描**该目录里**的图片。
     ///
     /// 返回的 `folder_id` 就是「只看这个目录」的查询条件
@@ -1469,6 +1490,52 @@ mod tests {
         let dir = temp_dir(tag);
         std::fs::copy(&src, dir.join("iloveu.webp")).unwrap();
         Some(dir)
+    }
+
+    /// 递归入库（用户 2026-10-31「包含子文件夹」）：
+    ///
+    /// ① 子目录真的进了 `folders`；
+    /// ② **子目录里的图也要有宽高** —— 只补根目录的话它们全是 NULL，
+    ///    卡片比例退回默认、按分辨率排序全是 0，而且不报错（最难查的那种）。
+    #[test]
+    fn 递归入库把子目录也算进尺寸回填() {
+        let Some(src) = sample_source("tree_src") else {
+            eprintln!("跳过：找不到样本");
+            return;
+        };
+        // 造两级：src/a/b/iloveu.webp，根目录自己也放一张
+        let sub = src.join("a").join("b");
+        std::fs::create_dir_all(&sub).unwrap();
+        std::fs::copy(src.join("iloveu.webp"), sub.join("deep.webp")).unwrap();
+
+        let data = temp_dir("data_tree");
+        let resolver = Box::new(FakeResolver {
+            mount: src.clone(),
+            guid: r"\?\Volume{store_tree}\".into(),
+        });
+        let mut store = Store::open(&data, resolver).unwrap();
+
+        let t = store.open_folder_tree(&src).unwrap();
+        assert_eq!(t.folders, 3, "src / src/a / src/a/b 三个目录");
+        assert!(t.root_folder_id > 0, "根目录 id 要带回来（挂图库要用）");
+        assert_eq!(t.images.added, 2, "根目录 1 张 + 深层 1 张");
+
+        // 总共有 2 行，且**两行的宽高都不是 NULL**
+        let imgs = store
+            .query(&ImageQuery {
+                sort: SortKey::RelName,
+                dir: SortDir::Asc,
+                ..Default::default()
+            })
+            .unwrap();
+        assert_eq!(imgs.len(), 2);
+        for i in &imgs {
+            assert!(
+                i.width.is_some() && i.height.is_some(),
+                "{} 没有宽高 —— 递归入库只补了根目录？",
+                i.rel_name.as_deref().unwrap_or("?")
+            );
+        }
     }
 
     #[test]
