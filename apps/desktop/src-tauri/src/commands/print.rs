@@ -170,6 +170,7 @@ pub(crate) fn print_impl(
 mod tests {
     use super::*;
     use pv_decode::{BitmapBackend, DecoderRegistry};
+    use std::path::PathBuf;
 
     fn registry() -> DecoderRegistry {
         let mut r = DecoderRegistry::new();

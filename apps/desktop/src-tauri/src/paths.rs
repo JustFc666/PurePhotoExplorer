@@ -65,7 +65,7 @@ mod tests {
             !is_archive_file(&dir.to_string_lossy()),
             "叫 .zip 的目录不能被当成包"
         );
-        assert!(is_archive_file("E:/a/b.cbz") == false, "不存在的文件也不算");
+        assert!(!is_archive_file("E:/a/b.cbz"), "不存在的文件也不算");
         let _ = std::fs::remove_dir_all(&dir);
     }
 }
