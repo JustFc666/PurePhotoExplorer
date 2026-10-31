@@ -693,16 +693,20 @@ pub async fn manager_remove_folder(
 ///
 /// ⚠️ 调用前必须先用 `manager_open_folder` 把目录扫进索引 —— 目录不在
 /// `folders` 表里就挂不上（`library_folders.folder_id` 指着它）。
+///
+/// `recursive = true` → 连同**全部后代目录**一起挂。⛔ 少了这一步，子目录里的图
+/// 在图库查询里一张都出不来（查询按 `library_folders` 的 id 精确匹配）。
 #[tauri::command]
 pub async fn manager_add_to_library(
     state: State<'_, AppState>,
     folder_id: i64,
     name: String,
     library_id: Option<i64>,
+    recursive: Option<bool>,
 ) -> Result<i64, ErrorDto> {
     state
         .with_manager_mut(|s| {
-            s.add_to_library(folder_id, &name, library_id)
+            s.add_to_library(folder_id, &name, library_id, recursive.unwrap_or(false))
                 .map_err(|e| e.to_string())
         })
         .map_err(merr)
@@ -1157,16 +1161,29 @@ pub async fn manager_rename_library(
 
 /// 删除图库（侧栏图库行右键「删除图库」）。
 ///
-/// ⛔ **只删这个分组**：`libraries` 行 + 它的 `library_folders` 关系。
-/// 目录的索引行、缩略图缓存、磁盘上的原图**一律不动** ——
-/// 照片仍然在「全部照片」里，还能再挂到别的图库上。
+/// ⭐ 2026-10-31 改：**连它独占的目录一起从索引里清掉**，这些照片会从
+/// 「全部照片」里消失（用户反馈「图库删了，全部照片也要清」）。
+///
+/// 但两种东西**绝不动**：
+/// - 还被**别的图库**引用的目录（同一个目录挂两个库时，删一个不影响另一个）
+/// - 磁盘上的**原图**（只删索引行 + 缩略图缓存）
+///
+/// ⚠️ 删索引会连带丢掉这些图的评分、标签、人脸关联 —— UI 侧必须先确认。
 #[tauri::command]
 pub async fn manager_delete_library(
     state: State<'_, AppState>,
     id: i64,
-) -> Result<bool, ErrorDto> {
+) -> Result<Option<RemovedDto>, ErrorDto> {
     state
         .with_manager_mut(|s| s.delete_library(id).map_err(|e| e.to_string()))
+        .map(|o| {
+            o.map(|r| RemovedDto {
+                folders: r.folders,
+                images: r.images,
+                thumbs: r.thumbs,
+                thumbs_orphan: r.thumbs_orphan,
+            })
+        })
         .map_err(|e| ErrorDto {
             code: "managerError".into(),
             message: e,

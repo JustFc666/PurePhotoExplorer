@@ -80,6 +80,24 @@ pub fn list_by_volume(conn: &Connection, volume_id: i64) -> Result<Vec<Folder>> 
 ///
 /// 顺带清掉 `library_folders` 里的挂载关系 —— 留着会指向不存在的目录，
 /// 图库条目数会算出一个诡异的数字。
+/// 一个目录**及其全部后代**的 id（含自身，父在前）。
+///
+/// 用递归 CTE 而不是在 Rust 里 DFS：`folders` 可能有几万行，
+/// 整表拉回来在应用层拼树是 O(n) 内存，SQL 侧只回一个 id 列。
+pub fn descendant_ids(conn: &Connection, id: i64) -> Result<Vec<i64>> {
+    let mut stmt = conn.prepare(
+        "WITH RECURSIVE sub(id, depth) AS (
+             SELECT id, 0 FROM folders WHERE id = ?1
+             UNION ALL
+             SELECT f.id, sub.depth + 1
+               FROM folders f JOIN sub ON f.parent_id = sub.id
+         )
+         SELECT id FROM sub ORDER BY depth, id",
+    )?;
+    let rows = stmt.query_map(params![id], |r| r.get::<_, i64>(0))?;
+    Ok(rows.filter_map(|r| r.ok()).collect())
+}
+
 pub fn delete(conn: &Connection, id: i64) -> Result<()> {
     conn.execute(
         "DELETE FROM library_folders WHERE folder_id = ?1",

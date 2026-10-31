@@ -117,6 +117,25 @@ pub fn detach_folder(conn: &Connection, folder_id: i64) -> Result<usize> {
 }
 
 /// 列出图库的成员文件夹 id。
+/// 这棵子树（含自身）**还被多少个图库引用**。
+///
+/// 删图库时用它决定「能不能连索引一起清掉」：
+/// 同一个目录可能同时挂在多个图库里，删掉 A 库不能把 B 库的照片一起弄没。
+///
+/// ⚠️ 必须在**删掉本库的 `library_folders` 行之后**再调 —— 否则自己的引用
+/// 也算在里面，永远大于 0，一个目录都删不掉。
+pub fn count_refs_in_subtree(conn: &Connection, folder_id: i64) -> Result<i64> {
+    let mut stmt = conn.prepare(
+        "WITH RECURSIVE sub(id) AS (
+             SELECT id FROM folders WHERE id = ?1
+             UNION ALL
+             SELECT f.id FROM folders f JOIN sub ON f.parent_id = sub.id
+         )
+         SELECT COUNT(*) FROM library_folders WHERE folder_id IN (SELECT id FROM sub)",
+    )?;
+    Ok(stmt.query_row(params![folder_id], |r| r.get(0))?)
+}
+
 pub fn list_folder_ids(conn: &Connection, library_id: i64) -> Result<Vec<i64>> {
     let mut stmt = conn.prepare(
         "SELECT folder_id FROM library_folders WHERE library_id = ?1 ORDER BY folder_id",

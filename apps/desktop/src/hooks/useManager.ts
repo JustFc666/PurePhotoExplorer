@@ -861,11 +861,14 @@ export function useManager(): ManagerApi {
         const r = await managerOpenFolder(path, recursive)
         // `byFolderName` / `new` 都传 libraryId=null，让后端按名字**同名复用**；
         // 只有 `existing` 才显式给 id。
+        //
+        // ⚠️ `recursive` 要**再传一次**给挂库：`open_folder` 只负责「把目录扫进索引」，
+        // 「挂哪些目录进图库」是另一件事 —— 漏传的话图库只含根目录那一层。
         const libName = lib.kind === 'new' ? lib.name : folderName
         if (lib.kind === 'existing') {
-          await managerAddToLibrary(r.folderId, lib.name, lib.id)
+          await managerAddToLibrary(r.folderId, lib.name, lib.id, recursive)
         } else {
-          await managerAddToLibrary(r.folderId, libName, null)
+          await managerAddToLibrary(r.folderId, libName, null, recursive)
         }
         const target = lib.kind === 'existing' ? lib.name : libName
         setRoot(path)
@@ -916,9 +919,14 @@ export function useManager(): ManagerApi {
   )
 
   /**
-   * 删除图库：**只删这个分组**（图库行 + 成员关系）。
+   * 删除图库：**连它独占的目录一起从索引里清掉**（2026-10-31 改）。
    *
-   * ⛔ 目录索引、缩略图缓存、原图都不动 —— 照片仍在「全部照片」里。
+   * 旧语义是「只删分组」，但那样删完图库后照片还挂在「全部照片」里 ——
+   * 用户反馈要一起清。
+   *
+   * ⛔ 仍然**绝不碰磁盘上的原图**，只删索引行 + 缩略图缓存；
+   *    还被别的图库引用的目录也不会删（后端 `delete_library` 判）。
+   *
    * 删的是当前选中的图库时，范围退回「全部照片」，否则用户会盯着一个已不存在的库。
    */
   const deleteLibrary = useCallback(
@@ -927,7 +935,12 @@ export function useManager(): ManagerApi {
       setError(null)
       try {
         await ensureOpen()
-        await managerDeleteLibrary(id)
+        const r = await managerDeleteLibrary(id)
+        if (r) {
+          setScanInfo(
+            `已删除图库：清理 ${r.images} 张索引 · ${r.folders} 个目录 · ${r.thumbs} 个缩略图（原图都没动）`,
+          )
+        }
         setScope((s) => (s.kind === 'library' && s.id === id ? { kind: 'all' } : s))
         setQueryVersion((v) => v + 1)
         await refreshMeta()

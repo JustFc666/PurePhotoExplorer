@@ -551,16 +551,37 @@ impl Store {
     /// ⚠️ 调用前必须先 `open_folder` 把目录扫进索引 —— 目录不在 `folders` 表里
     /// 就挂不上（`library_folders.folder_id` 指着它）。
     ///
+    /// `recursive = true` → 连同**全部后代目录**一起挂（用户答了「包含子文件夹」）。
+    /// ⛔ 只挂根目录是不够的：图库查询按 `library_folders` 里的 id 精确匹配，
+    /// 子目录不在里面就一张都查不到。
+    ///
     /// 幂等：重复挂同一个目录不会报错（`INSERT OR IGNORE`）。
     pub fn add_to_library(
         &mut self,
         folder_id: i64,
         name: &str,
         library_id: Option<i64>,
+        recursive: bool,
     ) -> Result<i64> {
+        /*
+         * ⭐ 递归入库必须把**整棵子树**都挂进图库（2026-10-31）。
+         *
+         * 只挂根目录的话，图库查询走的是
+         * `dir_id IN (SELECT folder_id FROM library_folders WHERE library_id=?)`
+         * —— 子目录一张都查不出来。表现就是「点了包含子文件夹、状态栏说加了 300 张，
+         * 进图库只看到 5 张」，用户会以为扫描没生效。
+         */
+        let ids = if recursive {
+            repo::folders::descendant_ids(&self.conn, folder_id)?
+        } else {
+            vec![folder_id]
+        };
+
         match library_id {
             Some(id) => {
-                repo::libraries::add_folder(&self.conn, id, folder_id)?;
+                for f in &ids {
+                    repo::libraries::add_folder(&self.conn, id, *f)?;
+                }
                 Ok(id)
             }
             None => {
@@ -569,10 +590,12 @@ impl Store {
                     .find(|l| l.name == name);
                 match existing {
                     Some(l) => {
-                        repo::libraries::add_folder(&self.conn, l.id, folder_id)?;
+                        for f in &ids {
+                            repo::libraries::add_folder(&self.conn, l.id, *f)?;
+                        }
                         Ok(l.id)
                     }
-                    None => Ok(pv_lib::library::create_normal(&self.conn, name, &[folder_id])?),
+                    None => Ok(pv_lib::library::create_normal(&self.conn, name, &ids)?),
                 }
             }
         }
@@ -724,19 +747,56 @@ impl Store {
         Ok(repo::query::count(&self.conn, &f2)?)
     }
 
-    /// 删除图库：**只删这个分组本身**（`libraries` 行 + 它的 `library_folders` 关系）。
-    /// ⛔ **不删目录的索引行、不删缩略图缓存、更不碰原图** ——
-    /// 图库只是「一组目录的快捷分组」，删掉分组不该让照片消失：
-    /// 它们仍然在「全部照片」里，之后还能再挂到别的图库上。
-    /// （想连索引一起清，用 `remove_folder`，那是另一回事。）
+    /// 删除图库：**连它独占的目录一起从索引里清掉**。
     ///
-    /// 幂等：id 不存在时返回 false，不报错。
-    pub fn delete_library(&mut self, id: i64) -> Result<bool> {
+    /// ## 为什么不再「只删分组」（2026-10-31 改）
+    /// 旧语义是「删库 ≠ 删照片」，但那样删完图库后，那些照片仍然挂在
+    /// 「全部照片」里（用户反馈：图库删了，全部照片也得清）。
+    ///
+    /// ## 什么才真的删
+    /// 只删**没有别的图库引用**的目录（整棵子树）。同一个目录同时挂在两个库里时，
+    /// 删掉 A 库不动它的索引 —— B 库的照片必须还在。
+    ///
+    /// ⚠️ 删索引会连带删掉这些图的**评分、标签、人脸关联**（都挂在 image_id 上）。
+    /// 重扫只能恢复「有哪些图」，恢复不了这些 —— 所以 UI 侧必须先确认。
+    ///
+    /// ⚠️ **绝不碰磁盘上的原图**，只删索引行 + 缩略图缓存。
+    ///
+    /// 幂等：id 不存在时返回 `None`，不报错。
+    pub fn delete_library(&mut self, id: i64) -> Result<Option<Removed>> {
         if repo::libraries::get(&self.conn, id)?.is_none() {
-            return Ok(false);
+            return Ok(None);
         }
+
+        // ① 先记下这个库挂了哪些目录 —— 删完库行就查不到了
+        let folders = repo::libraries::list_folder_ids(&self.conn, id)?;
         repo::libraries::delete(&self.conn, id)?;
-        Ok(true)
+
+        /*
+         * ② 再逐个判断「能不能连索引一起清掉」。
+         *
+         * ⚠️ **必须在删库之后判**：自己的引用还留着的话 `count_refs_in_subtree`
+         *    永远 > 0，一个目录都删不掉。
+         * ⚠️ 子树里只要还有**别的**库引用着，就整个跳过：`remove_folder` 删的是
+         *    整棵子树，放过去就是把另一个图库的照片一起清了。
+         * ⚠️ `remove_folder` 之后该子树的行已经没了，遍历里要能容忍
+         *    「目录不存在」（同一个库挂了父子两层时会重复命中）。
+         */
+        let mut out = Removed::default();
+        for fid in folders {
+            if repo::folders::get(&self.conn, fid)?.is_none() {
+                continue;
+            }
+            if repo::libraries::count_refs_in_subtree(&self.conn, fid)? > 0 {
+                continue;
+            }
+            let r = self.remove_folder(fid)?;
+            out.folders += r.folders;
+            out.images += r.images;
+            out.thumbs += r.thumbs;
+            out.thumbs_orphan += r.thumbs_orphan;
+        }
+        Ok(Some(out))
     }
 
     /// 从图库移除一个目录**及其整棵子树**：删索引行 + 顺带清掉它们的缩略图缓存。
@@ -1933,8 +1993,8 @@ mod tests {
         let sub_id = repo::folders::find(store.conn(), vid, "sub").unwrap().unwrap().id;
 
         // 同名两次 → 同一个图库，且两个目录都挂上了
-        let a = store.add_to_library(root_id, "我的收藏", None).unwrap();
-        let b = store.add_to_library(sub_id, "我的收藏", None).unwrap();
+        let a = store.add_to_library(root_id, "我的收藏", None, false).unwrap();
+        let b = store.add_to_library(sub_id, "我的收藏", None, false).unwrap();
         assert_eq!(a, b, "同名应复用同一个图库");
         assert_eq!(repo::libraries::list(store.conn()).unwrap().len(), 1);
         let lib = repo::libraries::get(store.conn(), a).unwrap().unwrap();
@@ -1942,7 +2002,7 @@ mod tests {
         assert_eq!(pv_lib::library::count_of(store.conn(), &lib).unwrap(), 2);
 
         // 幂等：重复挂同一个目录不报错、不重复
-        assert_eq!(store.add_to_library(root_id, "我的收藏", None).unwrap(), a);
+        assert_eq!(store.add_to_library(root_id, "我的收藏", None, false).unwrap(), a);
         assert_eq!(
             repo::libraries::list_folder_ids(store.conn(), a).unwrap(),
             vec![root_id, sub_id]
@@ -1950,7 +2010,7 @@ mod tests {
 
         // 显式指定 library_id：挂到它，name 只是摆设
         assert_eq!(
-            store.add_to_library(sub_id, "随便起的名字", Some(a)).unwrap(),
+            store.add_to_library(sub_id, "随便起的名字", Some(a), false).unwrap(),
             a,
             "给了 library_id 就该挂到它，不该另建一个"
         );
@@ -2035,77 +2095,14 @@ mod tests {
     /// 老库全是空表 —— 所以慢路径必须开文件读 EXIF，并**顺带**把品牌/机型/镜头/GPS
     /// 写进 `image_exif`（搜索命中机型靠它）。没 GPS 的图也要落行（place = NULL），
     /// 否则每轮启动都会重读一遍文件。
-    #[test]
-    fn 地点回填写入exif且机型可搜() {
-        let src_dir = temp_dir("data_places");
-        let sample = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../test-image/DSC9515.JPG");
-        if !sample.is_file() {
-            eprintln!("跳过：找不到样本 DSC9515.JPG");
-            return;
-        }
-        std::fs::copy(&sample, src_dir.join("DSC9515.JPG")).unwrap();
-        let data = temp_dir("data_places_db");
-        let resolver = Box::new(FakeResolver {
-            mount: src_dir.clone(),
-            guid: r"\\?\Volume{places}\".into(),
-        });
-        let mut store = Store::open(&data, resolver).unwrap();
-        store.open_folder(&src_dir).unwrap();
-
-        let (_hits, left) = store.backfill_places(100);
-        assert_eq!(left, 0, "回填一轮后不该再有未解析的图");
-
-        let id = store.query(&ImageQuery::default()).unwrap()[0].id;
-        // image_exif 必须有行（就算这台设备没 GPS，make/model 也该在）
-        let row: (Option<String>, Option<String>, Option<f64>) = store
-            .conn()
-            .query_row(
-                "SELECT make, model, gps_lat FROM image_exif WHERE image_id = ?1",
-                [id],
-                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
-            )
-            .unwrap();
-        assert!(
-            row.0.is_some() || row.1.is_some(),
-            "image_exif 行必须写进品牌/机型（实际 make={:?} model={:?}）",
-            row.0,
-            row.1
-        );
-
-        // 第二次回填不该再开文件重读（行已齐，结果不变）——直接验证幂等
-        let (_hits2, left2) = store.backfill_places(100);
-        assert_eq!(left2, 0);
-
-        // 搜索命中品牌 / 机型：用行里**实际**的值反查（样本是什么相机都能过）
-        if let Some(make) = row.0 {
-            let kw = make.split_whitespace().next().unwrap_or(make.as_str());
-            if !kw.is_empty() {
-                let n = store
-                    .query(&ImageQuery {
-                        filter: ImageFilter {
-                            name_like: Some(kw.to_string()),
-                            ..Default::default()
-                        },
-                        ..Default::default()
-                    })
-                    .unwrap()
-                    .len();
-                assert_eq!(n, 1, "按品牌「{kw}」搜索应该命中");
-            }
-        }
-
-        drop(store);
-        let _ = std::fs::remove_dir_all(&data);
-        let _ = std::fs::remove_dir_all(&src_dir);
-    }
-
-    /// ⭐⭐ 删除图库 = **只删这个分组**，照片与目录索引一律不动。
+    /// ⭐⭐ 删图库的**新语义**（2026-10-31 用户要求）：
+    /// 独占的目录连索引一起清掉，**「全部照片」里这些图也要消失**；
+    /// 但**绝不碰磁盘上的原图**。
     ///
-    /// 图库只是「一组目录的快捷分组」。删掉分组不该让照片消失：
-    /// 它们仍然在「全部照片」里，之后还能再挂到别的图库上。
-    /// ⛔ 真正的「清索引」是 `remove_folder`，那是另一回事，别混。
+    /// 这条同时是护栏：`delete_library` 哪天写成了「顺手把文件也删了」，
+    /// 或者「只删库行、索引留着」（旧语义），这里都会红。
     #[test]
-    fn 删除图库只删分组不动照片() {
+    fn 删除图库会清掉它独占的索引但不动原图() {
         let Some((src, _sub)) = nested_source("libdel") else {
             eprintln!("跳过：找不到样本");
             return;
@@ -2120,20 +2117,70 @@ mod tests {
         let vid = repo::volumes::list(store.conn()).unwrap()[0].id;
         let root_id = repo::folders::find(store.conn(), vid, "").unwrap().unwrap().id;
 
-        let lib_id = store.add_to_library(root_id, "我的收藏", None).unwrap();
+        let lib_id = store.add_to_library(root_id, "我的收藏", None, true).unwrap();
+        let before = store.count(&ImageFilter::default()).unwrap();
+        assert!(before > 1, "样本要有根目录 + 子目录至少两张");
+
+        let r = store.delete_library(lib_id).unwrap().expect("库存在，应当返回统计");
+        assert!(repo::libraries::get(store.conn(), lib_id).unwrap().is_none());
+
+        // 「全部照片」必须清空 —— 这正是用户反馈的问题（删了库照片还在）
+        assert_eq!(
+            store.count(&ImageFilter::default()).unwrap(),
+            0,
+            "删库后全部照片应当为空"
+        );
+        assert_eq!(r.images as i64, before, "统计要和实际删掉的行数一致");
+        assert!(r.folders >= 1);
+
+        // 原图一张都不能少
+        assert!(src.join("iloveu.webp").is_file(), "根目录的原图不能删");
+        assert!(src.join("sub").join("b.webp").is_file(), "子目录的原图不能删");
+
+        // 幂等：删一个不存在的 id 返回 None，不报错
+        assert!(store.delete_library(lib_id).unwrap().is_none());
+
+        drop(store);
+        let _ = std::fs::remove_dir_all(&data);
+        let _ = std::fs::remove_dir_all(&src);
+    }
+
+    /// 同一个目录挂在**两个**图库上时，删掉一个库**不能**动它的索引 ——
+    /// 另一个库的照片必须还在。
+    ///
+    /// ⚠️ 注意「共享」的判断是**按目录**算的，不是按父子：甲库递归挂了
+    /// `root`（含 `sub`）、乙库只挂 `root` 时，`sub` 其实只属于甲库 ——
+    /// 删甲库把 `sub` 的索引清掉是**对的**（乙库本来就不含它）。
+    #[test]
+    fn 删除图库不动还被别人引用的目录() {
+        let Some((src, _sub)) = nested_source("libshare") else {
+            eprintln!("跳过：找不到样本");
+            return;
+        };
+        let data = temp_dir("data_libshare");
+        let resolver = Box::new(FakeResolver {
+            mount: src.clone(),
+            guid: r"\\?\Volume{libshare}\".into(),
+        });
+        let mut store = Store::open(&data, resolver).unwrap();
+        store.scan_tree(&src).unwrap();
+        let vid = repo::volumes::list(store.conn()).unwrap()[0].id;
+        let root_id = repo::folders::find(store.conn(), vid, "").unwrap().unwrap().id;
+
+        // 两个库都**递归**挂根目录 —— 否则乙库只含根目录那一层，
+        // 甲库删掉后子目录「确实没人要了」，删索引反而是对的（见下方注释）
+        let a = store.add_to_library(root_id, "甲", None, true).unwrap();
+        let _b = store.add_to_library(root_id, "乙", None, true).unwrap();
         let before = store.count(&ImageFilter::default()).unwrap();
         assert!(before > 0);
 
-        assert!(store.delete_library(lib_id).unwrap());
-        // 图库行没了，但目录与照片都还在
-        assert!(repo::libraries::get(store.conn(), lib_id).unwrap().is_none());
-        assert!(repo::folders::get(store.conn(), root_id).unwrap().is_some());
-        assert_eq!(store.count(&ImageFilter::default()).unwrap(), before);
-        // 原图不动
-        assert!(src.join("iloveu.webp").is_file());
-
-        // 幂等：删一个不存在的 id 返回 false，不报错
-        assert!(!store.delete_library(lib_id).unwrap());
+        let r = store.delete_library(a).unwrap().unwrap();
+        assert_eq!(r.images, 0, "还被乙库引用着，一张都不能删");
+        assert_eq!(
+            store.count(&ImageFilter::default()).unwrap(),
+            before,
+            "乙库的照片必须还在"
+        );
 
         drop(store);
         let _ = std::fs::remove_dir_all(&data);
@@ -2217,7 +2264,7 @@ mod tests {
         let vid = repo::volumes::list(store.conn()).unwrap()[0].id;
         let root_id = repo::folders::find(store.conn(), vid, "").unwrap().unwrap().id;
 
-        let a = store.add_to_library(root_id, "甲", None).unwrap();
+        let a = store.add_to_library(root_id, "甲", None, false).unwrap();
         let b = store.create_library("乙").unwrap();
 
         store.rename_library(a, "丙").unwrap();

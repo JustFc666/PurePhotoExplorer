@@ -221,8 +221,15 @@ export async function managerAddToLibrary(
   folderId: number,
   name: string,
   libraryId: number | null,
+  /**
+   * `true` → 连同**全部后代目录**一起挂进图库。
+   *
+   * ⛔ 少了它，图库里只能看到根目录那一层的图 —— 子目录一张都出不来
+   * （查询按 `library_folders` 的 id 精确匹配）。
+   */
+  recursive = false,
 ): Promise<number> {
-  return invoke<number>('manager_add_to_library', { folderId, name, libraryId })
+  return invoke<number>('manager_add_to_library', { folderId, name, libraryId, recursive })
 }
 
 /** 组合查询（过滤/排序/分页）。 */
@@ -674,8 +681,8 @@ export async function managerRenameLibrary(id: number, name: string): Promise<vo
  * ⛔ 只删这个分组：图库行 + 它的成员关系。目录索引、缩略图缓存、原图都不动。
  * 返回 false 表示这个 id 已经不存在（幂等，不报错）。
  */
-export async function managerDeleteLibrary(id: number): Promise<boolean> {
-  return invoke<boolean>('manager_delete_library', { id })
+export async function managerDeleteLibrary(id: number): Promise<RemovedResult | null> {
+  return invoke<RemovedResult | null>('manager_delete_library', { id })
 }
 
 /** 单张图的标签 + 相机 + 地点（卡片上的「标签」按钮用）。 */
