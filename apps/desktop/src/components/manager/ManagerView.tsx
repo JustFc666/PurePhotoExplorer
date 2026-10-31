@@ -45,7 +45,7 @@ import { FilterDropdown, FilterRow } from './FilterDropdown'
 import { ConfirmDialog } from '../chrome/ConfirmDialog'
 import { PromptDialog } from '../chrome/PromptDialog'
 import { PrintPreview } from '../viewer/PrintPreview'
-import { DriveIcon } from '../icons/DriveIcon'
+import { DriveGrid } from './DriveGrid'
 import { useShellIcons } from '../../hooks/useShellIcons'
 import { renderListCell } from './ListCells'
 import { fsListDirs } from '../../ipc/browse'
@@ -1478,54 +1478,14 @@ export function ManagerView(props: Props) {
             和侧栏点盘符走同一条 `gotoWithReveal`（会顺便把树展开定位过去）。
           */}
           {mgr.scope.kind === 'none' && driveNodes && driveNodes.length > 0 ? (
-            <div
-              className="pv-mg-grid"
-              style={{ ['--pv-card' as string]: `${thumbWidthOf(mgr.tier)}px` }}
-            >
-              {driveNodes.map((d) => {
-                // 侧栏树用的同一份系统图标（后端按盘符分发，系统盘/移动盘/光驱不同）
-                const sysIcon = shellIcons?.drives.find(([p]) => p === d.path)?.[1] ?? null
-                const on = d.path !== null && driveSel === d.path
-                return (
-                  <div
-                    key={d.path ?? d.name}
-                    className={`pv-mg-card is-dir${on ? ' is-selected' : ''}`}
-                    role="button"
-                    tabIndex={0}
-                    aria-pressed={on}
-                    title={`${d.path ?? d.name}（双击进入）`}
-                    // 单击 = 高亮（和文件夹卡片一致），**双击才进入**（用户 2026-10-31）
-                    onClick={() => {
-                      if (!d.path) return
-                      setDriveSel(on ? null : d.path)
-                    }}
-                    onDoubleClick={() => {
-                      if (d.path) gotoWithReveal(d.path, d.name)
-                    }}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' && d.path) gotoWithReveal(d.path, d.name)
-                    }}
-                  >
-                    <div className="pv-mg-cardimg">
-                      <div className="pv-mg-dirface">
-                        {sysIcon ? (
-                          <img
-                            className="pv-mg-diricon pv-mg-driveimg"
-                            src={sysIcon}
-                            alt=""
-                            draggable={false}
-                          />
-                        ) : (
-                          <DriveIcon className="pv-mg-diricon" />
-                        )}
-                      </div>
-                    </div>
-                    <div className="pv-mg-cardname">{d.name}</div>
-                    <div className="pv-mg-cardmeta">{d.note ?? '磁盘'}</div>
-                  </div>
-                )
-              })}
-            </div>
+            <DriveGrid
+              nodes={driveNodes}
+              icons={shellIcons}
+              selected={driveSel}
+              onSelect={setDriveSel}
+              onOpen={gotoWithReveal}
+              tier={mgr.tier}
+            />
           ) : mgr.items.length === 0 ? (
             <div className="pv-mg-empty" onContextMenu={openBlankMenu}>
               {mgr.busy
