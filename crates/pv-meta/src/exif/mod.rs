@@ -773,7 +773,15 @@ fn find_app1_in_jpeg(data: &[u8], start: usize) -> Option<Vec<u8>> {
             if payload.starts_with(b"Exif\0\0") && payload.len() > 8 {
                 return Some(payload[6..].to_vec());
             }
-            return None; // APP1 里是 XMP 等其他内容
+            // ⚠️ 不能在这里 `return None`（2026-11 修）。
+            //
+            // JPEG 允许**多个 APP1 段**，且规范不规定 Exif 必须排在 XMP 之前。
+            // Lightroom、部分手机厂商、以及任何被 XMP 重写过的文件都可能把
+            // XMP APP1 放在前面 —— 早退会让整条 EXIF（含拍摄参数、GPS、方向）
+            // **静默丢失**，用户只会看到「另存为之后照片信息全没了」。
+            //
+            // 所以这里只跳过这一段，继续沿段链往后找；走到 SOS/D9 才说明
+            // 真的没有 Exif APP1（见上面的 `0xDA | 0xD9 => return None`）。
         }
         i += 2 + len;
     }
@@ -1059,6 +1067,45 @@ mod tests {
         assert!(
             find_app1_in_jpeg(&with_xmp, 0).is_none(),
             "XMP 型 APP1 不是 EXIF，应返回 None"
+        );
+    }
+
+    /// ⭐ 回归（2026-11）：**XMP APP1 排在 Exif APP1 前面时，仍要能找到 Exif**。
+    ///
+    /// JPEG 允许多个 APP1，且不规定顺序。旧实现在第一个非 Exif 的 APP1 上
+    /// 直接 `return None`，于是 XMP 在前的文件（Lightroom 导出、部分手机、
+    /// 被 XMP 重写过的）整条 EXIF 静默丢失 —— 表现为「另存为之后照片的
+    /// 拍摄参数、GPS、方向全没了」，而且完全没有报错线索。
+    #[test]
+    fn XMP排在前面时仍能找到后面的Exif段() {
+        let mut jpeg = vec![0xFF, 0xD8];
+
+        // ① XMP APP1 在前
+        let xmp = b"http://ns.adobe.com/xap/1.0/\0<x/>";
+        jpeg.extend_from_slice(&[0xFF, 0xE1]);
+        jpeg.extend_from_slice(&((xmp.len() + 2) as u16).to_be_bytes());
+        jpeg.extend_from_slice(xmp);
+
+        // ② Exif APP1 在后（最小合法 TIFF：II*\0 + IFD0 偏移 8 + 0 个条目）
+        let mut tiff = Vec::new();
+        tiff.extend_from_slice(b"II*\0");
+        tiff.extend_from_slice(&8u32.to_le_bytes());
+        tiff.extend_from_slice(&0u16.to_le_bytes());
+        tiff.extend_from_slice(&0u32.to_le_bytes());
+        let payload_len = 6 + tiff.len();
+        jpeg.extend_from_slice(&[0xFF, 0xE1]);
+        jpeg.extend_from_slice(&((payload_len + 2) as u16).to_be_bytes());
+        jpeg.extend_from_slice(b"Exif\0\0");
+        jpeg.extend_from_slice(&tiff);
+
+        // ③ SOS（走到这里就该停了，不许越过它继续找）
+        jpeg.extend_from_slice(&[0xFF, 0xDA, 0x00, 0x08, 0x01, 0x01, 0x00, 0x00, 0x00, 0x00]);
+
+        let got = find_app1_in_jpeg(&jpeg, 0).expect("XMP 在前不应阻止找到后面的 Exif");
+        assert!(
+            got.starts_with(b"II*\0"),
+            "应返回去掉 `Exif\\0\\0` 的裸 TIFF，实际开头: {:?}",
+            &got[..got.len().min(8)]
         );
     }
 }
