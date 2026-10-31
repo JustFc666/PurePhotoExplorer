@@ -33,7 +33,9 @@ fn rename_plain(path: Option<&str>, new_name: &str) -> std::result::Result<(), S
         return Err("路径没有父目录".into());
     };
     let new = parent.join(new_name);
-    if new.exists() {
+    // ⚠️ 不能只判 `new.exists()`：Windows 大小写不敏感，只改大小写时
+    //    `new` 和 `old` 是同一个文件，会被误判成重名而改不动（见 `same_file`）。
+    if new.exists() && !pv_store::fileops::same_file(old, &new) {
         return Err("目标文件名已存在".into());
     }
     std::fs::rename(old, &new).map_err(|e| match e.kind() {

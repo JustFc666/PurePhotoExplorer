@@ -1291,4 +1291,58 @@ mod tests {
         let _ = std::fs::remove_dir_all(&data);
         let _ = std::fs::remove_dir_all(&dir);
     }
+
+    /// ⭐ 回归（2026-11）：**只改大小写**的改名不能被当成重名拒绝。
+    ///
+    /// Windows 大小写不敏感，`ILOVEU.WEBP` 与 `iloveu.webp` 指向**同一个文件**，
+    /// 所以对目标调 `exists()` 恒为真。旧实现直接拿它判重名 → 用户想把扩展名
+    /// 统一成大写（很常见的整理动作）会永远收到「目标文件名已存在」，
+    /// 而且看不出为什么。判重名必须排除「其实就是自己」这一种情况。
+    ///
+    /// 同时守住另一半：「真的是另一个文件」时照样拒绝，绝不覆盖。
+    #[test]
+    fn 只改大小写的改名能成功而真重名仍被拒绝() {
+        let Some(src) = sample_source("rencase") else {
+            eprintln!("跳过：找不到样本");
+            return;
+        };
+        let data = temp_dir("data_rencase");
+        let resolver = Box::new(FakeResolver {
+            mount: src.clone(),
+            guid: r"\\?\Volume{rencase}\".into(),
+        });
+        let mut store = Store::open(&data, resolver).unwrap();
+        store.open_folder(&src).unwrap();
+
+        let id = store.query(&ImageQuery::default()).unwrap()[0].id;
+
+        // ① 目标真的是**另一个文件** → 照旧拒绝（这条底线不能因上面的放松而丢）
+        std::fs::copy(src.join("iloveu.webp"), src.join("other.webp")).unwrap();
+        let err = store.rename_image(id, "OTHER.WEBP").unwrap_err();
+        assert!(
+            err.to_string().contains("已存在"),
+            "不同文件重名仍要拒绝，实际错误：{err}"
+        );
+
+        // ② 只改大小写 = 同一个文件 → 放行，索引同步成新名字
+        store.rename_image(id, "ILOVEU.WEBP").unwrap();
+        let row = repo::images::get(store.conn(), id).unwrap().unwrap();
+        assert_eq!(row.rel_name.as_deref(), Some("ILOVEU.WEBP"));
+
+        // ③ 磁盘上仍然只有**一份** iloveu（改名不是复制出一份）
+        let mut same: Vec<String> = std::fs::read_dir(&src)
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .map(|e| e.file_name().to_string_lossy().to_lowercase())
+            .filter(|n| n.starts_with("iloveu"))
+            .collect();
+        same.sort();
+        assert_eq!(same, vec!["iloveu.webp"], "不该留下旧名字的副本");
+        // ⚠️ 用 lowercase 比较，是因为 NTFS 上 `read_dir` 返回的应是 `ILOVEU.WEBP`；
+        //    断言的是「只有一份」这件事，不是磁盘上记的哪个大小写。
+
+        drop(store);
+        let _ = std::fs::remove_dir_all(&data);
+        let _ = std::fs::remove_dir_all(&src);
+    }
 }

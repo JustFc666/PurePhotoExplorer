@@ -1,18 +1,45 @@
 //! 文件级操作：重命名单个文件、把一批图从索引里删掉。
 //!
-//! ⛔ 这两个都**不删原图**：真正把文件丢进回收站的是 `commands/batch.rs`，
+//! ⛔ 这两个都**不删原图**：真正把文件丢进回收站的是 `commands/batch`，
 //! 那边成功之后才回来清索引与缓存。
+
+use std::path::Path;
 
 use pv_index::{conn as index_conn, repo};
 
 use crate::{Removed, Result, Store, StoreError, ALL_TIERS};
+
+/// 两个路径是否指向**同一个文件**（用于「目标已存在」的判定）。
+///
+/// ## 为什么需要它
+/// Windows 的文件系统大小写不敏感：`IMG_0001.JPG` 与 `img_0001.jpg` 是**同一个文件**，
+/// 对后者调 `Path::exists()` 一样返回 `true`。如果拿 `exists()` 直接当"重名"，
+/// 用户「只改大小写」的改名会被永远拒绝（报「目标文件名已存在」），
+/// 这在改名里是很常见的操作（统一扩展名大小写）。
+///
+/// ## 判定方式
+/// 比 `canonicalize` 的结果（Windows 上走 `GetFinalPathNameByHandle`，
+/// 返回的是**磁盘上的真实大小写**）：
+/// - 同一个文件 → 两侧结果完全一致 → 允许改名（`fs::rename` 在 NTFS 上能只改大小写）；
+/// - 大小写敏感的文件系统（Linux）→ 两个名字本就是不同文件 → 结果不同 → 按重名拒绝。
+///
+/// 任一 `canonicalize` 失败（文件不存在 / 无权限）就返回 `false`：
+/// 宁可按"重名"拒绝，也不冒覆盖用户文件的险。
+pub fn same_file(a: &Path, b: &Path) -> bool {
+    match (std::fs::canonicalize(a), std::fs::canonicalize(b)) {
+        (Ok(x), Ok(y)) => x == y,
+        _ => false,
+    }
+}
 
 impl Store {
     /// 重命名单个已索引的图片文件，并同步索引与缩略图缓存。
     ///
     /// ## 顺序
     /// 1. 解析绝对路径（卷未挂载 → 报错，无从改名）
-    /// 2. 目标已存在 → 报错（**绝不覆盖**，重名会让用户丢文件）
+    /// 2. 目标已存在 → 报错（**绝不覆盖**，重名会让用户丢文件）。
+    ///    例外：目标与源是**同一个文件**（Windows 上只改大小写）→ 放行，
+    ///    判定见 [`same_file`]。
     /// 3. **先删旧缓存**（缓存键含路径，改完名就算不出旧键了）
     /// 4. `fs::rename`
     /// 5. 更新索引 `rel_name`（`content_key` 目前未被写入，原样保留）
@@ -44,7 +71,7 @@ impl Store {
                 "文件名里有非法字符",
             )));
         }
-        if new_abs.exists() {
+        if new_abs.exists() && !same_file(&old_abs, &new_abs) {
             return Err(StoreError::Io(std::io::Error::new(
                 std::io::ErrorKind::AlreadyExists,
                 "目标文件名已存在",
