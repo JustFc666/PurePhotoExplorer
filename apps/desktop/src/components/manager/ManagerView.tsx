@@ -41,7 +41,6 @@ import { useTagPopover } from '../../hooks/manager/useTagPopover'
 import { useSideResize } from '../../hooks/manager/useSideResize'
 import { useColumnResize } from '../../hooks/manager/useColumnResize'
 import { ContextMenu, useContextMenu } from '../chrome/ContextMenu'
-import { FilterDropdown, FilterRow } from './FilterDropdown'
 import { ConfirmDialog } from '../chrome/ConfirmDialog'
 import { PromptDialog } from '../chrome/PromptDialog'
 import { PrintPreview } from '../viewer/PrintPreview'
@@ -52,6 +51,7 @@ import { baseName, parentPath } from '../../hooks/parentPath'
 import { ManagerSidebar } from './ManagerSidebar'
 import { ManagerStatusBar } from './ManagerStatusBar'
 import { ManagerList } from './ManagerList'
+import { ManagerFilters } from './ManagerFilters'
 import { AiTagStrip } from './AiTagStrip'
 import { TagPicker } from './TagPicker'
 import { ManagerTopBar } from './ManagerTopBar'
@@ -65,7 +65,6 @@ import {
   PREFETCH_AHEAD,
   filePathsOf,
   fmtCount,
-  formatLabelOf,
 } from './viewConfig'
 import { thumbWidthOf } from '../../hooks/manager/prefs'
 import { buildBlankMenu, buildCardMenu } from './cardMenu'
@@ -1341,121 +1340,27 @@ export function ManagerView(props: Props) {
             mgr.cameras.length ||
             mgr.places.length ||
             mgr.years.length) ? (
-            <div className="pv-mg-filters">
-              {/*
-                一键 AI 识别（2026-10-29 用户要求：放在「格式」前面）。
-                空图库（没标签没人像）时用户最自然的动作是就地跑一遍，
-                而不是「打开设置 → AI 分析 → 选库 → 点两个按钮」。
-              */}
-              {aiEligible && (
-                <button
-                  type="button"
-                  // ⛔ 不用全局 `.pv-btn`：它高 30px，而筛选行的下拉是 26px，
-                  //    混在一起会把整行撑高 4px、人像条跟着变位。
-                  //    `.pv-mg-ai` 与 `.pv-mg-fbtn` 同尺寸，只换配色（主色）。
-                  className="pv-mg-ai"
-                  title="先打标，再识别人像（两步自动串行）"
-                  onClick={() => setPipeOpen(true)}
-                >
-                  AI 识别
-                </button>
-              )}
-              {/*
-                2026-10-24：改成**标准下拉框**（锚定按钮正下方、定宽、最多 13 行可滚动），
-                顺序按用户要求：格式 → 年份 → 相机 → 地点。
-              */}
-              <FilterDropdown
-                width={130}
-                active={mgr.formats.length > 0}
-                title="按文件格式筛选"
-                label="格式"
-              >
-                <FilterRow
-                  checked={mgr.formats.length === 0}
-                  label="全部"
-                  count={mgr.stats?.totalCount ?? 0}
-                  onSelect={mgr.clearFormats}
-                />
-                {(mgr.stats?.formats ?? []).map((f) => (
-                  <FilterRow
-                    key={f.format}
-                    checked={mgr.formats.includes(f.format)}
-                    label={formatLabelOf(f.format)}
-                    count={f.count}
-                    onSelect={() => mgr.toggleFormat(f.format)}
-                  />
-                ))}
-              </FilterDropdown>
-
-              <FilterDropdown
-                width={130}
-                active={mgr.yearFilter.length > 0}
-                title="按拍摄年份筛选（EXIF 拍摄时间，没有的按入库时间）"
-                label="年份"
-              >
-                <FilterRow
-                  checked={mgr.yearFilter.length === 0}
-                  label="全部"
-                  count={mgr.years.reduce((a, y) => a + y.count, 0)}
-                  onSelect={mgr.clearYears}
-                />
-                {mgr.years.map((y) => (
-                  <FilterRow
-                    key={y.year}
-                    checked={mgr.yearFilter.includes(y.year)}
-                    label={String(y.year)}
-                    count={y.count}
-                    onSelect={() => mgr.toggleYear(y.year)}
-                  />
-                ))}
-              </FilterDropdown>
-
-              <FilterDropdown
-                width={160}
-                active={mgr.camera.length > 0}
-                title="按相机机型筛选（来自 EXIF）"
-                label="相机"
-              >
-                <FilterRow
-                  checked={mgr.camera.length === 0}
-                  label="全部"
-                  count={mgr.cameras.reduce((a, c) => a + c.count, 0)}
-                  onSelect={mgr.clearCameras}
-                />
-                {mgr.cameras.map((c) => (
-                  <FilterRow
-                    key={c.model}
-                    checked={mgr.camera.includes(c.model)}
-                    label={c.model}
-                    count={c.count}
-                    onSelect={() => mgr.toggleCamera(c.model)}
-                  />
-                ))}
-              </FilterDropdown>
-
-              <FilterDropdown
-                width={160}
-                active={mgr.placeFilter.length > 0}
-                title="按拍摄地点筛选（离线地名库，来自 EXIF GPS）"
-                label="地点"
-              >
-                <FilterRow
-                  checked={mgr.placeFilter.length === 0}
-                  label="全部"
-                  count={mgr.places.reduce((a, p) => a + p.count, 0)}
-                  onSelect={mgr.clearPlaces}
-                />
-                {mgr.places.map((p) => (
-                  <FilterRow
-                    key={p.name}
-                    checked={mgr.placeFilter.includes(p.name)}
-                    label={p.name}
-                    count={p.count}
-                    onSelect={() => mgr.togglePlace(p.name)}
-                  />
-                ))}
-              </FilterDropdown>
-            </div>
+            <ManagerFilters
+              aiEligible={aiEligible}
+              onOpenAi={() => setPipeOpen(true)}
+              statsTotal={mgr.stats?.totalCount ?? 0}
+              formats={mgr.stats?.formats ?? []}
+              activeFormats={mgr.formats}
+              onToggleFormat={mgr.toggleFormat}
+              onClearFormats={mgr.clearFormats}
+              years={mgr.years}
+              activeYears={mgr.yearFilter}
+              onToggleYear={mgr.toggleYear}
+              onClearYears={mgr.clearYears}
+              cameras={mgr.cameras}
+              activeCameras={mgr.camera}
+              onToggleCamera={mgr.toggleCamera}
+              onClearCameras={mgr.clearCameras}
+              places={mgr.places}
+              activePlaces={mgr.placeFilter}
+              onTogglePlace={mgr.togglePlace}
+              onClearPlaces={mgr.clearPlaces}
+            />
           ) : null}
             </div>
             {/* 人像条：跨三行总高（标题 + 标签两行 + 筛选行） */}
