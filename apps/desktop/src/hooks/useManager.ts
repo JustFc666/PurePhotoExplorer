@@ -69,6 +69,7 @@ import {
 } from '../ipc/browse'
 import { mergeDimensions, mergeTakenAt } from './mergeDimensions'
 import { compareName, descForSort, makeComparator } from './sortItems'
+import { resolveHasTags } from './filterRules'
 
 /**
  * 单页拉取条数。
@@ -966,6 +967,9 @@ export function useManager(): ManagerApi {
       // 只在「已进入某个图库」时把图库带过去；从「全部」点标签仍是全局
       libraryId: prev.kind === 'library' ? prev.id : undefined,
     }))
+    // 用户已经指名道姓要某个标签了，标签条上的「无标签 / 有标签」开关就该失效
+    // （留着的话会拼出自相矛盾的条件，主区恒空）
+    setTagFilter(null)
     setQueryVersion((v) => v + 1)
   }, [])
 
@@ -1336,7 +1340,14 @@ export function useManager(): ManagerApi {
     // 顶栏「地点」筛选与侧栏 scope=place 互不干扰：这里只作为附加过滤
     if (placeFilter.length > 0) q.places = placeFilter
     if (personFilter) q.personId = personFilter.id
-    if (tagFilter) q.hasTags = tagFilter === 'has'
+    /*
+     * ⛔ 不能直接 `if (tagFilter) q.hasTags = tagFilter === 'has'`：
+     * 标签条点了「无匹配」再点侧栏某个标签，会拼出「既要有 X 标签、
+     * 又要求这张图没有任何标签」—— 恒空集，而且界面上看不出来
+     * （标签高亮、计数 32，就是没图）。规则见 `filterRules.ts`。
+     */
+    const hasTags = resolveHasTags(tagFilter, q.tagsAny)
+    if (hasTags !== undefined) q.hasTags = hasTags
     if (searchTerm) q.nameLike = searchTerm
 
     Promise.all([managerQuery(q), managerCount(q)])
@@ -1473,6 +1484,8 @@ export function useManager(): ManagerApi {
               : undefined
       return { kind: 'tagGroup', label, names, libraryId: libId }
     })
+    // 同 `selectTag`：已经按具体标签筛了，「无标签」开关必须让路
+    setTagFilter(null)
   }, [])
   const clearTagGroup = useCallback(() => {
     // ⛔ 2026-10-24 bug：原来无条件恢复 `scopeBeforeTag.current ?? { kind: 'none' }`，
