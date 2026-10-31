@@ -941,8 +941,21 @@ fn transform_one(
     }
 
     // 4) EXIF：任何几何变换都让方向标记失效 → 置 1
+    //
+    // ⚠️ 这里以前是 `let _ = align_exif_with_pixels(...)`，把返回值丢了：
+    //    `Unparsable` 意味着 EXIF 结构坏了、方向标记**没改成 1**，而像素已经转过了
+    //    → 别的软件会再转一次。这不是能静默的分支，至少要留一条日志。
+    //    （对齐 `edit.rs` 同名调用的处理；批量处理没有单张失败的理由 ——
+    //     EXIF 坏不该阻断像素写回，所以是记日志而不是 `?`。）
     let exif = pv_meta::read_exif_raw(path).map(|mut t| {
-        let _ = pv_meta::align_exif_with_pixels(&mut t, 1);
+        if pv_meta::align_exif_with_pixels(&mut t, 1) == pv_meta::ExifRewriteOutcome::Unparsable
+        {
+            tracing::warn!(
+                target: "photovault::batch",
+                path = %path.display(),
+                "EXIF 结构无法解析：方向标记没能重置，像素已旋转 → 这张图可能被别的软件再转一次"
+            );
+        }
         t
     });
 

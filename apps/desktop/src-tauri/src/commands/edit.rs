@@ -186,18 +186,20 @@ pub(crate) fn save_impl(
     // 用户 2026-10-11 要求：「另存为的时候带上 exif 信息」。
     //
     // ⚠️ 搬运前必须 `align`：
-    //   ① **用户旋转过 → `Orientation` 置 1**。画布旋转是**真的重采样像素**，
-    //      源 EXIF 的方向标记若原样带走，别的软件会在已转正的画面上再转一次。
-    //   ② **没旋转 → 方向标记原样保留**（像素一个字节没变，改它等于凭空丢失
-    //      「这张竖拍照片要转 90°」的信息）。
-    //   ③ 两种情况都切断 IFD1 缩略图（那是编辑前的旧画面，且占掉大半体积）。
+    //   ① **`Orientation` 一律置 1**（不管用户有没有旋转）。
+    //      理由：解码时已经按 Orientation 摆正过（见上面第 3 步），所以写出去的
+    //      像素**永远是显示方向**；源文件那个标记若原样带走，别的软件会再转一次
+    //      → 竖拍照片被转两遍。2026-10-30 之前这里写的是「没旋转就保留原标记」，
+    //      在那之前解码还没摆正，所以当时是对的；摆正之后这条就反过来了。
+    //   ② IFD1 缩略图一律切断（那是编辑前的旧画面，且占掉大半体积）——
+    //      `align_with_pixels` 内部无条件做这件事，与方向有没有改无关。
     //
-    // ⚠️ 2026-10-30 起「有没有旋转」不再决定要不要重置方向：既然解码时已经
-    //    按 Orientation 摆正过，写出去的像素**永远是显示方向**，
-    //    源文件那个标记若留着，别的软件会再转一次 → 传 1 强制重置。
+    // ⚠️ 传的字面量是 1 而不是 `steps`：`steps` 已在 171 行取过 `rem_euclid(4)`，
+    //    任何取值（0..=3）在 `align_with_pixels` 里都只会得出「置 1」这一个结果，
+    //    写成 `if steps == 0 { 1 } else { steps }` 只会让读的人误以为有两条分支。
+    //    ⛔ 别改回按 `steps` 判断 —— 那正是 2026-10-30 修掉的 bug。
     let exif = pv_meta::read_exif_raw(path).map(|mut t| {
-        if pv_meta::align_exif_with_pixels(&mut t, if steps == 0 { 1 } else { steps })
-            == pv_meta::ExifRewriteOutcome::Unparsable
+        if pv_meta::align_exif_with_pixels(&mut t, 1) == pv_meta::ExifRewriteOutcome::Unparsable
         {
             tracing::debug!(
                 target: "photovault::save",
