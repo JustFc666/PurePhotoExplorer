@@ -38,26 +38,12 @@ pub fn resolve(path: &str) -> Result<PathBuf, ErrorDto> {
     })
 }
 
-/// 是否是压缩包内的条目。
-pub fn is_virtual(path: &str) -> bool {
-    pv_archive::is_virtual(path)
-}
-
 /// 这个路径是不是「装着图片的压缩包」。
 ///
 /// 判据是**扩展名 + 确实是个文件**：只看扩展名的话，叫 `a.zip` 的目录
 /// （解压时手滑多建了一层）会被当包打开，报一个莫名其妙的解压错误。
 pub fn is_archive_file(path: &str) -> bool {
     pv_archive::has_archive_ext(path) && std::path::Path::new(path).is_file()
-}
-
-/// 压缩包被识别出来时给用户看的一句话（浏览模式卡片上的说明）。
-pub fn archive_note(path: &str) -> Option<&'static str> {
-    if is_archive_file(path) {
-        Some("压缩包 · 双击进入")
-    } else {
-        None
-    }
 }
 
 #[cfg(test)]
@@ -68,7 +54,7 @@ mod tests {
     fn 普通路径原样返回() {
         let p = resolve(r"E:\photo\a.jpg").unwrap();
         assert_eq!(p, PathBuf::from(r"E:\photo\a.jpg"));
-        assert!(!is_virtual(r"E:\photo\a.jpg"));
+        assert!(!pv_archive::is_virtual(r"E:\photo\a.jpg"));
     }
 
     #[test]

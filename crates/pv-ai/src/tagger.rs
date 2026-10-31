@@ -121,7 +121,7 @@ impl Tagger {
         let onnx = dir.join("clip_vision.onnx");
         // ⛔ 不能自己 ort::init()：进程里只允许一个环境，三个模型各自 init 会炸
         let env = crate::ort_env::ort_env()?;
-        let session = Session::builder(&env)
+        let session = Session::builder(env)
             .and_then(|mut b| b.commit_from_file(&onnx))
             .map_err(|e| format!("加载视觉塔失败（{onnx:?}）：{e}"))?;
 
@@ -248,7 +248,7 @@ impl Tagger {
         let rgb = dst.into_vec();
 
         // 2) 中心裁剪 pp.crop × pp.crop（缩完一定 ≥ crop）
-        let cw = pp.crop as usize;
+        let cw = pp.crop;
         let ox = (nw as usize - cw) / 2;
         let oy = (nh as usize - cw) / 2;
 

@@ -6,7 +6,6 @@
 //! 实际绘制在 `crate::win_print`（Win32 PrintDlg + GDI），
 //! 这里只负责「按当前画布调整解码出像素」并把它交出去。
 
-use std::path::PathBuf;
 
 use pv_core::error::Result;
 use pv_decode::{DecodePurpose, DecodeTarget};

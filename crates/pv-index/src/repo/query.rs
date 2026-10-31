@@ -395,6 +395,20 @@ pub fn count(conn: &Connection, f: &ImageFilter) -> Result<i64> {
     Ok(conn.query_row(&sql, rusqlite::params_from_iter(p), |r| r.get(0))?)
 }
 
+/// 库里出现过的拍摄年份及张数（顶部「年份」下拉用），按年份倒序。
+pub fn list_years(conn: &Connection) -> Result<Vec<(i64, i64)>> {
+    let mut stmt = conn.prepare(
+        "SELECT CAST(strftime('%Y', COALESCE(taken_at, added_ts), 'unixepoch', 'localtime') AS INTEGER) AS y,
+                COUNT(*) AS n
+           FROM images
+          WHERE COALESCE(taken_at, added_ts) IS NOT NULL
+          GROUP BY y
+          ORDER BY y DESC",
+    )?;
+    let rows = stmt.query_map([], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, i64>(1)?)))?;
+    Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -818,18 +832,4 @@ mod tests {
             ["a3.cr3", "a1.jpg", "b1.jpg", "a2.png"]
         );
     }
-}
-
-/// 库里出现过的拍摄年份及张数（顶部「年份」下拉用），按年份倒序。
-pub fn list_years(conn: &Connection) -> Result<Vec<(i64, i64)>> {
-    let mut stmt = conn.prepare(
-        "SELECT CAST(strftime('%Y', COALESCE(taken_at, added_ts), 'unixepoch', 'localtime') AS INTEGER) AS y,
-                COUNT(*) AS n
-           FROM images
-          WHERE COALESCE(taken_at, added_ts) IS NOT NULL
-          GROUP BY y
-          ORDER BY y DESC",
-    )?;
-    let rows = stmt.query_map([], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, i64>(1)?)))?;
-    Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
 }

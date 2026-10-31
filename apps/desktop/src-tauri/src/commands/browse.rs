@@ -128,10 +128,6 @@ fn resolve_path(path: &str) -> Result<PathBuf, ErrorDto> {
     crate::paths::resolve(path)
 }
 
-fn is_archive_file(path: &str) -> bool {
-    crate::paths::is_archive_file(path)
-}
-
 /// 包内条目的格式标签（小写，和 `pv_scan` 那条路的取值保持一致）。
 ///
 /// 为什么不读魔数：包里每张图读魔数都要先解压，一个 300 页的包光列目录
@@ -258,7 +254,7 @@ pub async fn fs_list_images(
     probe_limit: Option<usize>,
 ) -> Result<DirListingDto, ErrorDto> {
     // 压缩包：列包内图片（虚拟路径），**不解压、不探尺寸**（见 `list_archive`）
-    if is_archive_file(&path) {
+    if crate::paths::is_archive_file(&path) {
         return list_archive(&path);
     }
     let all = pv_store::list_dir_images_fast(Path::new(&path))

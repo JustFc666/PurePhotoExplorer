@@ -711,7 +711,7 @@ impl Store {
         let rule = pv_lib::parse_rule(lib.rule.as_deref().unwrap_or_default())?;
         if !rule.keywords.is_empty() {
             let ids = pv_lib::library::members(&self.conn, library_id, 0, 0)?;
-            return Ok(self.images_by_ids(&ids)?);
+            return self.images_by_ids(&ids);
         }
 
         let mut filter = rule.filter;
@@ -838,18 +838,23 @@ impl Store {
             }
         }
 
-        // 2) 先清缓存（此刻索引还在，路径才算得出来），顺手记下要删的图像 id
+        /*
+         * 2) 此刻索引还在，先把**缓存键**算出来（键含绝对路径 + size + mtime，
+         *    索引行一没就再也算不出来了）。⚠️ 只算不删 —— 删要等事务提交之后。
+         *
+         * ⛔ 以前是「边算边删」：万一下面的事务失败回滚，索引行还在、照片还在，
+         *    缩略图却被删了 —— 用户看到一整片空白卡片，还以为图坏了。
+         *    缓存删早了没有回滚，索引删错了却能回滚，所以顺序只能是「先提交、后删缓存」。
+         */
         let mut victims: Vec<i64> = Vec::new();
+        let mut cache_keys = Vec::new();
         for dir in &dirs {
             for img in repo::images::list_by_dir(&self.conn, *dir)? {
                 victims.push(img.id);
                 match self.abs_path(&img)? {
                     Some(abs) => {
                         for tier in ALL_TIERS {
-                            let key = self.cache_key(&img, &abs, tier);
-                            if self.l2.remove(&key).unwrap_or(false) {
-                                out.thumbs += 1;
-                            }
+                            cache_keys.push(self.cache_key(&img, &abs, tier));
                         }
                     }
                     None => out.thumbs_orphan += 1,
@@ -878,7 +883,17 @@ impl Store {
             Ok(())
         })?;
 
-        // 4) L1 里还留着刚删掉的位图，清掉（纯内存，清了不影响别的）
+        /*
+         * 4) 事务已提交 —— 现在删缓存才是安全的。删不掉只是浪费几 MB 磁盘，
+         *    不影响正确性，所以计数归计数、不报错。
+         */
+        for key in &cache_keys {
+            if self.l2.remove(key).unwrap_or(false) {
+                out.thumbs += 1;
+            }
+        }
+
+        // 5) L1 里还留着刚删掉的位图，清掉（纯内存，清了不影响别的）
         self.l1.clear();
         Ok(out)
     }
@@ -906,8 +921,7 @@ impl Store {
             )));
         };
         let Some(old_abs) = self.abs_path(&img)? else {
-            return Err(StoreError::Io(std::io::Error::new(
-                std::io::ErrorKind::Other,
+            return Err(StoreError::Io(std::io::Error::other(
                 "所在卷未挂载，无法重命名",
             )));
         };

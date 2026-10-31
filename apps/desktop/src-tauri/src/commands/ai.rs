@@ -456,7 +456,7 @@ struct Step {
     args: Vec<String>,
 }
 
-struct Running {
+pub struct Running {
     /// 还没跑的步骤（第一个已经在 `child` 里跑着）
     steps: VecDeque<Step>,
     child: Option<Child>,

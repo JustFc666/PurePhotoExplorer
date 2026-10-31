@@ -10,7 +10,7 @@
 use std::path::Path;
 
 #[test]
-fn 手机把GPS写成SRATIONAL也能解析() {
+fn 手机把_gps_写成_srational_也能解析() {
     let p = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../../test-image/P_20210729_111300.jpg");
     if !p.is_file() {

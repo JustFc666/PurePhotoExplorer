@@ -73,7 +73,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         *sizes.entry(l).or_insert(0) += 1;
     }
     let mut sorted: Vec<(i32, usize)> = sizes.into_iter().collect();
-    sorted.sort_by(|a, b| b.1.cmp(&a.1));
+    sorted.sort_by_key(|a| std::cmp::Reverse(a.1));
 
     println!(
         "\n聚类：{} 个簇 · 用时 {:.0} ms · t_core={:.2} t_join={:.2} min_core={}",

@@ -48,7 +48,7 @@ impl FaceDetector {
         let path = dir.join("yunet.onnx");
         // ⛔ 不能自己 ort::init()：进程里只允许一个环境（三个模型共用）
         let env = crate::ort_env::ort_env()?;
-        let session = Session::builder(&env)
+        let session = Session::builder(env)
             .and_then(|mut b| b.commit_from_file(&path))
             .map_err(|e| format!("加载 YuNet 失败（{path:?}）：{e}"))?;
         Ok(Self { session })
