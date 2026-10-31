@@ -47,11 +47,11 @@ import { PromptDialog } from '../chrome/PromptDialog'
 import { PrintPreview } from '../viewer/PrintPreview'
 import { DriveGrid } from './DriveGrid'
 import { useShellIcons } from '../../hooks/useShellIcons'
-import { renderListCell } from './ListCells'
 import { fsListDirs } from '../../ipc/browse'
 import { baseName, parentPath } from '../../hooks/parentPath'
 import { ManagerSidebar } from './ManagerSidebar'
 import { ManagerStatusBar } from './ManagerStatusBar'
+import { ManagerList } from './ManagerList'
 import { AiTagStrip } from './AiTagStrip'
 import { TagPicker } from './TagPicker'
 import { ManagerTopBar } from './ManagerTopBar'
@@ -1534,90 +1534,21 @@ export function ManagerView(props: Props) {
               ))}
             </div>
           ) : (
-            <div
-              className={`pv-mg-list${colResizing ? ' is-resizing' : ''}`}
-              style={{ ['--pv-list-cols' as string]: listPrefs.gridTemplate }}
-              onContextMenu={openBlankMenu}
-            >
-              {/*
-                表头（2026-10-31）：列名 + 右侧拖动条。
-                拖条 9px 宽、`translateX(50%)` 骑在列边界上 —— 太窄按不准，
-                太宽会盖住相邻列的点击区。
-              */}
-              <div className="pv-mg-listhead">
-                <span />
-                {listPrefs.visible.map((c) => {
-                  const sorted = mgr.sort === c.sortKey
-                  return (
-                    <span
-                      key={c.id}
-                      className={`pv-mg-listhcell is-${c.align}${sorted ? ' is-sorted' : ''}`}
-                    >
-                      <button
-                        type="button"
-                        className="pv-mg-listhbtn"
-                        onClick={() => mgr.toggleSort(c.sortKey)}
-                        title={`${c.label}${c.hint ? ` — ${c.hint}` : ''}\n点击按这一列排序${
-                          sorted ? '（再点一次反向）' : ''
-                        }`}
-                        aria-sort={sorted ? (mgr.sortDesc ? 'descending' : 'ascending') : 'none'}
-                      >
-                        <span className="pv-mg-listhtxt">{c.label}</span>
-                        {/* 三角：当前排序列显示实心方向，其它列淡显（提示「可以点」） */}
-                        <span className="pv-mg-listsort" aria-hidden>
-                          {sorted ? (mgr.sortDesc ? '▼' : '▲') : '▲'}
-                        </span>
-                      </button>
-                      <span
-                        className="pv-mg-listgrip"
-                        role="separator"
-                        aria-orientation="vertical"
-                        onMouseDown={(e) => onColGripDown(e, c.id)}
-                        onDoubleClick={() => listPrefs.resetWidth(c.id)}
-                        title="拖动调整列宽，双击恢复默认"
-                      />
-                    </span>
-                  )
-                })}
-              </div>
-
-              {mgr.items.map((item) => {
-                const on = selected.has(item.key)
-                return (
-                  <div
-                    key={item.key}
-                    className={`pv-mg-listrow${on ? ' is-selected' : ''}`}
-                    role="button"
-                    tabIndex={0}
-                    onClick={(e) => toggle(item, e)}
-                    onDoubleClick={() => openItem(item)}
-                    onContextMenu={(e) => onCardContextMenu(item, e)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') openItem(item)
-                    }}
-                    title={item.path ?? item.name}
-                  >
-                    {mgr.canSelect || item.kind !== 'file' ? (
-                      <span className={`pv-mg-listcheck${on ? ' is-on' : ''}`} aria-hidden>
-                        {on ? '✓' : ''}
-                      </span>
-                    ) : (
-                      <span />
-                    )}
-                    {listPrefs.visible.map((c) => (
-                      <span
-                        key={c.id}
-                        className={`pv-mg-listmeta is-${c.align}${
-                          c.id === 'name' ? ' is-name' : ''
-                        }`}
-                      >
-                        {renderListCell(item, c.id)}
-                      </span>
-                    ))}
-                  </div>
-                )
-              })}
-            </div>
+            <ManagerList
+              items={mgr.items}
+              selected={selected}
+              canSelect={mgr.canSelect}
+              sort={mgr.sort}
+              sortDesc={mgr.sortDesc}
+              onToggleSort={mgr.toggleSort}
+              onToggleRow={toggle}
+              onOpenRow={openItem}
+              onRowContextMenu={onCardContextMenu}
+              onBlankContextMenu={openBlankMenu}
+              listPrefs={listPrefs}
+              colResizing={colResizing}
+              onGripDown={onColGripDown}
+            />
           )}
 
         </section>
