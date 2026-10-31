@@ -49,18 +49,14 @@ pub fn align_with_pixels(tiff: &mut [u8], rotation_steps: i32) -> Outcome {
             if e.tag != TAG_ORIENTATION {
                 continue;
             }
-            // 值内联在条目里（SHORT，2 字节），位于条目自身偏移 +8
-            let at = e.offset + 8;
-            let v = match head.big {
-                true => u16::from_be_bytes([tiff[at], tiff[at + 1]]),
-                false => u16::from_le_bytes([tiff[at], tiff[at + 1]]),
+            // 值内联在条目里：偏移 +8，宽度看类型
+            let Some((at, width)) = orientation_slot(&e, tiff) else {
+                // 类型/数量不是预期的 `SHORT×1` / `LONG×1` —— 说明我们对这份 EXIF
+                // 的理解是错的，按失败策略**整份原样返回**，一个字节都不动。
+                return Outcome::Unparsable;
             };
-            if v != 1 {
-                let b = match head.big {
-                    true => 1u16.to_be_bytes(),
-                    false => 1u16.to_le_bytes(),
-                };
-                tiff[at..at + 2].copy_from_slice(&b);
+            if width.read(tiff, at, head.big) != Some(1) {
+                width.write_one(tiff, at, head.big);
                 turned = true;
             }
         }
@@ -98,6 +94,74 @@ pub enum Outcome {
 
 /// Orientation 标签号。
 const TAG_ORIENTATION: u16 = 0x0112;
+
+/// TIFF 数据类型 `SHORT`（2 字节无符号）。
+const TYPE_SHORT: u16 = 3;
+/// TIFF 数据类型 `LONG`（4 字节无符号）。
+const TYPE_LONG: u16 = 4;
+
+/// 条目里内联值的宽度（值域 ≤ 4 字节时直接放在条目末 4 字节里）。
+#[derive(Debug, Clone, Copy)]
+enum Width {
+    /// 2 字节（`SHORT`）
+    Short,
+    /// 4 字节（`LONG`）
+    Long,
+}
+
+impl Width {
+    fn read(self, tiff: &[u8], at: usize, big: bool) -> Option<u32> {
+        let b = tiff.get(at..at.checked_add(self.bytes())?)?;
+        Some(match (self, big) {
+            (Width::Short, true) => u16::from_be_bytes([b[0], b[1]]) as u32,
+            (Width::Short, false) => u16::from_le_bytes([b[0], b[1]]) as u32,
+            (Width::Long, true) => u32::from_be_bytes([b[0], b[1], b[2], b[3]]),
+            (Width::Long, false) => u32::from_le_bytes([b[0], b[1], b[2], b[3]]),
+        })
+    }
+
+    /// 写数值 `1`（本模块唯一会写的值：方向 = 「像素即最终朝向」）。
+    fn write_one(self, tiff: &mut [u8], at: usize, big: bool) {
+        match (self, big) {
+            (Width::Short, true) => tiff[at..at + 2].copy_from_slice(&1u16.to_be_bytes()),
+            (Width::Short, false) => tiff[at..at + 2].copy_from_slice(&1u16.to_le_bytes()),
+            (Width::Long, true) => tiff[at..at + 4].copy_from_slice(&1u32.to_be_bytes()),
+            (Width::Long, false) => tiff[at..at + 4].copy_from_slice(&1u32.to_le_bytes()),
+        }
+    }
+
+    fn bytes(self) -> usize {
+        match self {
+            Width::Short => 2,
+            Width::Long => 4,
+        }
+    }
+}
+
+/// `Orientation` 的值落在哪儿、占多宽；**类型或数量不合预期就返回 `None`**。
+///
+/// ## 为什么不能默认「2 字节」
+/// 规范里 `Orientation` 是 `SHORT × 1`（值内联在条目 +8，占 4 字节里的前 2 字节），
+/// 但有些写入方按 `LONG × 1` 写。若一律当 2 字节处理，**大端下会写坏值**：
+/// `LONG 6` 是 `00 00 00 06`，按 2 字节读出 `0`（≠1）→ 把 `1` 写进前两字节 →
+/// 变成 `00 01 00 06`。这种「悄悄改错元数据」比不写更糟。
+///
+/// `count != 1` 时值域里存的是**偏移量**而不是值，往里写就等于破坏那个指针，
+/// 同样必须放弃。
+fn orientation_slot(e: &Entry, tiff: &[u8]) -> Option<(usize, Width)> {
+    if e.count != 1 {
+        return None;
+    }
+    let width = match e.ty {
+        TYPE_SHORT => Width::Short,
+        TYPE_LONG => Width::Long,
+        _ => return None,
+    };
+    let at = e.offset.checked_add(8)?;
+    // 值域必须完整可读（写之前也在这里挡住越界）
+    tiff.get(at..at.checked_add(width.bytes())?)?;
+    Some((at, width))
+}
 
 /// TIFF 头信息。
 struct Head {
@@ -164,7 +228,16 @@ impl Head {
                 true => u16::from_be_bytes([tiff[o], tiff[o + 1]]),
                 false => u16::from_le_bytes([tiff[o], tiff[o + 1]]),
             };
-            out.push(Entry { tag, offset: o });
+            // 类型（+2）与数量（+4）：判断值域是内联还是偏移量，必须看这两个字段
+            let ty = match self.big {
+                true => u16::from_be_bytes([tiff[o + 2], tiff[o + 3]]),
+                false => u16::from_le_bytes([tiff[o + 2], tiff[o + 3]]),
+            };
+            let count = match self.big {
+                true => u32::from_be_bytes([tiff[o + 4], tiff[o + 5], tiff[o + 6], tiff[o + 7]]),
+                false => u32::from_le_bytes([tiff[o + 4], tiff[o + 5], tiff[o + 6], tiff[o + 7]]),
+            };
+            out.push(Entry { tag, ty, count, offset: o });
         }
         Some(out)
     }
@@ -172,14 +245,18 @@ impl Head {
 
 struct Entry {
     tag: u16,
+    /// TIFF 数据类型（`SHORT` / `LONG` / …）
+    ty: u16,
+    /// 元素个数；`> 1` 表示值域里存的是**偏移量**而不是值本身
+    count: u32,
     /// 条目在字节流里的绝对偏移
     offset: usize,
 }
 
 /// 读 IFD0 里 `Orientation` 的**原始值**（1–8）；没有该标签或结构不完整返回 `None`。
 ///
-/// 与 [`align_with_pixels`] 共用同一套解析，供「按 EXIF 批量摆正」判断该转多少度：
-/// `3` → 180°，`6` → 顺时针 90°，`8` → 逆时针 90°。
+/// 与 [`align_with_pixels`] 共用同一套解析（含 [`orientation_slot`] 的类型校验），
+/// 供「按 EXIF 批量摆正」判断该转多少度：`3` → 180°，`6` → 顺时针 90°，`8` → 逆时针 90°。
 /// `2/4/5/7` 需要**镜像**，而画布只有旋转/裁剪，调用方应当跳过并如实报告。
 pub fn read_orientation(tiff: &[u8]) -> Option<u16> {
     let head = Head::parse(tiff)?;
@@ -188,14 +265,9 @@ pub fn read_orientation(tiff: &[u8]) -> Option<u16> {
         if e.tag != TAG_ORIENTATION {
             continue;
         }
-        let at = e.offset + 8;
-        if at + 2 > tiff.len() {
-            return None;
-        }
-        return Some(match head.big {
-            true => u16::from_be_bytes([tiff[at], tiff[at + 1]]),
-            false => u16::from_le_bytes([tiff[at], tiff[at + 1]]),
-        });
+        // 类型/数量不合预期 → 当作读不到，让调用方跳过而不是猜
+        let (at, width) = orientation_slot(&e, tiff)?;
+        return Some(width.read(tiff, at, head.big)? as u16);
     }
     None
 }
@@ -206,6 +278,11 @@ mod tests {
 
     /// 造一份最小可用的 TIFF：IFD0 里放 Orientation(=6) + 一个 next-IFD 指针。
     fn make_tiff(orientation: u16, next_ifd: u32, big: bool) -> Vec<u8> {
+        make_tiff_typed(orientation as u32, TYPE_SHORT, 1, next_ifd, big)
+    }
+
+    /// 同上，但**类型与数量可选** —— 真实世界里有按 `LONG × 1` 写方向的软件。
+    fn make_tiff_typed(value: u32, ty: u16, count: u32, next_ifd: u32, big: bool) -> Vec<u8> {
         let mut t = Vec::new();
         let put16 = |t: &mut Vec<u8>, v: u16| {
             t.extend_from_slice(&match big { true => v.to_be_bytes(), false => v.to_le_bytes() });
@@ -218,19 +295,29 @@ mod tests {
         put32(&mut t, 8); // IFD0 紧跟头之后
         put16(&mut t, 1); // 1 个条目
         put16(&mut t, TAG_ORIENTATION);
-        put16(&mut t, 3); // SHORT
-        put32(&mut t, 1); // count
-        put16(&mut t, orientation); // 值内联
-        put16(&mut t, 0); // 补齐 4 字节
+        put16(&mut t, ty);
+        put32(&mut t, count);
+        put32(&mut t, value); // 值内联（≤4 字节）
         put32(&mut t, next_ifd); // next IFD 指针
         t
     }
 
-    fn read_orientation(t: &[u8], big: bool) -> u16 {
+    /// 直接按 `SHORT` 窥探条目值域前 2 字节 —— 不经过被测代码，用来验证「字节被改成了什么」。
+    fn peek_orientation(t: &[u8], big: bool) -> u16 {
         let at = 8 + 2 + 8;
         match big {
             true => u16::from_be_bytes([t[at], t[at + 1]]),
             false => u16::from_le_bytes([t[at], t[at + 1]]),
+        }
+    }
+
+    /// 按 `LONG` 窥探条目值域 4 字节。
+    fn peek_orientation_long(t: &[u8], big: bool) -> u32 {
+        let at = 8 + 2 + 8;
+        let b = [t[at], t[at + 1], t[at + 2], t[at + 3]];
+        match big {
+            true => u32::from_be_bytes(b),
+            false => u32::from_le_bytes(b),
         }
     }
 
@@ -242,7 +329,7 @@ mod tests {
             o,
             Outcome::Adjusted { orientation_reset: true, thumbnail_dropped: false }
         );
-        assert_eq!(read_orientation(&t, false), 1, "Orientation 应被改成 1");
+        assert_eq!(peek_orientation(&t, false), 1, "Orientation 应被改成 1");
         // 头与魔数不能被动过
         assert_eq!(&t[..2], b"II");
         assert_eq!(&t[2..4], &42u16.to_le_bytes());
@@ -252,8 +339,44 @@ mod tests {
     fn 旋转过时方向被重置为1且大端正确() {
         let mut t = make_tiff(8, 0, true);
         align_with_pixels(&mut t, 3);
-        assert_eq!(read_orientation(&t, true), 1);
+        assert_eq!(peek_orientation(&t, true), 1);
         assert_eq!(&t[..2], b"MM");
+    }
+
+    /// 方向按 `LONG × 1` 写的文件（非规范但真实存在）也必须改对。
+    ///
+    /// 若一律按 2 字节处理，**大端会写坏**：`LONG 6` = `00 00 00 06`，
+    /// 按 2 字节读出 `0`（≠1）→ 把 `1` 写进前两字节 → `00 01 00 06`。
+    #[test]
+    fn LONG类型的方向也能正确改写() {
+        for big in [false, true] {
+            let mut t = make_tiff_typed(6, TYPE_LONG, 1, 0, big);
+            assert_eq!(read_orientation(&t), Some(6), "LONG 值本身要读得出");
+            let o = align_with_pixels(&mut t, 1);
+            assert_eq!(
+                o,
+                Outcome::Adjusted { orientation_reset: true, thumbnail_dropped: false },
+                "big={big}"
+            );
+            assert_eq!(peek_orientation_long(&t, big), 1, "big={big}：整个 4 字节都应写成 1");
+        }
+    }
+
+    /// 类型的不是 `SHORT` / `LONG`，或数量不是 1 → 对这份 EXIF 的理解是错的，
+    /// **整份原样返回**（`count > 1` 时值域里存的是偏移量，往里写等于毁指针）。
+    #[test]
+    fn 方向类型不合预期时整份放弃() {
+        for (ty, count) in [(1u16, 1u32), (5, 1), (TYPE_SHORT, 2), (TYPE_LONG, 3)] {
+            let mut t = make_tiff_typed(6, ty, count, 0x99, false);
+            let before = t.clone();
+            assert_eq!(
+                align_with_pixels(&mut t, 1),
+                Outcome::Unparsable,
+                "ty={ty} count={count}"
+            );
+            assert_eq!(t, before, "ty={ty} count={count}：不该改动任何字节");
+            assert_eq!(read_orientation(&t), None, "读不到就别猜");
+        }
     }
 
     /// ⭐ **没旋转过就一个字节都不许动**。
@@ -271,7 +394,7 @@ mod tests {
             Outcome::Adjusted { orientation_reset: false, thumbnail_dropped: false }
         );
         assert_eq!(t, before, "没旋转时不该有任何字节变化");
-        assert_eq!(read_orientation(&t, false), 6, "方向应保持原值");
+        assert_eq!(peek_orientation(&t, false), 6, "方向应保持原值");
 
         // 转满一圈（4 次）也等于没转
         let mut t2 = make_tiff(6, 0, false);
