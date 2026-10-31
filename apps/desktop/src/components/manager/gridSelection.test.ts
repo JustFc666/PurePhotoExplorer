@@ -15,6 +15,7 @@
  */
 
 import managerViewSrc from './ManagerView.tsx?raw'
+import cardMenuSrc from './cardMenu.ts?raw'
 import batchActionsSrc from '../../hooks/manager/batchActions.ts?raw'
 import photoCardSrc from './PhotoCard.tsx?raw'
 import aiTagsCssSrc from '../../styles/aiTags.css?raw'
@@ -76,10 +77,16 @@ describe('单张重命名原地编辑', () => {
   })
 
   it('多张仍走模板对话框，单张 + 网格才原地编辑', () => {
-    expect(managerViewSrc).toContain(
+    /*
+     * 菜单项在 2026-11 从 `ManagerView.tsx` 搬进了 `cardMenu.ts`（那个文件一度
+     * 2500 行，两个右键菜单占了 400 行）。断言的**对象仍是同一行实现** ——
+     * 规则没变，只是代码换了文件，所以看两份源码拼接。
+     */
+    const menuSrc = managerViewSrc + '\n' + cardMenuSrc
+    expect(menuSrc).toContain(
       "if (n === 1 && mgr.viewMode === 'grid') setInlineRename(cardCtxItems[0] ?? null)",
     )
-    expect(managerViewSrc).toContain('else setRenameFor(cardCtxItems)')
+    expect(menuSrc).toContain('else setRenameFor(cardCtxItems)')
   })
 })
 
