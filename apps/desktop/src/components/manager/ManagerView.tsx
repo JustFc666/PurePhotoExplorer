@@ -61,7 +61,9 @@ import { PromptDialog } from '../chrome/PromptDialog'
 import { PrintPreview } from '../viewer/PrintPreview'
 import { DriveIcon } from '../icons/DriveIcon'
 import { useShellIcons } from '../../hooks/useShellIcons'
-import { FolderIcon } from '../icons/FolderIcon'
+import { useListPrefs, type ListColumnId } from '../../hooks/listColumns'
+import { renderListCell } from './ListCells'
+import { baseName, parentPath } from '../../hooks/parentPath'
 import { ManagerSidebar } from './ManagerSidebar'
 import { AiTagStrip } from './AiTagStrip'
 import { TagPicker } from './TagPicker'
@@ -660,8 +662,9 @@ export function ManagerView(props: Props) {
    */
   const toggle = useCallback(
     (item: GridItem, e: ReactMouseEvent) => {
-      const dir = item.kind === 'dir'
-      if (!dir && !mgr.canSelect) return
+      // 文件夹与压缩包都是「容器」：浏览模式下也要能选中（右键对它们操作）
+      const container = item.kind === 'dir' || item.kind === 'archive'
+      if (!container && !mgr.canSelect) return
       if (e.ctrlKey || e.metaKey || e.shiftKey) mgr.toggleSelect(item.key)
       else if (selected.has(item.key)) mgr.clearSelection()
       else mgr.toggleSelect(item.key)
@@ -672,9 +675,12 @@ export function ManagerView(props: Props) {
   const selectedItems = mgr.items.filter((i) => selected.has(i.key))
   const selectedBytes = selectedItems.reduce((sum, i) => sum + (i.size ?? 0), 0)
   const selectedCount = selectedItems.length
-  /** 选中里的**文件**（目录不参与导出/打印/删除这些文件级动作） */
+  /**
+   * 选中里的**文件**：目录和压缩包都不参与导出/打印/删除这些文件级动作
+   * —— 把压缩包路径喂给 `doExport` 只会得到「已复制 0 个」这种莫名提示。
+   */
   const selectedFileItems = useMemo(
-    () => selectedItems.filter((i) => i.kind !== 'dir'),
+    () => selectedItems.filter((i) => i.kind === 'file'),
     [selectedItems],
   )
   const selectedFileCount = selectedFileItems.length
@@ -2057,6 +2063,65 @@ export function ManagerView(props: Props) {
   const browseScope = mgr.scope.kind === 'browse' ? mgr.scope : null
 
   /**
+   * 浏览模式「返回上一级」的落脚点（`null` = 已经在盘根，没得退）。
+   *
+   * ⚠️ 用 `parentPath` 而不是自己切字符串：盘根（`E:\`）、UNC（`\\nas\share`）、
+   * 压缩包路径各有各的边界，全在 `hooks/parentPath.ts` 里单测过了。
+   */
+  const browseParent = useMemo(
+    () => (browseScope ? parentPath(browseScope.path) : null),
+    [browseScope],
+  )
+  const goUp = useCallback(() => {
+    if (!browseParent) return
+    void mgr.gotoDir(browseParent, baseName(browseParent))
+  }, [browseParent, mgr])
+
+  /*
+   * 列表视图的列（2026-10-31）：显示哪些列、各列多宽，都在
+   * `hooks/listColumns.ts` 里定义并持久化；设置窗口改完这里立刻跟着变。
+   */
+  const listPrefs = useListPrefs()
+  /** 拖列宽时的起点；`null` = 没在拖 */
+  const colDrag = useRef<{ id: ListColumnId; startX: number; startW: number } | null>(null)
+  const [colResizing, setColResizing] = useState(false)
+
+  /*
+   * 拖拽监听挂在 window 上而不是表头元素上：鼠标一旦移出表头（列很窄时几乎
+   * 立刻发生）就收不到 mousemove，宽度会卡住不动。
+   * ⚠️ 依赖数组必须是空 —— 用 ref 读最新的 api，否则拖一下就重绑一次。
+   */
+  const listPrefsRef = useRef(listPrefs)
+  listPrefsRef.current = listPrefs
+  useEffect(() => {
+    const onMove = (e: MouseEvent) => {
+      const d = colDrag.current
+      if (!d) return
+      listPrefsRef.current.setWidthLocal(d.id, d.startW + (e.clientX - d.startX))
+    }
+    const onUp = () => {
+      if (!colDrag.current) return
+      colDrag.current = null
+      setColResizing(false)
+      // 松手才落盘：拖动过程中每移动 1px 都写 localStorage 会明显掉帧
+      listPrefsRef.current.commitWidths()
+    }
+    window.addEventListener('mousemove', onMove)
+    window.addEventListener('mouseup', onUp)
+    return () => {
+      window.removeEventListener('mousemove', onMove)
+      window.removeEventListener('mouseup', onUp)
+    }
+  }, [])
+
+  const onColGripDown = useCallback((e: ReactMouseEvent, id: ListColumnId) => {
+    e.preventDefault()
+    e.stopPropagation()
+    colDrag.current = { id, startX: e.clientX, startW: listPrefsRef.current.widthOf(id) }
+    setColResizing(true)
+  }, [])
+
+  /**
    * 「我的电脑」主区直接铺盘符（用户 2026-10-30）。
    *
    * 盘符本来只有展开左侧树的第一层才有 —— 选中「我的电脑」时主区是空的，
@@ -2276,7 +2341,36 @@ export function ManagerView(props: Props) {
             />
           )}
           <div className="pv-mg-head">
-            <div className="pv-mg-headl">
+            {/*
+              返回上一级（用户 2026-10-31）——**只在浏览模式出现**：
+              图库/标签/地点这些范围是「筛出来的集合」，没有「上一级」这个概念，
+              给个按钮退回哪里都说不通。
+            */}
+            {browseScope && (
+              <button
+                type="button"
+                className="pv-mg-back"
+                onClick={goUp}
+                disabled={!browseParent}
+                title={
+                  browseParent
+                    ? `返回上一级（${baseName(browseParent)}）`
+                    : '已经在最上层了'
+                }
+                aria-label="返回上一级"
+              >
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden>
+                  <path
+                    d="M10.2 3.2 5.4 8l4.8 4.8"
+                    stroke="currentColor"
+                    strokeWidth="1.7"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                </svg>
+              </button>
+            )}
+            <div className={`pv-mg-headl${browseScope ? ' is-browse' : ''}`}>
               <h2 className="pv-mg-title">
                 {mgr.scopeTitle}
                 {mgr.isBrowsing && (
@@ -2611,7 +2705,37 @@ export function ManagerView(props: Props) {
               ))}
             </div>
           ) : (
-            <div className="pv-mg-list" onContextMenu={openBlankMenu}>
+            <div
+              className={`pv-mg-list${colResizing ? ' is-resizing' : ''}`}
+              style={{ ['--pv-list-cols' as string]: listPrefs.gridTemplate }}
+              onContextMenu={openBlankMenu}
+            >
+              {/*
+                表头（2026-10-31）：列名 + 右侧拖动条。
+                拖条 9px 宽、`translateX(50%)` 骑在列边界上 —— 太窄按不准，
+                太宽会盖住相邻列的点击区。
+              */}
+              <div className="pv-mg-listhead">
+                <span />
+                {listPrefs.visible.map((c) => (
+                  <span
+                    key={c.id}
+                    className={`pv-mg-listhcell is-${c.align}`}
+                    title={c.hint ? `${c.label} — ${c.hint}` : c.label}
+                  >
+                    <span className="pv-mg-listhtxt">{c.label}</span>
+                    <span
+                      className="pv-mg-listgrip"
+                      role="separator"
+                      aria-orientation="vertical"
+                      onMouseDown={(e) => onColGripDown(e, c.id)}
+                      onDoubleClick={() => listPrefs.resetWidth(c.id)}
+                      title="拖动调整列宽，双击恢复默认"
+                    />
+                  </span>
+                ))}
+              </div>
+
               {mgr.items.map((item) => {
                 const on = selected.has(item.key)
                 return (
@@ -2628,22 +2752,23 @@ export function ManagerView(props: Props) {
                     }}
                     title={item.path ?? item.name}
                   >
-                    {mgr.canSelect || item.kind === 'dir' ? (
+                    {mgr.canSelect || item.kind !== 'file' ? (
                       <span className={`pv-mg-listcheck${on ? ' is-on' : ''}`} aria-hidden>
                         {on ? '✓' : ''}
                       </span>
                     ) : (
                       <span />
                     )}
-                    <span className="pv-mg-listname">
-                      {/* 文件夹行：与网格卡片、侧栏树用同一个矢量图标 */}
-                      {item.kind === 'dir' && <FolderIcon className="pv-mg-listico" />}
-                      <span className="pv-mg-listtext">{item.name}</span>
-                    </span>
-                    <span className="pv-mg-listmeta">{item.format?.toUpperCase() ?? '—'}</span>
-                    <span className="pv-mg-listmeta">
-                      {item.size ? formatFileSize(item.size) : '—'}
-                    </span>
+                    {listPrefs.visible.map((c) => (
+                      <span
+                        key={c.id}
+                        className={`pv-mg-listmeta is-${c.align}${
+                          c.id === 'name' ? ' is-name' : ''
+                        }`}
+                      >
+                        {renderListCell(item, c.id)}
+                      </span>
+                    ))}
                   </div>
                 )
               })}

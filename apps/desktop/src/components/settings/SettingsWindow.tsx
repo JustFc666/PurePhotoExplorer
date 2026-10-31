@@ -20,6 +20,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { MouseEvent as ReactMouseEvent } from 'react'
 import { ASSOCIATION_FORMATS } from '../../constants/formats'
+import {
+  LIST_COLUMNS,
+  readColumnWidths,
+  readHiddenColumns,
+  subscribeListPrefs,
+  writeColumnWidths,
+  writeHiddenColumns,
+  type ListColumnId,
+} from '../../hooks/listColumns'
 import { managerLibraries, type LibraryItem } from '../../ipc/manager'
 import { AiRunPanel } from './AiRunPanel'
 import { ContextMenu } from '../chrome/ContextMenu'
@@ -99,6 +108,7 @@ const PAGES = [
   { id: 'thumb', group: '外观', label: '缩略图' },
   { id: 'sort', group: '浏览', label: '排序' },
   { id: 'slide', group: '浏览', label: '幻灯片' },
+  { id: 'list', group: '浏览', label: '列表' },
   { id: 'assoc', group: '文件类型', label: '打开方式' },
   { id: 'tag', group: 'AI 分析', label: '打标' },
   { id: 'face', group: 'AI 分析', label: '人脸' },
@@ -256,6 +266,7 @@ export function SettingsWindow({
             {page === 'thumb' && <ThumbPage />}
             {page === 'sort' && <SortPage />}
             {page === 'slide' && <SlidePage />}
+            {page === 'list' && <ListPage />}
             {page === 'assoc' && (
               <AssocPage
                 associations={associations}
@@ -487,6 +498,74 @@ function SlidePage() {
           onCommit={applyFxMs}
           format={(v) => `${v}ms`}
         />
+      </Row>
+    </>
+  )
+}
+
+/**
+ * 列表视图的列配置（2026-10-31）。
+ *
+ * 三列是**必显**的：文件名（没有名字的列表没意义）、格式、大小（用户明确要求）。
+ * 其余五列（修改日期/拍摄日期/分辨率/标记/分级）可以按需关掉 ——
+ * 全开时总宽约 1046px，小窗口下会横向滚动，关掉两列就舒服了。
+ *
+ * ⚠️ 改完**立刻生效**：`writeHiddenColumns` 会通知 `ManagerView` 里的
+ * `useListPrefs` 重读（同窗口 localStorage 不会触发 storage 事件，见那边的注释）。
+ */
+function ListPage() {
+  const [hidden, setHidden] = useState<ListColumnId[]>(readHiddenColumns)
+  const [widths, setWidths] = useState(readColumnWidths)
+
+  useEffect(
+    () =>
+      subscribeListPrefs(() => {
+        setHidden(readHiddenColumns())
+        setWidths(readColumnWidths())
+      }),
+    [],
+  )
+
+  const toggle = (id: ListColumnId) => {
+    const next = hidden.includes(id) ? hidden.filter((x) => x !== id) : [...hidden, id]
+    setHidden(next)
+    writeHiddenColumns(next)
+  }
+
+  const resetWidths = () => {
+    writeColumnWidths({})
+    setWidths({})
+  }
+
+  const changed = Object.keys(widths).length > 0
+
+  return (
+    <>
+      <h2 className="pv-set-h1">列表</h2>
+      <Row
+        label="显示列"
+        hint="文件名、格式、大小是必显的。列宽直接在表头上拖动分隔线调整（双击恢复默认）"
+      >
+        {LIST_COLUMNS.filter((c) => !c.locked).map((c) => (
+          <Choice
+            key={c.id}
+            on={!hidden.includes(c.id)}
+            label={c.label}
+            onClick={() => toggle(c.id)}
+          />
+        ))}
+      </Row>
+      <Row label="列宽" hint={changed ? '已经手动调过列宽' : '都是默认宽度'}>
+        <button
+          type="button"
+          className="pv-set-item"
+          style={{ paddingLeft: 6, width: '100%', opacity: changed ? 1 : 0.45 }}
+          disabled={!changed}
+          onClick={resetWidths}
+        >
+          <span style={{ width: 14, fontSize: 11, color: 'transparent' }}>✓</span>
+          <span style={{ marginLeft: 2 }}>全部恢复默认宽度</span>
+        </button>
       </Row>
     </>
   )

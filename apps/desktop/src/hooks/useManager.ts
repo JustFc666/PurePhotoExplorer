@@ -1320,7 +1320,8 @@ export function useManager(): ManagerApi {
         id: null,
         path: d.path,
         name: d.name,
-        size: null,
+        // 压缩包有大小（卡片右下角显示），文件夹没有
+        size: d.size ?? null,
         mtime: null,
         takenAt: null,
         width: null,

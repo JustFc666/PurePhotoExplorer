@@ -142,8 +142,19 @@ export function PhotoCard({
           )}
         </div>
         <div className="pv-mg-cardname">{item.name}</div>
+        {/*
+          压缩包：**右下角显示大小**（用户 2026-10-31）。
+          为此左侧文案收短成「压缩包」—— 卡片最窄只有 116px，
+          「压缩包 · 双击查看」再加一个「14.2 MB」会直接挤成两段省略号。
+          「双击查看」那层提示交给 title（悬停可见）。
+        */}
         <div className="pv-mg-cardmeta">
-          {isArc ? '压缩包 · 双击查看' : '文件夹 · 双击进入'}
+          <span className="pv-mg-cardmetatxt">
+            {isArc ? '压缩包' : '文件夹 · 双击进入'}
+          </span>
+          {isArc && item.size != null && (
+            <span className="pv-mg-cardmetasz">{formatFileSize(item.size)}</span>
+          )}
         </div>
       </div>
     )

@@ -551,6 +551,13 @@ body.is-col-resizing {
   flex: 0 0 auto;
   max-width: 46%;
 }
+/*
+ * 浏览模式：右侧只有「已选 N 张 + 导出」，没有标签条和人像条，
+ * 没必要把标题压在 46% 里。给到 74% 才能让 `Coser 写真合集` 这种名字一整行放下。
+ */
+.pv-mg-headl.is-browse {
+  max-width: 74%;
+}
 .pv-mg-headr {
   flex: 0 0 auto;
   display: flex;
@@ -566,10 +573,20 @@ body.is-col-resizing {
   font-size: 20px;
   font-weight: 600;
   line-height: 1.25;
-  /* ⛔ 标题必须一行：`艺术 · 二次元` 折成两行会顶乱整个头部 */
-  white-space: nowrap;
+  /*
+   * ⭐ 2026-10-31：**允许折行**。
+   * 以前是 nowrap + ellipsis，长文件夹名被截成「Coser 写...」，用户看不出
+   * 到底是哪个目录（`Coser 写真合集` / `Coser 写真2` 前半段一模一样）。
+   * 头部的 `.pv-mg-headl` 有 max-width 兜着，折行上限是两行左右，不会顶乱。
+   * `overflow-wrap: anywhere`：文件夹名常常没有空格，只能按字符断。
+   */
+  white-space: normal;
+  overflow-wrap: anywhere;
+  /* 只在极长时裁掉尾巴（真到这一步，说明名字长到没边了） */
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
   overflow: hidden;
-  text-overflow: ellipsis;
 }
 .pv-mg-sub {
   margin-top: 3px;
@@ -856,22 +873,123 @@ body.is-col-resizing {
 }
 
 /* 列表行：行高固定 30px，占位值直接写死 */
+/* ── 列表视图（2026-10-31 重做：表头 + 可拖列宽）──────────────────
+
+   列模板由 JS 写成内联 CSS 变量 `--pv-list-cols`（见 hooks/listColumns.ts），
+   **表头和数据行共用同一个变量** —— 两边各写一份必然错位。 */
+.pv-mg-list {
+  --pv-list-cols: 26px 340px 72px 92px 148px 148px 116px 56px 84px;
+  /* ⚠️ 必须和 `.pv-mg-grid` 一样的三个属性，否则撑不满父级、
+     `overflow: auto` 不生效（滚动条跑到外层去了，表头 sticky 也就没用） */
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: auto;
+  /* 底部留一点，最后一行不贴着状态栏 */
+  padding: 0 4px 6px;
+}
+
+.pv-mg-listhead,
 .pv-mg-listrow {
-  content-visibility: auto;
-  contain-intrinsic-size: auto 30px;
+  display: grid;
+  grid-template-columns: var(--pv-list-cols);
+  align-items: center;
+  column-gap: 8px;
+  /* 列宽合计超过可视宽度时横向滚动（而不是把列挤扁） */
+  min-width: max-content;
+  padding: 0 8px;
+}
+
+.pv-mg-listhead {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  height: 26px;
+  background: var(--pv-bg-surface);
+  border-bottom: 1px solid var(--pv-border);
+  color: var(--pv-text-tertiary);
+  font-size: 11.5px;
+  user-select: none;
 }
 
 .pv-mg-listrow {
-  display: grid;
-  grid-template-columns: 22px minmax(0, 1fr) 122px 76px 92px;
-  align-items: center;
-  gap: 8px;
-  height: 30px;
-  padding: 0 8px;
+  content-visibility: auto;
+  /* ⭐ 26px：原来是 30px，用户 2026-10-31 要求「压缩行高」，一屏能多看两行 */
+  contain-intrinsic-size: auto 26px;
+  height: 26px;
   border-radius: 6px;
   font-size: 12.5px;
   cursor: default;
   user-select: none;
+}
+
+/* 拖动列宽时，整个列表都显示拖拽光标 —— 否则鼠标一离开表头就变回箭头 */
+.pv-mg-list.is-resizing {
+  cursor: col-resize;
+  user-select: none;
+}
+.pv-mg-list.is-resizing .pv-mg-listrow {
+  /* 拖动时别让行 hover 抢视觉 */
+  pointer-events: none;
+}
+
+.pv-mg-listhcell {
+  position: relative;
+  display: flex;
+  align-items: center;
+  height: 100%;
+  white-space: nowrap;
+}
+.pv-mg-listhcell.is-right {
+  justify-content: flex-end;
+}
+.pv-mg-listhcell.is-center {
+  justify-content: center;
+}
+.pv-mg-listhtxt {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* 列宽拖动条：骑在列边界上（right: -5px 抵消一半宽度），
+   平时透明、hover 才显一条主色线 —— 一直画着会像表格框线，很吵。 */
+.pv-mg-listgrip {
+  position: absolute;
+  top: 3px;
+  bottom: 3px;
+  right: -5px;
+  width: 9px;
+  z-index: 3;
+  cursor: col-resize;
+}
+.pv-mg-listgrip::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 4px;
+  width: 1px;
+  background: transparent;
+  transition: background-color .1s;
+}
+.pv-mg-listgrip:hover::after,
+.pv-mg-list.is-resizing .pv-mg-listgrip:hover::after {
+  background: var(--pv-accent);
+}
+
+/* 单元格：默认右对齐/居中由 `is-*` 控制，文本自己省略 */
+.pv-mg-listmeta.is-right {
+  text-align: right;
+}
+.pv-mg-listmeta.is-center {
+  text-align: center;
+}
+/* 文件名列里是 flex（图标 + 文本），省略号交给 `.pv-mg-listtext`，
+   外层不能再 ellipsis，否则会裁掉图标 */
+.pv-mg-listmeta.is-name {
+  overflow: visible;
+  white-space: normal;
 }
 .pv-mg-listrow:hover {
   background: var(--pv-hover);
@@ -884,15 +1002,17 @@ body.is-col-resizing {
   outline-offset: -2px;
 }
 .pv-mg-listcheck {
-  width: 18px;
-  height: 18px;
+  /* ⭐ 2026-10-31：圆形 → 方形圆角。列表是一行行格子，方形勾选框和
+     「表格」的印象一致；圆形更像单选按钮，放在多选列表里会误导。 */
+  width: 15px;
+  height: 15px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border-radius: 50%;
+  border-radius: 4px;
   border: 1.5px solid var(--pv-border-strong);
   color: #fff;
-  font-size: 11px;
+  font-size: 10px;
   line-height: 1;
 }
 .pv-mg-listcheck.is-on {
@@ -907,6 +1027,7 @@ body.is-col-resizing {
   align-items: center;
   gap: 6px;
   min-width: 0;
+  width: 100%;
   overflow: hidden;
 }
 .pv-mg-listtext {
@@ -1829,4 +1950,60 @@ body.is-col-resizing {
   object-fit: contain;
   /* 系统图标自带透明边距，别再加额外留白 */
   border-radius: 0;
+}
+
+/* ── 浏览模式的「返回上一级」（2026-10-31）─────────────────────────
+   位置：标题行最前面（在标题左边）。只用次要文字色 + hover 变亮，
+   不用主色填充 —— 它是导航，不是这一屏的主操作（主操作是双击进目录）。
+
+   28px 是跟着标题行高（20px × 1.25 ≈ 25px）留一点余量定的；
+   再大会把标题行撑高，头部整体跟着移位。 */
+.pv-mg-back {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid var(--pv-border);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--pv-text-secondary);
+  cursor: pointer;
+  transition: background-color .12s, color .12s, border-color .12s;
+}
+.pv-mg-back:hover:not(:disabled) {
+  background: var(--pv-hover);
+  border-color: var(--pv-border-strong);
+  color: var(--pv-text-primary);
+}
+.pv-mg-back:active:not(:disabled) {
+  background: var(--pv-selected);
+}
+.pv-mg-back:disabled {
+  opacity: .32;
+  cursor: default;
+}
+
+/* 容器卡片（文件夹 / 压缩包）的说明行：左边文案、右边大小 */
+.pv-mg-cardmetatxt {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.pv-mg-cardmetasz {
+  flex: 0 0 auto;
+  margin-left: 6px;
+  /* 大小是补充信息，比文案再淡一档，别抢「压缩包」这三个字 */
+  color: var(--pv-text-tertiary);
+  opacity: .85;
+}
+
+/* 列表里的标记（⚑）：给一点暖色，别和普通文本混在一起看不出来 */
+.pv-mg-listflag {
+  color: var(--pv-accent);
+  font-size: 13px;
+  line-height: 1;
 }

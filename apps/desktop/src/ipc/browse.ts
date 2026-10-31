@@ -27,6 +27,11 @@ export interface FsNode {
   kind: string
   /** 附加说明：盘符 `(C:)` */
   note: string | null
+  /**
+   * 字节数。**只有压缩包会给**（卡片右下角显示大小）；
+   * 目录恒为 null —— 算目录大小要递归，浏览里不可接受。
+   */
+  size?: number | null
 }
 
 /** 侧栏文件树的**系统图标**（`data:image/bmp;base64,…`；取不到为 null）。 */

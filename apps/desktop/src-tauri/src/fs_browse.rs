@@ -27,6 +27,10 @@ pub struct FsNode {
     pub kind: String,
     /// 附加说明（盘符 `(C:)`）
     pub note: Option<String>,
+    /// 字节数。**只有压缩包会给**（卡片右下角显示大小）；目录给 `None`
+    /// —— 算目录大小要递归，在浏览里是不可接受的代价。
+    #[serde(default)]
+    pub size: Option<u64>,
 }
 
 /// `list_dirs` 单层最多返回的子目录数 —— 防止把
@@ -106,6 +110,7 @@ fn drives() -> Vec<FsNode> {
             path: Some(root),
             kind: "drive".to_string(),
             note: Some(format!("({letter}:)")),
+            size: None,
         });
     }
     out
@@ -252,6 +257,7 @@ pub fn roots() -> Vec<FsNode> {
                     path: Some(path),
                     kind: "known".to_string(),
                     note: None,
+                    size: None,
                 });
             }
         }
@@ -262,6 +268,7 @@ pub fn roots() -> Vec<FsNode> {
         path: None,
         kind: "computer".to_string(),
         note: None,
+        size: None,
     });
     out
 }
@@ -302,6 +309,7 @@ pub fn list_dirs(path: Option<&str>) -> Vec<FsNode> {
                 path: Some(entry.path().to_string_lossy().into_owned()),
                 kind: "dir".to_string(),
                 note: None,
+                size: None,
             });
             continue;
         }
@@ -321,6 +329,9 @@ pub fn list_dirs(path: Option<&str>) -> Vec<FsNode> {
                 kind: "archive".to_string(),
                 // 不给 note：侧栏行尾再写一遍「压缩包」是噪音，图标已经说明了
                 note: None,
+                // 大小要给：卡片右下角显示（用户 2026-10-31）。
+                // 只 stat 一次，比递归算目录大小便宜得多。
+                size: entry.metadata().ok().map(|m| m.len()),
             });
         }
     }
