@@ -15,6 +15,7 @@
  */
 
 import managerViewSrc from './ManagerView.tsx?raw'
+import batchActionsSrc from '../../hooks/manager/batchActions.ts?raw'
 import photoCardSrc from './PhotoCard.tsx?raw'
 import aiTagsCssSrc from '../../styles/aiTags.css?raw'
 import { describe, expect, it } from 'vitest'
@@ -66,8 +67,12 @@ describe('单张重命名原地编辑', () => {
 
   it('扩展名由上层保留（输入框里只有主体名）', () => {
     expect(photoCardSrc).toContain('defaultValue={stemOf(item.name)}')
-    expect(managerViewSrc).toContain("const ext = dot > 0 ? item.name.slice(dot) : ''")
-    expect(managerViewSrc).toContain('newName: body + ext')
+    /*
+     * `doInlineRename` 在 2026-11 随「批量文件操作」搬进了 `batchActions.ts`
+     * —— 断言对象没变，只是要去那份源码里找。
+     */
+    expect(batchActionsSrc).toContain("const ext = dot > 0 ? item.name.slice(dot) : ''")
+    expect(batchActionsSrc).toContain('newName: body + ext')
   })
 
   it('多张仍走模板对话框，单张 + 网格才原地编辑', () => {

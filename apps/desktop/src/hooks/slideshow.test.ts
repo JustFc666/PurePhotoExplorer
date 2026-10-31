@@ -19,6 +19,7 @@ import appSrc from '../App.tsx?raw'
 import shortcutSrc from './useShortcuts.ts?raw'
 import settingsSrc from '../components/settings/SettingsWindow.tsx?raw'
 import viewSrc from '../components/manager/ManagerView.tsx?raw'
+import batchActionsSrc from './manager/batchActions.ts?raw'
 import ipcSrc from '../ipc/manager.ts?raw'
 import {
   clampSlideSeconds,
@@ -151,19 +152,26 @@ describe('幻灯片放映', () => {
 })
 
 describe('复制 / 移动到文件夹', () => {
+  /*
+   * 2026-11 起「批量文件操作」整块搬到了 `hooks/manager/batchActions.ts`
+   * （`ManagerView.tsx` 当时 3000 行）。断言的**对象仍是同一段实现**，
+   * 所以这里看「视图 + 动作」两份源码，规则没变、只是代码换了文件。
+   */
+  const viewAndActionsSrc = viewSrc + '\n' + batchActionsSrc
+
   it('后端两条命令都注册了，复制走字节复制', () => {
     expect(ipcSrc).toContain("invoke<BatchSummary>('manager_copy_to_folder'")
     expect(ipcSrc).toContain("invoke<BatchSummary>('manager_move_to_folder'")
   })
 
   it('移动之后必须刷新（源目录少了一批图）', () => {
-    expect(viewSrc).toContain('managerMoveToFolder(')
-    expect(viewSrc).toMatch(/managerMoveToFolder\([\s\S]{0,260}refreshAfterMutation\(\)/)
+    expect(viewAndActionsSrc).toContain('managerMoveToFolder(')
+    expect(viewAndActionsSrc).toMatch(/managerMoveToFolder\([\s\S]{0,260}refreshAfterMutation\(\)/)
   })
 
   it('移动要二次确认，且说明会从图库索引移除', () => {
-    expect(viewSrc).toContain("title: '移动到文件夹'")
-    expect(viewSrc).toContain('真的从原位置搬走')
+    expect(viewAndActionsSrc).toContain("title: '移动到文件夹'")
+    expect(viewAndActionsSrc).toContain('真的从原位置搬走')
   })
 })
 
