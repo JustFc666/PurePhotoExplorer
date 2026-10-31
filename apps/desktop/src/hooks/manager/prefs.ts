@@ -76,6 +76,20 @@ export const THUMB_TIERS: Array<{ value: ThumbTier; label: string; px: number }>
 
 const TIER_VALUES = THUMB_TIERS.map((t) => t.value)
 
+const TIER_PX = new Map<ThumbTier, number>(THUMB_TIERS.map((t) => [t.value, t.px]))
+
+/**
+ * 档位 → 卡片宽度（px）。
+ *
+ * ⭐ **唯一真源就是上面的 `THUMB_TIERS`**：以前 `ManagerView.tsx` 里另有一份
+ * `CARD_WIDTH = {sm:116, md:168, lg:236, xl:320}`，同一组数字写两处 ——
+ * 加档位/改档位时只要漏改一处，网格里卡片宽度和缩略图实际像素就对不上
+ * （表现为卡片留白或裁切）。现在两边都从这张表取。
+ */
+export function thumbWidthOf(t: ThumbTier): number {
+  return TIER_PX.get(t) ?? 168
+}
+
 /** 读缩略图档位偏好（没存过 / 值不认识 → 中）。 */
 export function readThumbTier(): ThumbTier {
   try {

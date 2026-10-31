@@ -23,6 +23,8 @@ import libDropSrc from '../../hooks/libDrop.ts?raw'
 import useManagerSrc from '../../hooks/useManager.ts?raw'
 // 排序偏好的读写 2026-11 拆到 `manager/prefs.ts`，护栏跟着搬
 import managerPrefsSrc from '../../hooks/manager/prefs.ts?raw'
+// 视图层常量 2026-11 拆到 `viewConfig.ts`（默认图库名等）
+import viewConfigSrc from './viewConfig.ts?raw'
 import appSrc from '../../App.tsx?raw'
 import cssSrc from '../../styles/manager.css?raw'
 import { describe, expect, it } from 'vitest'
@@ -107,7 +109,8 @@ describe('侧栏「图库 +」新建空图库', () => {
   })
 
   it('默认名「新的图库」，创建成功才关弹窗', () => {
-    expect(managerViewSrc).toContain("const DEFAULT_LIB_NAME = '新的图库'")
+    // 默认名已搬到 `viewConfig.ts`（2026-11 拆分）：定义看那边，用在哪仍查组件
+    expect(viewConfigSrc).toContain("export const DEFAULT_LIB_NAME = '新的图库'")
     expect(managerViewSrc).toContain('setCreateLib({ name: DEFAULT_LIB_NAME })')
     expect(managerViewSrc).toContain('await managerCreateLibrary(name)')
     // 失败分支保留弹窗并带错误

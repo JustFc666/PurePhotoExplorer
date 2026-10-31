@@ -46,7 +46,6 @@ import {
   revealInExplorer,
   type BatchSummary,
   type TagItem,
-  type ThumbTier,
 } from '../../ipc/manager'
 import { subscribeThumbPending } from '../../ipc/thumbQueue'
 import { notifyPeopleChanged } from '../../lib/peopleEvents'
@@ -80,83 +79,24 @@ import {
 } from '../../ipc/manager'
 import { managerSetPersonCover } from '../../ipc/people'
 import { PhotoCard } from './PhotoCard'
+import {
+  DEFAULT_LIB_NAME,
+  FORMAT_LABEL,
+  PREFETCH_AHEAD,
+  SIDE_DEFAULT,
+  SIDE_MAX,
+  SIDE_MIN,
+  filePathsOf,
+  fmtCount,
+  readSideWidth,
+  saveSideWidth,
+} from './viewConfig'
+import { thumbWidthOf } from '../../hooks/manager/prefs'
 import '../../styles/manager.css'
 
 /** 缩略图档位 → 网格列宽（px）。CSS 用 `auto-fill + minmax` 排布。 */
-const CARD_WIDTH: Record<ThumbTier, number> = {
-  sm: 116,
-  md: 168,
-  lg: 236,
-  xl: 320,
-}
-
-/**
- * 视口之后预取多少张。
- *
- * 30 是「大约两屏」的量：卡片最小档（116px）一屏约 40 张，最大档（320px）约 12 张，
- * 30 张在任何档位都够铺满下一屏。再多就是纯浪费 —— 用户根本没在滚的时候，
- * 多取的每一张都在和真正要看的图抢那 4 个槽位。
- */
-const PREFETCH_AHEAD = 30
-
-/**
- * 从一组行里取**可操作的绝对路径**（离线/卷未挂载的没有 `path`）。
- *
- * ⚠️ 不能只从「选中集合」取：**浏览模式（未入库）的每一行 `id` 都是 `null`**，
- * 而 `selectedItems` 的条件是 `id != null` —— 那集合在浏览模式永远是空的。
- * 之前导出/转格式全走它，于是文件夹浏览模式下右键一律报
- * 「这些图片没有可用的本地路径」，可实际上路径就在 `item.path` 上。
- */
-function filePathsOf(items: GridItem[]): string[] {
-  const out: string[] = []
-  for (const it of items) {
-    if (it.path) out.push(it.path)
-  }
-  return out
-}
-
-/** 后端格式名 → 筛选条上的显示名。 */
-const FORMAT_LABEL: Record<string, string> = {
-  jpeg: 'JPG',
-  png: 'PNG',
-  gif: 'GIF',
-  webp: 'WebP',
-  heic: 'HEIC',
-  heif: 'HEIF',
-  psd: 'PSD',
-  bmp: 'BMP',
-  tiff: 'TIFF',
-  avif: 'AVIF',
-  '?': '未知',
-}
-
-function fmtCount(n: number): string {
-  return n.toLocaleString('zh-CN')
-}
-
-/* ── 侧栏宽度（可拖拽，记忆在 localStorage）────────────────── */
-const SIDE_WIDTH_KEY = 'pv.mg.sideWidth'
-const SIDE_MIN = 160
-const SIDE_MAX = 480
-const SIDE_DEFAULT = 208
-
-/**
- * 侧栏「图库 +」弹出的新建图库**默认名**（用户 2026-10-18 指定）。
- *
- * ⭐ 打开即全选（见 `PromptDialog` 的 `el.select()`），直接敲字就覆盖，
- * 所以默认值只起「提示格式」的作用，不用怕它挡路。
- */
-const DEFAULT_LIB_NAME = '新的图库'
-
-function readSideWidth(): number {
-  try {
-    const raw = Number(localStorage.getItem(SIDE_WIDTH_KEY))
-    if (Number.isFinite(raw) && raw >= SIDE_MIN && raw <= SIDE_MAX) return raw
-  } catch {
-    /* localStorage 不可用（隐私模式）就给默认值 */
-  }
-  return SIDE_DEFAULT
-}
+/* 常量与纯函数见 `./viewConfig`（2026-11 拆出）：预取量、路径提取、格式显示名、
+ * 千分位、侧栏宽度记忆、新建图库默认名。⛔ 别再往这个文件里加模块级常量。 */
 
 interface Props {
   /**
@@ -421,11 +361,8 @@ export function ManagerView(props: Props) {
     }
     const onUp = () => {
       setResizing(false)
-      try {
-        localStorage.setItem(SIDE_WIDTH_KEY, String(sideWRef.current))
-      } catch {
-        /* 写不进去（隐私模式等）就只对本会话生效 */
-      }
+      // 写不进去（隐私模式等）就只对本会话生效 —— `saveSideWidth` 内部已吞异常
+      saveSideWidth(sideWRef.current)
     }
     window.addEventListener('mousemove', onMove)
     window.addEventListener('mouseup', onUp)
@@ -2708,7 +2645,7 @@ export function ManagerView(props: Props) {
           {mgr.scope.kind === 'none' && driveNodes && driveNodes.length > 0 ? (
             <div
               className="pv-mg-grid"
-              style={{ ['--pv-card' as string]: `${CARD_WIDTH[mgr.tier]}px` }}
+              style={{ ['--pv-card' as string]: `${thumbWidthOf(mgr.tier)}px` }}
             >
               {driveNodes.map((d) => {
                 // 侧栏树用的同一份系统图标（后端按盘符分发，系统盘/移动盘/光驱不同）
@@ -2776,7 +2713,7 @@ export function ManagerView(props: Props) {
               onClick={(e) => {
                 if (e.target === e.currentTarget && mgr.canSelect) mgr.clearSelection()
               }}
-              style={{ ['--pv-card' as string]: `${CARD_WIDTH[mgr.tier]}px` }}
+              style={{ ['--pv-card' as string]: `${thumbWidthOf(mgr.tier)}px` }}
             >
               {mgr.items.map((item, i) => (
                 <PhotoCard
