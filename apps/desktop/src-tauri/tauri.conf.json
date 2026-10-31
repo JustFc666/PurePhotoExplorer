@@ -34,6 +34,14 @@
     "active": true,
     "targets": ["nsis", "msi"],
     "icon": ["icons/icon.ico"],
+    "resources": {
+      "../../../assets/ai/tag/clip_vision.onnx": "assets/ai/tag/clip_vision.onnx",
+      "../../../assets/ai/tag/tag_meta.json": "assets/ai/tag/tag_meta.json",
+      "../../../assets/ai/tag/text_embeds.bin": "assets/ai/tag/text_embeds.bin",
+      "../../../assets/ai/face/yunet.onnx": "assets/ai/face/yunet.onnx",
+      "../../../assets/ai/face/sface.onnx": "assets/ai/face/sface.onnx",
+      "resources/DirectML.dll": "DirectML.dll"
+    },
     "windows": {
       "nsis": {
         "installMode": "currentUser"

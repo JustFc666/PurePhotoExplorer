@@ -53,3 +53,6 @@ assets/ai/run_*.log
 
 # 小红书素材（私人照片，不入仓库）
 rednote/
+
+# 打包用的运行时 DLL（18MB，从 release/ 或 ort 缓存复制，不入库）
+/apps/desktop/src-tauri/resources/DirectML.dll
