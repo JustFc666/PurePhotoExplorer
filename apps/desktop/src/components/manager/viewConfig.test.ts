@@ -15,6 +15,7 @@ import {
   filePathsOf,
   fmtCount,
   formatLabelOf,
+  selectionSummary,
 } from './viewConfig'
 import type { GridItem } from '../../hooks/useManager'
 
@@ -81,5 +82,28 @@ describe('formatLabelOf', () => {
 
   it('`?` 是「认不出容器」的占位，显示成「未知」', () => {
     expect(formatLabelOf('?')).toBe('未知')
+  })
+})
+
+describe('selectionSummary', () => {
+  it('选中的是照片：报张数 + 大小', () => {
+    expect(selectionSummary(3, false, 2048)).toBe('已选 3 张 · 2.0 KB')
+  })
+
+  /**
+   * ⭐ 全选目录时**不能**报大小：目录行没有 `size`，算出来恒为 0，
+   * 会显示成「已选 3 张 · 0 B」—— 既把文件夹说成「张」，又摆了个假的大小。
+   */
+  it('选中的全是文件夹：只说个数，不报大小', () => {
+    expect(selectionSummary(3, true, 0)).toBe('已选 3 个文件夹')
+  })
+
+  it('全选文件夹时即便字节数不为 0 也不显示（口径统一，不看入参）', () => {
+    expect(selectionSummary(2, true, 999)).toBe('已选 2 个文件夹')
+  })
+
+  it('1 张照片也是「张」，不换成「个」', () => {
+    // 不断言整串：单张照片的 `size` 可能缺失（离线卷），那时会显示 0 B，这不重要
+    expect(selectionSummary(1, false, 0)).toContain('1 张')
   })
 })

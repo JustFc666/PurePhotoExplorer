@@ -51,6 +51,7 @@ import { renderListCell } from './ListCells'
 import { fsListDirs } from '../../ipc/browse'
 import { baseName, parentPath } from '../../hooks/parentPath'
 import { ManagerSidebar } from './ManagerSidebar'
+import { ManagerStatusBar } from './ManagerStatusBar'
 import { AiTagStrip } from './AiTagStrip'
 import { TagPicker } from './TagPicker'
 import { ManagerTopBar } from './ManagerTopBar'
@@ -1662,48 +1663,24 @@ export function ManagerView(props: Props) {
         </section>
       </div>
 
-      <footer className="pv-mg-status">
-        <span>
-          {mgr.isIdle ? (
-            `图库共 ${fmtCount(mgr.stats?.totalCount ?? 0)} 张`
-          ) : (
-            <>
-              {fmtCount(mgr.items.length)} / {fmtCount(mgr.total)} 个项目
-              {!mgr.isBrowsing && totalBytes > 0 && ` · ${formatFileSize(totalBytes)}`}
-              {mgr.isBrowsing && ' · 浏览模式（未入库）'}
-            </>
-          )}
-        </span>
-        {mgr.browseTruncated && (
-          <span className="pv-mg-dim">
-            · 目录里还有更多，只列出前 {fileItems.length} 张图片
-          </span>
-        )}
-        {pendingThumbs > 0 && (
-          <span className="pv-mg-dim" title="首次看某个目录时要逐张解码，看完不会留在缓存里">
-            · 正在解码缩略图，剩余 {pendingThumbs}
-          </span>
-        )}
-        {!mgr.isBrowsing && mgr.scanInfo && <span className="pv-mg-dim">· {mgr.scanInfo}</span>}
-        {!mgr.isIdle && (mgr.root ?? browseScope?.path) && (
-          <span className="pv-mg-dim pv-mg-statuspath" title={mgr.root ?? browseScope?.path}>
-            · {mgr.root ?? browseScope?.path}
-          </span>
-        )}
-        {mgr.error && <span className="pv-mg-err">· {mgr.error}</span>}
-        {/*
-          ⭐ 2026-10-24 用户定稿：选中信息（「已选 N 张 · 大小」）放到**状态栏右下角**，
-          并且**去掉「导出 / 标记」两个按钮** —— 这两个动作在右键菜单里本来就有，
-          挂在状态栏上既挤又容易误点。
-        */}
-        {selectedCount > 0 && (
-          <span className="pv-mg-dim pv-mg-selinfo">
-            {selectedItems.every((i) => i.kind === 'dir')
-              ? `已选 ${selectedCount} 个文件夹`
-              : `已选 ${selectedCount} 张 · ${formatFileSize(selectedBytes)}`}
-          </span>
-        )}
-      </footer>
+      {/* 状态栏：只摆数字，口径全在这里算好（2026-11 拆到 ManagerStatusBar） */}
+      <ManagerStatusBar
+        idle={mgr.isIdle}
+        statsTotal={mgr.stats?.totalCount ?? 0}
+        shown={mgr.items.length}
+        total={mgr.total}
+        browsing={mgr.isBrowsing}
+        totalBytes={totalBytes}
+        browseTruncated={mgr.browseTruncated}
+        fileCount={fileItems.length}
+        pendingThumbs={pendingThumbs}
+        scanInfo={mgr.scanInfo}
+        path={mgr.root ?? browseScope?.path ?? null}
+        error={mgr.error}
+        selectedCount={selectedCount}
+        selectedAllDirs={selectedItems.every((i) => i.kind === 'dir')}
+        selectedBytes={selectedBytes}
+      />
 
       {/*
         「是否包含子文件夹」——只在目录有子文件夹时出现（见 `addDirToLibrary`）。

@@ -9,6 +9,7 @@
  * - ⛔ 这里**不许出现 hook / 组件 / 后端调用**，只放常量、类型外的工具。
  */
 
+import { formatFileSize } from '../../ipc/format'
 import type { GridItem } from '../../hooks/useManager'
 
 /**
@@ -65,6 +66,21 @@ export function fmtCount(n: number): string {
  */
 export function formatLabelOf(fmt: string): string {
   return FORMAT_LABEL[fmt] ?? fmt.toUpperCase()
+}
+
+/* ── 状态栏文案 ─────────────────────────────────────────── */
+
+/**
+ * 状态栏右下角「已选 N」的文案。
+ *
+ * ⭐ 全选**目录**时不能显示大小：目录行没有 `size`，`selectedBytes` 会算出 0，
+ * 于是变成「已选 3 张 · 0 B」—— 既把文件夹说成「张」，又摆一个假的大小。
+ *
+ * ⛔ 别在这里改成「N 项」：用户 2026-10-24 定稿的措辞就是「N 张 / N 个文件夹」。
+ */
+export function selectionSummary(count: number, allDirs: boolean, bytes: number): string {
+  if (allDirs) return `已选 ${count} 个文件夹`
+  return `已选 ${count} 张 · ${formatFileSize(bytes)}`
 }
 
 /* ── 侧栏宽度（可拖拽，记忆在 localStorage）────────────────── */
