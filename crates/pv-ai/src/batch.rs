@@ -28,15 +28,27 @@ pub struct TagOptions {
     pub long_side: u32,
 }
 
+/// 二级（具体词）门槛默认值。
+///
+/// ⚠️ 与 Python 版（0.40 / 0.36）**不同**：Rust 侧的解码与缩放实现和 PIL 有细微
+/// 差异，实测余弦系统性低约 0.01，沿用 Python 的值会成批漏打。这两个数是用
+/// Rust 侧分布重新校准的。
+///
+/// ⭐ 这里是**唯一真源**：`TagOptions::default()` 与设置面板显示（`commands/ai.rs`
+/// 的 `DEF_*`）都从这里派生 —— 2026-11 之前它们各写一份字面量，改校准时漏改
+/// 设置面板那份，就出现「面板显示 0.40、实际按 0.39 跑」的静默偏差。
+pub const DEFAULT_THRESHOLD: f32 = 0.39;
+/// 一级（类目）门槛默认值，见 [`DEFAULT_THRESHOLD`]。
+pub const DEFAULT_THRESHOLD_L1: f32 = 0.35;
+/// 每张最多几个**二级**标签。
+pub const DEFAULT_MAX_TAGS: usize = 6;
+
 impl Default for TagOptions {
     fn default() -> Self {
         Self {
-            // ⚠️ 阈值和 Python 版（0.40 / 0.36）**不同**：
-            // Rust 侧的解码与缩放实现和 PIL 有细微差异，实测余弦系统性低约 0.01，
-            // 沿用 Python 的值会成批漏打。这两个数是用 Rust 侧分布重新校准的。
-            threshold: 0.39,
-            threshold_l1: 0.35,
-            max_tags: 6,
+            threshold: DEFAULT_THRESHOLD,
+            threshold_l1: DEFAULT_THRESHOLD_L1,
+            max_tags: DEFAULT_MAX_TAGS,
             long_side: 1024,
         }
     }

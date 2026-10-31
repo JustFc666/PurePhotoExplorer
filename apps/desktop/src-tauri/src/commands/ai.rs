@@ -43,15 +43,19 @@ const KEY_MAX_TAGS: &str = "ai.max_tags";
 const KEY_FACES: &str = "ai.faces";
 const KEY_DISABLED: &str = "ai.disabled_terms";
 
-/// 默认阈值。
+/// 默认阈值 —— **必须与引擎实际使用的缺省值一致**。
 ///
-/// ⭐ 2026-10-22：取消「每张必须凑满 N 个」之后，阈值就是**唯一**准入门槛，
-/// 因此从 0.35 提到 0.40 —— 实测节日误判 17→5、泛词 91→50。
-const DEF_THRESHOLD: f64 = 0.40;
-/// 一级类目默认门槛。与 `tools/ai/auto_tag.py` 的 `--l1-threshold` 缺省值保持一致（0.36）。
-const DEF_THRESHOLD_L1: f64 = 0.36;
+/// ⚠️ 2026-11 修：这两个数以前各写一份字面量（这里是 0.40 / 0.36，Rust 打标
+/// 那边是 0.39 / 0.35），而 `f9127c1` 把打标切到 Rust 时只改了一处 ——
+/// 结果是**没动过设置的用户，面板显示 0.40，实际按 0.39 跑**。
+/// 阈值差 0.01 就意味着「界面说会打上的标签，实际没打」，属于静默偏差，
+/// 用户只能靠数标签才发现。
+/// 现在统一从 `pv_ai::batch` 的默认值派生（那里有校准依据）。
+const DEF_THRESHOLD: f64 = pv_ai::batch::DEFAULT_THRESHOLD as f64;
+/// 一级类目默认门槛，同上。
+const DEF_THRESHOLD_L1: f64 = pv_ai::batch::DEFAULT_THRESHOLD_L1 as f64;
 /// 每张标签数的**上限**（不是目标）：够格几个就几个，认不出就空着
-const DEF_MAX_TAGS: i64 = 6;
+const DEF_MAX_TAGS: i64 = pv_ai::batch::DEFAULT_MAX_TAGS as i64;
 
 /// ⚠️ 必须 `camelCase`：前端按 `vocabCount` / `maxTags` 读，
 /// 字段名对不上时 JS 拿到 `undefined`，界面上直接显示成「NaN 词」。
@@ -586,14 +590,48 @@ pub struct AiTaskStatus {
     pub face_total: usize,
 }
 
-/// 读日志尾部。跑久了文件可能几 MB，只取尾部，别每次轮询都全量解析。
+/// 读日志尾部（最多 `max` 行）。
+///
+/// ⭐ **真的只读尾部**：前端每 500ms 轮询一次，而日志跑久了能到几 MB
+/// （Python 那条路把子进程 stdout 全量重定向进来）。以前这里 `read_to_string`
+/// 整份读，等于每 500ms 重复读几 MB 再切一遍行 —— 注释写着「别全量解析」，
+/// 实现却是全量的。
+///
+/// 现在从末尾取 64KB 窗口（200 行中文约 12KB，留足余量），不够再翻 4 倍。
+/// 窗口起点落在行中间时丢掉那半行 —— 宁可少显示一行，也不要半截乱码。
 fn tail_lines(path: &Path, max: usize) -> Vec<String> {
-    let Ok(text) = std::fs::read_to_string(path) else {
+    use std::io::{Read, Seek, SeekFrom};
+    if max == 0 {
+        return Vec::new();
+    }
+    let Ok(mut f) = std::fs::File::open(path) else {
         return Vec::new();
     };
-    let all: Vec<&str> = text.lines().collect();
-    let start = all.len().saturating_sub(max);
-    all[start..].iter().map(|l| (*l).to_string()).collect()
+    let Ok(len) = f.metadata().map(|m| m.len()) else {
+        return Vec::new();
+    };
+    let mut window = 64 * 1024u64;
+    loop {
+        let start = len.saturating_sub(window);
+        if f.seek(SeekFrom::Start(start)).is_err() {
+            return Vec::new();
+        }
+        let mut buf = Vec::new();
+        if f.read_to_end(&mut buf).is_err() {
+            return Vec::new();
+        }
+        let text = String::from_utf8_lossy(&buf);
+        let mut lines: Vec<&str> = text.lines().collect();
+        // 从文件中间切进来的首行是半行（UTF-8 还可能切在半字符上）
+        if start > 0 && !lines.is_empty() {
+            lines.remove(0);
+        }
+        if lines.len() >= max || start == 0 {
+            let from = lines.len().saturating_sub(max);
+            return lines[from..].iter().map(|l| (*l).to_string()).collect();
+        }
+        window = window.saturating_mul(4);
+    }
 }
 
 // Rust 打标的进度（与 Python 子进程共用 `Running`，靠 `tag` 字段区分走哪条路）。
@@ -744,10 +782,12 @@ fn run_tag_batch_blocking(app: tauri::AppHandle, library: String, mark_finished:
     );
 
     // ── 3. 跑批 + 逐张写库 ──
+    // 缺省值一律取 `DEF_*`（从 `pv_ai::batch` 派生），⛔ 别再在这里写字面量 ——
+    // 写两个字面量就会出现「面板显示一个数、实际按另一个数跑」。
     let opts = TagOptions {
-        threshold: read_f32(&state, "ai.threshold", 0.39),
-        threshold_l1: read_f32(&state, "ai.l1Threshold", 0.35),
-        max_tags: read_f32(&state, "ai.max_tags", 6.0) as usize,
+        threshold: read_f32(&state, KEY_THRESHOLD, DEF_THRESHOLD as f32),
+        threshold_l1: read_f32(&state, KEY_THRESHOLD_L1, DEF_THRESHOLD_L1 as f32),
+        max_tags: read_f32(&state, KEY_MAX_TAGS, DEF_MAX_TAGS as f32) as usize,
         long_side: 1024,
     };
     tag_log(
@@ -1331,20 +1371,8 @@ pub async fn ai_run_task(
      * 现在只在最后那段历史遗留的 Python 链路里才要求它们。
      */
 
-    // 只有 Python 那条老路会用到这两个阈值；Rust 打标在下面自己读
-    let (_th, _th_l1) = state
-        .with_manager(|s| {
-            let get = |k: &str| s.setting(k).ok().flatten();
-            Ok((
-                get("ai.threshold")
-                    .and_then(|v| v.parse::<f64>().ok())
-                    .unwrap_or(0.40),
-                get("ai.l1Threshold")
-                    .and_then(|v| v.parse::<f64>().ok())
-                    .unwrap_or(0.36),
-            ))
-        })
-        .map_err(|e| err(e.to_string()))?;
+    // 阈值不在这里读：Rust 打标在 `run_tag_batch_blocking` 里自己读设置，
+    // `tools/ai/*.py` 也是自己去库里读 —— 这里读出来只会是一份没人用的死值。
 
     /*
      * ⭐ `tag` 走 **Rust**（ort + DirectML），不再 spawn Python ——
@@ -1586,6 +1614,39 @@ mod tests {
         for no in ["否", "0", "false", "n", "", "停用"] {
             assert!(!csv_bool(no), "{no} 应视为停用");
         }
+    }
+
+    /// 轮询每 500ms 一次，日志能有几 MB —— 只读尾部、且不能露出被切半的行。
+    #[test]
+    fn 日志只读尾部且不留半行() {
+        let dir = std::env::temp_dir();
+        let big = dir.join(format!("pve-tail-big-{}.log", std::process::id()));
+        let mut body = String::new();
+        for i in 0..20_000 {
+            body.push_str(&format!("第 {i} 行 · 每行都带点中文让它有点长度\n"));
+        }
+        std::fs::write(&big, &body).unwrap();
+
+        // ~1MB，远超 64KB 窗口 —— 走「取尾部 + 丢掉半行」那条路
+        let got = tail_lines(&big, 200);
+        assert_eq!(got.len(), 200);
+        assert_eq!(
+            got.last().unwrap(),
+            "第 19999 行 · 每行都带点中文让它有点长度"
+        );
+        assert_eq!(got[0], "第 19800 行 · 每行都带点中文让它有点长度");
+
+        // 小文件整份读，第一行不能被当成半行丢掉
+        let small = dir.join(format!("pve-tail-small-{}.log", std::process::id()));
+        std::fs::write(&small, "a\nb\nc\n").unwrap();
+        assert_eq!(tail_lines(&small, 10), vec!["a", "b", "c"]);
+        assert_eq!(tail_lines(&small, 2), vec!["b", "c"]);
+
+        // 文件不存在 → 空，不 panic
+        assert!(tail_lines(&dir.join("pve-tail-nope-不存在.log"), 10).is_empty());
+
+        let _ = std::fs::remove_file(&big);
+        let _ = std::fs::remove_file(&small);
     }
 
 
