@@ -16,6 +16,7 @@
 use std::collections::VecDeque;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
 use serde::Serialize;
@@ -471,6 +472,112 @@ pub struct Running {
     root: PathBuf,
     /// `Some` = 这次是 **Rust 打标**（不走子进程），`ai_task_status` 据此分流
     tag: Option<TagProgress>,
+    /// 会话编号（见 [`Session`]）。
+    id: u64,
+    /// 停止请求：Rust 批处理每张图查一次。
+    ///
+    /// ⛔ **不能靠 kill 子进程来停 Rust 任务** —— 它跑在同一个进程的
+    /// `spawn_blocking` 线程里，没有 pid 可杀。`ai_task_stop` 以前只 kill
+    /// `child`（Rust 路径恒为 `None`）就把状态清空，界面立刻显示「已停止」，
+    /// 而线程还在解码、推理、**往索引里写标签**，能持续几十分钟。
+    cancel: Arc<AtomicBool>,
+}
+
+/// 会话编号发号器。
+static SESSION_SEQ: AtomicU64 = AtomicU64::new(1);
+
+fn next_session_id() -> u64 {
+    SESSION_SEQ.fetch_add(1, Ordering::Relaxed)
+}
+
+/// 后台线程手里的会话凭据。
+///
+/// ## 为什么需要它
+/// Rust 批处理只能拿到 `Arc<Mutex<Option<Running>>>`，而槽位会被
+/// 「停止 → 再开始」整个换掉。旧线程如果照常往槽位里写，就会把进度写进
+/// **新任务**的 `TagProgress` —— 用户看到进度从 3/500 开始乱跳，或者新任务
+/// 一开始就显示「已完成」。
+///
+/// 所以：编号对不上 = 我的会话已经不在了 → 所有写入静默丢弃、循环尽快退出。
+#[derive(Clone)]
+struct Session {
+    runner: Arc<Mutex<Option<Running>>>,
+    id: u64,
+    cancel: Arc<AtomicBool>,
+}
+
+impl Session {
+    /// 从全局槽位取当前会话凭据（`None` = 没有任务，直接返回即可）。
+    fn take(app: &tauri::AppHandle) -> Option<Self> {
+        let runner: Arc<Mutex<Option<Running>>> = app.state::<AiRunner>().0.clone();
+        let g = runner.lock().ok()?;
+        let r = g.as_ref()?;
+        Some(Self {
+            runner: runner.clone(),
+            id: r.id,
+            cancel: r.cancel.clone(),
+        })
+        // `g` 在这里释放：后面全程都要反复拿这把锁，不能带着借用往下走
+    }
+
+    /// 用户点「停止」了吗（也包含「我的会话已被顶掉」）。
+    fn cancelled(&self) -> bool {
+        self.cancel.load(Ordering::Relaxed)
+    }
+
+    /// 在**本次会话**的状态上做一次修改。
+    ///
+    /// 编号不符或槽位已空时什么也不做 —— 这就是「旧线程写不进新会话」的保证。
+    fn with(&self, f: impl FnOnce(&mut Running)) {
+        let Ok(mut g) = self.runner.lock() else {
+            return;
+        };
+        if let Some(r) = g.as_mut().filter(|r| r.id == self.id) {
+            f(r);
+        }
+    }
+
+    /// 修改打标进度（没在跑 Rust 打标时是空操作）。
+    fn with_tag(&self, f: impl FnOnce(&mut TagProgress)) {
+        self.with(|r| {
+            if let Some(t) = r.tag.as_mut() {
+                f(t);
+            }
+        });
+    }
+
+    /// 整个任务失败：进度标红 + 结束，前端立刻能显示原因。
+    fn fail(&self, msg: String) {
+        self.log(format!("失败：{msg}"));
+        self.with(|r| {
+            if let Some(t) = r.tag.as_mut() {
+                t.finished = true;
+                t.ok = false;
+            }
+            r.ok = false;
+        });
+    }
+
+    /// 往进度里追加一行日志（同时落盘，方便事后查）。
+    fn log(&self, line: String) {
+        self.with(|r| {
+            if let Some(t) = r.tag.as_mut() {
+                t.lines.push_back(line.clone());
+                while t.lines.len() > 200 {
+                    t.lines.pop_front();
+                }
+            }
+            // 日志文件也写一份：用户报问题时能直接把尾部贴过来
+            if let Ok(mut f) = std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(&r.log)
+            {
+                use std::io::Write;
+                let _ = writeln!(f, "{line}");
+            }
+        });
+    }
 }
 
 /// 全局只允许一个 AI 任务：两个脚本同时写索引库会互相打架。
@@ -655,6 +762,16 @@ struct TagProgress {
 }
 
 impl Running {
+    /// 这个会话还在跑吗？
+    ///
+    /// ⚠️ **Rust 任务的 `child` 恒为 `None`**：光看 `child.is_some()` 会认为
+    /// 「没有任务在跑」，于是用户在打标进行中再点一次「开始」，
+    /// 后端就真的又起一个 `spawn_blocking` 线程 —— 两个线程同时往索引写标签。
+    /// `ai_run_task` 的防重入检查必须用这个。
+    fn is_active(&self) -> bool {
+        self.child.is_some() || self.tag.as_ref().is_some_and(|t| !t.finished)
+    }
+
     /// 造一个「Rust 打标」会话占位 —— 复用 `Running` 但 `child` 为 None、
     /// `steps` 为空，`ai_task_status` 看到 `tag.is_some()` 就走 Rust 分支。
     fn tag_session(log: PathBuf) -> Self {
@@ -665,6 +782,8 @@ impl Running {
             ok: true,
             python: PathBuf::new(),
             root: PathBuf::new(),
+            id: next_session_id(),
+            cancel: Arc::new(AtomicBool::new(false)),
             tag: Some(TagProgress {
                 phase: "tag".into(),
                 tag_done: 0,
@@ -681,105 +800,56 @@ impl Running {
     }
 }
 
-/// 往打标进度里追加一行日志（同时落盘，方便事后查）。
-fn tag_log(runner: &Mutex<Option<Running>>, line: String) {
-    if let Ok(mut g) = runner.lock() {
-        if let Some(r) = g.as_mut() {
-            if let Some(t) = r.tag.as_mut() {
-                t.lines.push_back(line.clone());
-                while t.lines.len() > 200 {
-                    t.lines.pop_front();
-                }
-            }
-            // 日志文件也写一份：用户报问题时能直接把尾部贴过来
-            if let Ok(mut f) = std::fs::OpenOptions::new()
-                .create(true)
-                .append(true)
-                .open(&r.log)
-            {
-                use std::io::Write;
-                let _ = writeln!(f, "{line}");
-            }
-        }
-    }
-}
-
 /// 跑一次 Rust 打标（在 `spawn_blocking` 里执行，不占 UI 线程）。
 ///
 /// 三阶段，索引锁只在两头各占一下：
 /// 1. 锁内查图列表（毫秒级）
 /// 2. **锁外**逐张解码 + 推理（1~2 秒/张，期间图库滚动不受影响）
 /// 3. 回调里逐张写库（锁粒度 = 一张图，毫秒级）
+///
+/// 「停止」靠 `Session::cancelled()` 在**每张图**上检查：先判退、再判写库，
+/// 所以按下停止之后不会再有新的标签落库。
 fn run_tag_batch_blocking(app: tauri::AppHandle, library: String, mark_finished: bool) {
     use pv_ai::batch::{tag_batch, Progress, TagOptions};
 
-    // ⚠️ 先在**一条语句**里把 Arc 拷出来：`State<'_, T>` 借用 `app`，
-    // 直接 `let runner = app.state::<AiRunner>()` 会把借用带到整个函数体，
-    // 和下面 `state.with_manager_mut(…)` 的借用叠加后编译器判定生命周期不足。
-    let runner: Arc<Mutex<Option<Running>>> = app.state::<AiRunner>().0.clone();
+    // ⚠️ 会话凭据要在**一条语句**里取出：`State<'_, T>` 借用 `app`，
+    // 带着它往下走会和 `state.with_manager_mut(…)` 的借用叠加，判定生命周期不足。
+    let Some(sess) = Session::take(&app) else {
+        return;
+    };
     let state = app.state::<AppState>();
 
     let t_start = std::time::Instant::now();
-    tag_log(&runner, format!("开始打标：{library}"));
+    sess.log(format!("开始打标：{library}"));
 
     // ── 1. 查图列表（`library` 为空 = 全部图库）──
     let images: Vec<(i64, PathBuf)> = match state.with_manager(|s| collect_images(s, &library)) {
         Ok(v) => v,
-        Err(e) => {
-            tag_log(&runner, format!("失败：{e}"));
-            if let Ok(mut g) = runner.lock() {
-                if let Some(r) = g.as_mut() {
-                    if let Some(t) = r.tag.as_mut() {
-                        t.finished = true;
-                        t.ok = false;
-                    }
-                    r.ok = false;
-                }
-            }
-            return;
-        }
+        Err(e) => return sess.fail(e),
     };
 
     let total = images.len();
-    if let Ok(mut g) = runner.lock() {
-        if let Some(r) = g.as_mut() {
-            if let Some(t) = r.tag.as_mut() {
-                        t.phase = "tag".into();
-                        t.tag_total = total;
-                        t.total = total;
-            }
-        }
-    }
-    tag_log(
-        &runner,
-        format!(
-            "范围：{} · 待处理 {total} 张",
-            if library.is_empty() { "全部图库" } else { &library }
-        ),
-    );
+    sess.with_tag(|t| {
+        t.phase = "tag".into();
+        t.tag_total = total;
+        t.total = total;
+    });
+    sess.log(format!(
+        "范围：{} · 待处理 {total} 张",
+        if library.is_empty() { "全部图库" } else { &library }
+    ));
 
     // ── 2. 加载模型（165MB，只做一次）──
     let dir = tagger_dir();
     let mut tagger = match pv_ai::tagger::Tagger::load(&dir) {
         Ok(t) => t,
-        Err(e) => {
-            tag_log(&runner, format!("模型加载失败：{e}"));
-            if let Ok(mut g) = runner.lock() {
-                if let Some(r) = g.as_mut() {
-                    if let Some(t) = r.tag.as_mut() {
-                        t.finished = true;
-                        t.ok = false;
-                    }
-                    r.ok = false;
-                }
-            }
-            return;
-        }
+        Err(e) => return sess.fail(format!("模型加载失败：{e}")),
     };
-    tag_log(
-        &runner,
-        format!("模型就绪 · 词表 {} 条 · {} 条 prompt", tagger.vocab().len(), tagger.prompts_len()),
-    );
+    sess.log(format!(
+        "模型就绪 · 词表 {} 条 · {} 条 prompt",
+        tagger.vocab().len(),
+        tagger.prompts_len()
+    ));
 
     // ── 3. 跑批 + 逐张写库 ──
     // 缺省值一律取 `DEF_*`（从 `pv_ai::batch` 派生），⛔ 别再在这里写字面量 ——
@@ -790,13 +860,10 @@ fn run_tag_batch_blocking(app: tauri::AppHandle, library: String, mark_finished:
         max_tags: read_f32(&state, KEY_MAX_TAGS, DEF_MAX_TAGS as f32) as usize,
         long_side: 1024,
     };
-    tag_log(
-        &runner,
-        format!(
-            "阈值：二级 ≥{:.2} · 一级 ≥{:.2} · 每张最多 {} 个",
-            opts.threshold, opts.threshold_l1, opts.max_tags
-        ),
-    );
+    sess.log(format!(
+        "阈值：二级 ≥{:.2} · 一级 ≥{:.2} · 每张最多 {} 个",
+        opts.threshold, opts.threshold_l1, opts.max_tags
+    ));
 
     let mut last_log = 0usize;
     let stats = tag_batch(
@@ -804,25 +871,25 @@ fn run_tag_batch_blocking(app: tauri::AppHandle, library: String, mark_finished:
         &mut tagger,
         &opts,
         |p: &Progress| {
-            if let Ok(mut g) = runner.lock() {
-                if let Some(r) = g.as_mut() {
-                    if let Some(t) = r.tag.as_mut() {
-                        t.phase = "tag".into();
-                        t.tag_done = p.done;
-                        t.done = p.done;
-                    }
-                }
-            }
+            sess.with_tag(|t| {
+                t.phase = "tag".into();
+                t.tag_done = p.done;
+                t.done = p.done;
+            });
             // 每 10 张刷一行，避免日志被 371 行「正在处理」淹没
             if p.done == p.total || p.done - last_log >= 10 {
                 last_log = p.done;
-                tag_log(
-                    &runner,
-                    format!("{}/{} · {}", p.done, p.total, p.name),
-                );
+                sess.log(format!("{}/{} · {}", p.done, p.total, p.name));
             }
+            // ⛔ 返回 false = 用户点了停止 → 批处理立刻收尾，不再解下一张
+            !sess.cancelled()
         },
         |done| {
+            // ⚠️ 先判后写：`on_done` 在 `on_progress` **之前**回调，
+            // 只靠进度回调里的取消检查会多写一张标签。
+            if sess.cancelled() {
+                return;
+            }
             let _ = state.with_manager_mut(|s| {
                 s.replace_ai_tags(done.image_id, &done.tags)
                     .map_err(|e| e.to_string())
@@ -831,36 +898,48 @@ fn run_tag_batch_blocking(app: tauri::AppHandle, library: String, mark_finished:
     );
 
     for e in &stats.errors {
-        tag_log(&runner, format!("跳过 {e}"));
+        sess.log(format!("跳过 {e}"));
     }
     let secs = t_start.elapsed().as_secs_f64();
-    tag_log(
-        &runner,
-        format!(
-            "完成：成功 {} 张 · 失败 {} 张 · 用时 {:.1} 秒（{:.0} ms/张）",
-            stats.ok,
-            stats.failed,
-            secs,
-            if stats.ok + stats.failed > 0 {
-                secs * 1000.0 / (stats.ok + stats.failed) as f64
-            } else {
-                0.0
-            }
-        ),
-    );
 
-    // ⚠️ 末尾这个分号不能省：`if let` 作为尾表达式时，它内部的临时 `Result<MutexGuard>`
-    // 会活到函数返回之后（比 `runner` 还久），编译器会报
-    // "`runner` dropped here while still borrowed"。
-    if let Ok(mut g) = runner.lock() {
-        if let Some(r) = g.as_mut() {
+    if sess.cancelled() {
+        sess.log(format!(
+            "已停止：处理 {} 张（成功 {} · 失败 {}）· 用时 {secs:.1} 秒",
+            stats.ok + stats.failed,
+            stats.ok,
+            stats.failed
+        ));
+        sess.with(|r| {
             if let Some(t) = r.tag.as_mut() {
-                t.finished = mark_finished;
-                t.ok = stats.failed == 0;
+                // 停止后 pipeline 不该再跑人脸阶段，所以这里无条件结束会话
+                t.finished = true;
+                // 没跑完就不算成功：前端按 `ok` 区分「完成」与「中断」
+                t.ok = false;
             }
-            r.ok = stats.failed == 0;
+            r.ok = false;
+        });
+        return;
+    }
+
+    sess.log(format!(
+        "完成：成功 {} 张 · 失败 {} 张 · 用时 {:.1} 秒（{:.0} ms/张）",
+        stats.ok,
+        stats.failed,
+        secs,
+        if stats.ok + stats.failed > 0 {
+            secs * 1000.0 / (stats.ok + stats.failed) as f64
+        } else {
+            0.0
         }
-    };
+    ));
+
+    sess.with(|r| {
+        if let Some(t) = r.tag.as_mut() {
+            t.finished = mark_finished;
+            t.ok = stats.failed == 0;
+        }
+        r.ok = stats.failed == 0;
+    });
 }
 
 
@@ -881,25 +960,15 @@ fn run_face_batch_blocking(app: tauri::AppHandle, library: String, mark_finished
     use pv_ai::face::{FaceDetector, FaceRecognizer};
     use pv_ai::face_batch::{detect_batch, FaceBatchOpts, FaceProgress};
 
-    // ⚠️ 一条语句里把 Arc 拷出来，理由同 tag：State 借用活不过函数体
-    let runner: Arc<Mutex<Option<Running>>> = app.state::<AiRunner>().0.clone();
+    // ⚠️ 会话凭据要在**一条语句**里取出：`State<'_, T>` 借用 `app`，
+    // 带着它往下走会和 `state.with_manager(…)` 的借用叠加，判定生命周期不足。
+    let Some(sess) = Session::take(&app) else {
+        return;
+    };
     let state = app.state::<AppState>();
     let t_start = std::time::Instant::now();
 
-    tag_log(&runner, format!("开始识别人像：{library}"));
-
-    let fail = |msg: String| {
-        tag_log(&runner, format!("失败：{msg}"));
-        if let Ok(mut g) = runner.lock() {
-            if let Some(r) = g.as_mut() {
-                if let Some(t) = r.tag.as_mut() {
-                    t.finished = true;
-                    t.ok = false;
-                }
-                r.ok = false;
-            }
-        }
-    };
+    sess.log(format!("开始识别人像：{library}"));
 
     /*
      * ── 1. 查图列表 ──
@@ -918,38 +987,31 @@ fn run_face_batch_blocking(app: tauri::AppHandle, library: String, mark_finished
         Ok(kept)
     }) {
         Ok(v) => v,
-        Err(e) => return fail(e),
+        Err(e) => return sess.fail(e),
     };
 
-    if let Ok(mut g) = runner.lock() {
-        if let Some(r) = g.as_mut() {
-            if let Some(t) = r.tag.as_mut() {
-                t.phase = "face".into();
-                t.face_total = images.len();
-                t.total = images.len();
-            }
-        }
-    }
-    tag_log(
-        &runner,
-        format!(
-            "范围：{} · 待处理 {} 张",
-            if library.is_empty() { "全部图库" } else { &library },
-            images.len()
-        ),
-    );
+    sess.with_tag(|t| {
+        t.phase = "face".into();
+        t.face_total = images.len();
+        t.total = images.len();
+    });
+    sess.log(format!(
+        "范围：{} · 待处理 {} 张",
+        if library.is_empty() { "全部图库" } else { &library },
+        images.len()
+    ));
 
     // ── 2. 模型 ──
     let dir = face_dir();
     let mut det = match FaceDetector::load(&dir) {
         Ok(d) => d,
-        Err(e) => return fail(format!("检测模型加载失败：{e}")),
+        Err(e) => return sess.fail(format!("检测模型加载失败：{e}")),
     };
     let mut rec = match FaceRecognizer::load(&dir) {
         Ok(r) => r,
-        Err(e) => return fail(format!("识别模型加载失败：{e}")),
+        Err(e) => return sess.fail(format!("识别模型加载失败：{e}")),
     };
-    tag_log(&runner, "模型就绪 · YuNet + SFace".into());
+    sess.log("模型就绪 · YuNet + SFace".into());
 
     // ── 3. 检测 + 特征（锁外）──
     let opts = FaceBatchOpts::default();
@@ -960,15 +1022,11 @@ fn run_face_batch_blocking(app: tauri::AppHandle, library: String, mark_finished
         &mut rec,
         &opts,
         |p: &FaceProgress| {
-            if let Ok(mut g) = runner.lock() {
-                if let Some(r) = g.as_mut() {
-                    if let Some(t) = r.tag.as_mut() {
-                        t.phase = "face".into();
-                        t.face_done = p.done;
-                        t.done = p.done;
-                    }
-                }
-            }
+            sess.with_tag(|t| {
+                t.phase = "face".into();
+                t.face_done = p.done;
+                t.done = p.done;
+            });
             if p.done == p.total || p.done - last_log >= 10 {
                 last_log = p.done;
                 let tail = if p.faces > 0 {
@@ -976,27 +1034,48 @@ fn run_face_batch_blocking(app: tauri::AppHandle, library: String, mark_finished
                 } else {
                     String::new()
                 };
-                tag_log(&runner, format!("{}/{} · {}{tail}", p.done, p.total, p.name));
+                sess.log(format!("{}/{} · {}{tail}", p.done, p.total, p.name));
             }
+            // ⛔ 返回 false = 用户点了停止 → 不再解下一张
+            !sess.cancelled()
         },
     );
 
-    tag_log(
-        &runner,
-        format!(
-            "检测完成：{} 张图有脸 · 共 {} 张脸 · 失败 {} 张",
-            stats.with_face, stats.faces, stats.failed
-        ),
-    );
+    /*
+     * 停止发生在检测阶段：已经解过的图不必丢掉 —— 它们的人脸行还没写库，
+     * 但聚类只用内存向量，半批数据聚出来的簇会严重失真（10 张脸的簇
+     * 和 300 张脸的簇是完全不同的东西）。所以这里直接结束，不留半成品。
+     */
+    if sess.cancelled() {
+        sess.log(format!(
+            "已停止：已检测 {} 张（{} 张脸）· 未写库 · 用时 {:.1} 秒",
+            stats.with_face + stats.failed,
+            stats.faces,
+            t_start.elapsed().as_secs_f64()
+        ));
+        sess.with(|r| {
+            if let Some(t) = r.tag.as_mut() {
+                t.finished = true;
+                t.ok = false;
+            }
+            r.ok = false;
+        });
+        return;
+    }
+
+    sess.log(format!(
+        "检测完成：{} 张图有脸 · 共 {} 张脸 · 失败 {} 张",
+        stats.with_face, stats.faces, stats.failed
+    ));
     for e in &stats.errors {
-        tag_log(&runner, format!("跳过 {e}"));
+        sess.log(format!("跳过 {e}"));
     }
     if faces.is_empty() {
-        return fail("一张脸都没检测到（检查图库内容或降低检测门槛）".into());
+        return sess.fail("一张脸都没检测到（检查图库内容或降低检测门槛）".into());
     }
 
     // ── 4. 聚类（锁外）──
-    tag_log(&runner, "聚类中…".into());
+    sess.log("聚类中…".into());
     let embs: Vec<Vec<f32>> = faces.iter().map(|f| f.embedding.clone()).collect();
     let c_opts = ClusterOpts::default();
     let labels = two_stage_cluster(&embs, &c_opts);
@@ -1006,13 +1085,14 @@ fn run_face_batch_blocking(app: tauri::AppHandle, library: String, mark_finished
     }
     let multi = sizes.values().filter(|&&c| c >= c_opts.min_core).count();
     let singles = sizes.values().filter(|&&c| c < c_opts.min_core).count();
-    tag_log(
-        &runner,
-        format!("聚类完成：{} 个簇（≥{} 张的 {multi} 个）· 零散 {singles} 组", sizes.len(), c_opts.min_core),
-    );
+    sess.log(format!(
+        "聚类完成：{} 个簇（≥{} 张的 {multi} 个）· 零散 {singles} 组",
+        sizes.len(),
+        c_opts.min_core
+    ));
 
     // ── 5. 写库（锁内）──
-    tag_log(&runner, "写库中…".into());
+    sess.log("写库中…".into());
     let ver = format!(
         "sface_2021dec@{}",
         std::time::SystemTime::now()
@@ -1131,23 +1211,18 @@ fn run_face_batch_blocking(app: tauri::AppHandle, library: String, mark_finished
             } else {
                 String::new()
             };
-            tag_log(
-                &runner,
-                format!(
-                    "完成：写入 {written} 张脸 · 建了 {made} 个人物{extra} · 用时 {secs:.1} 秒"
-                ),
-            );
-            if let Ok(mut g) = runner.lock() {
-                if let Some(r) = g.as_mut() {
-                    if let Some(t) = r.tag.as_mut() {
-                        t.finished = mark_finished;
-                        t.ok = true;
-                    }
-                    r.ok = true;
+            sess.log(format!(
+                "完成：写入 {written} 张脸 · 建了 {made} 个人物{extra} · 用时 {secs:.1} 秒"
+            ));
+            sess.with(|r| {
+                if let Some(t) = r.tag.as_mut() {
+                    t.finished = mark_finished;
+                    t.ok = true;
                 }
-            }
+                r.ok = true;
+            });
         }
-        Err(e) => fail(format!("写库失败：{e}")),
+        Err(e) => sess.fail(format!("写库失败：{e}")),
     }
 }
 
@@ -1247,20 +1322,30 @@ pub async fn ai_library_status(
 fn run_pipeline_blocking(app: tauri::AppHandle, library: String) {
     run_tag_batch_blocking(app.clone(), library.clone(), false);
 
-    // 第一阶段失败（fail 里一定会把 finished 置真）→ 不再跑人脸
-    let failed = {
+    /*
+     * 打标阶段结束后要不要接着跑人脸？
+     *
+     * 三种收尾状态都会把 `finished` 置真：
+     * - 失败（`sess.fail`）→ `ok = false`
+     * - 用户点了停止 → `ok = false`
+     * - 跑完（`mark_finished = false` 只把 `ok` 置真，`finished` 仍为假）
+     *
+     * 所以「已结束且不成功」= 失败或中断，两种都不该再跑人脸 —— 尤其是中断：
+     * 用户按下停止的意图是「现在别算了」，接着起一个人脸阶段等于无视他的操作。
+     */
+    let aborted = {
         let runner: Arc<Mutex<Option<Running>>> = app.state::<AiRunner>().0.clone();
-        let mut g = runner.lock().ok();
+        let g = runner.lock().ok();
         let bad = g
-            .as_mut()
+            .as_ref()
             .and_then(|o| o.as_ref())
             .and_then(|r| r.tag.as_ref())
             .map(|t| t.finished && !t.ok)
-            .unwrap_or(false);
+            .unwrap_or(true); // 槽位已空 = 会话被顶掉，同样不该继续
         drop(g);
         bad
     };
-    if failed {
+    if aborted {
         return;
     }
 
@@ -1342,7 +1427,7 @@ fn read_f32(state: &AppState, key: &str, def: f32) -> f32 {
         .unwrap_or(def)
 }
 
-/// 启动一键任务。`task` 只有两种：`tag` / `face`。
+/// 启动一键任务。`task` 只有几种：`tag` / `face` / `pipeline`。
 ///
 /// 阈值等参数从设置里读，保证和界面上看到的一致 —— 别让用户改了滑块、
 /// 跑起来却是旧参数。
@@ -1355,10 +1440,14 @@ pub async fn ai_run_task(
     library: String,
 ) -> Result<String, ErrorDto> {
     let mut guard = runner.0.lock().map_err(|_| err("任务状态锁坏了".into()))?;
-    if let Some(r) = guard.as_mut() {
-        if r.child.is_some() {
-            return Err(err("已有任务在跑，先等它结束或点「停止」".into()));
-        }
+    /*
+     * ⚠️ 防重入必须用 `is_active()`，⛔ 不能只看 `child.is_some()`
+     * （2026-11 修）：Rust 任务的 `child` **恒为 `None`**，以前这么写等于
+     * 完全没防 —— 用户在打标进行中再点一次「开始」，后端就真的又起一个
+     * `spawn_blocking` 线程，两个线程同时往索引里 replace 标签。
+     */
+    if guard.as_ref().is_some_and(Running::is_active) {
+        return Err(err("已有任务在跑，先等它结束或点「停止」".into()));
     }
 
     /*
@@ -1494,6 +1583,9 @@ pub async fn ai_run_task(
         python,
         root,
         tag: None,
+        // Python 链路靠 kill 停，取消标志用不上；但仍要发号，`Session` 才能区分会话
+        id: next_session_id(),
+        cancel: Arc::new(AtomicBool::new(false)),
     };
     spawn_next(&mut running).map_err(err)?;
     let path = running.log.display().to_string();
@@ -1577,7 +1669,17 @@ pub async fn ai_task_status(runner: State<'_, AiRunner>) -> Result<AiTaskStatus,
     })
 }
 
-/// 停止当前任务（连子进程一起杀，别留孤儿 Python）。
+/// 停止当前任务。
+///
+/// ## 两条完全不同的路
+/// - **Python 子进程**（历史链路）：有 pid，`kill` + `wait` 收掉孤儿进程。
+/// - **Rust 批处理**（现在 `tag` / `face` / `pipeline` 全走这条）：
+///   跑在本进程的 `spawn_blocking` 线程里，**没有 pid 可杀**，唯一的停止方式
+///   是让它自己看到取消标志。
+///
+/// ⛔ 以前这里只 kill `child`（Rust 路径恒 `None`）就把槽位清空 —— 界面立刻
+/// 显示「已停止」，而线程还在解码、推理、**往索引里写标签**，能持续几十分钟。
+/// 现在必须先 `cancel.store(true)` 让线程**自己**在下一张图之前收手。
 #[tauri::command]
 pub async fn ai_task_stop(runner: State<'_, AiRunner>) -> Result<(), ErrorDto> {
     let mut guard = runner.0.lock().map_err(|_| err("任务状态锁坏了".into()))?;
@@ -1586,9 +1688,17 @@ pub async fn ai_task_stop(runner: State<'_, AiRunner>) -> Result<(), ErrorDto> {
             let _ = child.kill();
             let _ = child.wait();
         }
+        // Rust 路径的实际停止信号；`spawn_blocking` 线程在每张图上查它。
+        // ⚠️ 顺序要紧：先置标志，线程才有可能在下一次检查时看到。
+        run.cancel.store(true, Ordering::Relaxed);
         run.steps.clear();
         run.child = None;
     }
+    /*
+     * 槽位清空后，`Session::with` 的 `r.id == self.id` 校验会让旧线程的所有
+     * 写入静默丢弃 —— 所以这里不需要（也没法）等线程真正退出，界面不会因为
+     * 旧线程的进度回写而「停止之后又自己跳回来」。
+     */
     *guard = None;
     Ok(())
 }
@@ -1703,5 +1813,76 @@ mod tests {
         // 双引号转义
         let g = split_csv_line(r#"1,a,b,"他说""喵""",,c,是"#);
         assert_eq!(g[3], r#"他说"喵""#);
+    }
+
+    /*
+     * ── 任务生命周期护栏（2026-11 修的两处真 bug）──
+     *
+     * 这两个测试都不需要 `AppHandle`：它们只覆盖纯状态判断，
+     * 而 bug 恰恰就出在状态判断上。
+     */
+
+    fn 槽位() -> Arc<Mutex<Option<Running>>> {
+        Arc::new(Mutex::new(None))
+    }
+
+    fn 临时日志() -> PathBuf {
+        std::env::temp_dir().join(format!("pve-guard-{}.log", std::process::id()))
+    }
+
+    /// ⛔ 防重入不能只看 `child.is_some()` —— Rust 任务的 `child` 恒为 `None`，
+    /// 于是「打标进行中再点开始」会起第二个线程，两个线程同时 replace 标签。
+    #[test]
+    fn 打标会话没结束就算活跃() {
+        let mut r = Running::tag_session(临时日志());
+        assert!(r.child.is_none(), "Rust 任务本来就没有子进程");
+        assert!(r.is_active(), "← 这就是旧逻辑漏掉的那种「正在跑」");
+        r.tag.as_mut().unwrap().finished = true;
+        assert!(!r.is_active(), "结束后要放行下一次任务");
+    }
+
+    /// ⛔ 「停止 → 再开始」会把槽位整个换掉，旧线程必须写不进新会话 ——
+    /// 否则新任务的进度会被旧线程回写成 3/500，甚至一开就显示「已完成」。
+    #[test]
+    fn 旧会话写不进新会话() {
+        let s = 槽位();
+        *s.lock().unwrap() = Some(Running::tag_session(临时日志()));
+
+        // 会话 A 的凭据（等价于 `Session::take` 拿到的东西）
+        let (a_id, a_cancel) = {
+            let g = s.lock().unwrap();
+            let r = g.as_ref().unwrap();
+            (r.id, r.cancel.clone())
+        };
+        let a = Session {
+            runner: s.clone(),
+            id: a_id,
+            cancel: a_cancel.clone(),
+        };
+
+        // 用户点停止 → 立刻再开始（槽位换成会话 B）
+        a_cancel.store(true, Ordering::Relaxed);
+        *s.lock().unwrap() = Some(Running::tag_session(临时日志()));
+        assert!(a.cancelled(), "旧会话看得到停止标志");
+
+        // 旧线程照写：必须一行都进不了新会话
+        a.log("旧线程的一行".into());
+        a.with_tag(|t| t.done = 3);
+        {
+            let g = s.lock().unwrap();
+            let t = g.as_ref().unwrap().tag.as_ref().unwrap();
+            assert!(t.lines.is_empty(), "新会话日志被旧线程污染：{:?}", t.lines);
+            assert_eq!(t.done, 0, "新会话进度被旧线程改写");
+        }
+
+        // 同一会话内部照常可写（别把护栏做成「谁都不能写」）
+        let b = Session {
+            runner: s.clone(),
+            id: s.lock().unwrap().as_ref().unwrap().id,
+            cancel: Arc::new(AtomicBool::new(false)),
+        };
+        b.log("新线程的一行".into());
+        let g = s.lock().unwrap();
+        assert_eq!(g.as_ref().unwrap().tag.as_ref().unwrap().lines.len(), 1);
     }
 }

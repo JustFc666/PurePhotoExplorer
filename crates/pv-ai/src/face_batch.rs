@@ -122,6 +122,10 @@ pub struct FaceBatchStats {
 }
 
 /// 跑一批图：检测 + 特征。`on_progress` 每张调一次。
+///
+/// **回调返回 `false` = 到此为止**，循环立刻收尾并返回已累计的结果
+/// （理由同 [`crate::batch::tag_batch`]：取消标志不放这一层，
+/// 让回调返回值当信号，这个函数就能保持无状态、可单测）。
 pub fn detect_batch<F>(
     images: &[(i64, PathBuf)],
     det: &mut FaceDetector,
@@ -130,7 +134,7 @@ pub fn detect_batch<F>(
     mut on_progress: F,
 ) -> (Vec<DetectedFace>, FaceBatchStats)
 where
-    F: FnMut(&FaceProgress),
+    F: FnMut(&FaceProgress) -> bool,
 {
     let mut reg = DecoderRegistry::new();
     reg.register(Box::new(BitmapBackend));
@@ -146,7 +150,7 @@ where
             .unwrap_or_default();
         stats.images += 1;
 
-        match detect_one(&reg, det, rec, path, *id, opts) {
+        let keep_going = match detect_one(&reg, det, rec, path, *id, opts) {
             Ok(faces) => {
                 if !faces.is_empty() {
                     stats.with_face += 1;
@@ -159,7 +163,7 @@ where
                     total,
                     name,
                     faces: n,
-                });
+                })
             }
             Err(e) => {
                 stats.failed += 1;
@@ -171,8 +175,11 @@ where
                     total,
                     name,
                     faces: 0,
-                });
+                })
             }
+        };
+        if !keep_going {
+            break;
         }
     }
 

@@ -44,7 +44,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 "[{}/{}] {} → {} 张脸",
                 p.done, p.total, p.name, p.faces
             );
+            // 返回 false = 提前收尾（命令行走完，没有「停止」按钮）
+            true
         },
+
     );
 
     println!(

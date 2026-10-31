@@ -43,7 +43,12 @@ fn main() {
         &images,
         &mut tagger,
         &opts,
-        |p| println!("[{}/{}] {}", p.done, p.total, p.name),
+        // 返回 false = 提前收尾（命令行走完，没有「停止」按钮）
+        |p| {
+            println!("[{}/{}] {}", p.done, p.total, p.name);
+            true
+        },
+
         |d| {
             let terms: Vec<String> = d
                 .tags

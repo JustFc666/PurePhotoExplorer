@@ -82,10 +82,21 @@ pub struct BatchStats {
 
 /// 跑一批图。
 ///
-/// - `on_progress` 每张调一次（调用方负责限流，别每张都刷 UI）
+/// - `on_progress` 每张调一次（调用方负责限流，别每张都刷 UI）；
+///   **返回 `false` 表示「到此为止」**，循环立刻收尾并返回已累计的统计。
 /// - `on_done` 每张**成功**调一次，把标签交给调用方写库
 ///
 /// 单张失败不影响整批（坏文件、权限、RAW 变体都可能失败）。
+///
+/// ## 为什么进度回调要能叫停
+/// 取消标志没法放进这一层（这里是无状态的纯函数，要能单测）。而
+/// 「停止」只可能是调用方的事 —— 所以最省事的通道就是让回调的返回值
+/// 本身成为信号，不必引入 `Arc<AtomicBool>` 之类的共享状态。
+///
+/// ⚠️ **先 `on_done` 再 `on_progress`**（成功那一支）：写库发生在 `on_done`，
+/// 所以调用方在 `on_progress` 里看到的 `done` 已经包含刚落库的这张。
+/// 反过来说，**取消检查必须两处都放** —— 只放 `on_progress` 的话，
+/// 最后一张仍会被写进索引，用户点了停止却多出一张标签。
 pub fn tag_batch<F, G>(
     images: &[(i64, PathBuf)],
     tagger: &mut Tagger,
@@ -94,7 +105,7 @@ pub fn tag_batch<F, G>(
     mut on_done: G,
 ) -> BatchStats
 where
-    F: FnMut(&Progress),
+    F: FnMut(&Progress) -> bool,
     G: FnMut(TaggedImage),
 {
     let mut reg = DecoderRegistry::new();
@@ -109,7 +120,7 @@ where
             .map(|s| s.to_string_lossy().to_string())
             .unwrap_or_default();
 
-        match tag_one(&reg, tagger, path, opts) {
+        let keep_going = match tag_one(&reg, tagger, path, opts) {
             Ok(tags) => {
                 stats.ok += 1;
                 on_done(TaggedImage { image_id: *id, tags });
@@ -117,7 +128,7 @@ where
                     done: i + 1,
                     total,
                     name,
-                });
+                })
             }
             Err(e) => {
                 stats.failed += 1;
@@ -128,8 +139,11 @@ where
                     done: i + 1,
                     total,
                     name,
-                });
+                })
             }
+        };
+        if !keep_going {
+            break;
         }
     }
 
