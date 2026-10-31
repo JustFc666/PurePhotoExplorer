@@ -62,7 +62,6 @@ import { PhotoCard } from './PhotoCard'
 import {
   DEFAULT_LIB_NAME,
   PREFETCH_AHEAD,
-  SIDE_DEFAULT,
   filePathsOf,
   fmtCount,
   formatLabelOf,
@@ -363,7 +362,7 @@ export function ManagerView(props: Props) {
   )
 
   // ── 侧栏宽度：拖中间那条缝（2026-11 拆到 useSideResize）──
-  const { sideW, setSideW, resizing, onSplitDown } = useSideResize()
+  const { sideW, resetSide, resizing, onSplitDown } = useSideResize()
 
   /** 浏览 + 把树展开到那里（树展开失败不算错，主区照样切） */
   const browseWithReveal = useCallback(
@@ -1168,7 +1167,7 @@ export function ManagerView(props: Props) {
           aria-orientation="vertical"
           title="拖动调整侧栏宽度（双击恢复默认）"
           onMouseDown={onSplitDown}
-          onDoubleClick={() => setSideW(SIDE_DEFAULT)}
+          onDoubleClick={resetSide}
         />
 
         <section className="pv-mg-main">

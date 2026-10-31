@@ -24,8 +24,8 @@ import {
 export type SideResizeApi = {
   /** 当前宽度（px），直接喂给侧栏 */
   sideW: number
-  /** 双击拖拽条恢复默认宽度时用它 */
-  setSideW: (px: number) => void
+  /** 双击拖拽条：回默认宽度，**并且记下来** */
+  resetSide: () => void
   /** 正在拖（拖拽条要高亮） */
   resizing: boolean
   /** 拖拽条 `onMouseDown` */
@@ -52,6 +52,19 @@ export function useSideResize(): SideResizeApi {
     setResizing(true)
   }, [])
 
+  /**
+   * 双击回默认宽度。
+   *
+   * ⚠️ 必须**一起落盘**：双击只是「不拖了也要改宽度」，和拖拽是同一种意图。
+   * 早先只 `setSideW(SIDE_DEFAULT)` 不写盘，于是拖过之后再双击，图标看着回到
+   * 默认，重启又冒出上次拖出来的宽度 —— 和自己给用户的提示（「双击恢复默认」）
+   * 对不上。
+   */
+  const resetSide = useCallback(() => {
+    setSideW(SIDE_DEFAULT)
+    saveSideWidth(SIDE_DEFAULT)
+  }, [])
+
   useEffect(() => {
     if (!resizing) return
     const { startX, startW } = drag.current
@@ -73,5 +86,5 @@ export function useSideResize(): SideResizeApi {
     }
   }, [resizing])
 
-  return { sideW, setSideW, resizing, onSplitDown }
+  return { sideW, resetSide, resizing, onSplitDown }
 }
