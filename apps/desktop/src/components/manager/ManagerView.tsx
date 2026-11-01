@@ -1224,7 +1224,12 @@ export function ManagerView(props: Props) {
                  * 用户只能得出「人脸识别没完成」的结论（本次真实故障）。
                  */
                 void mgr.refreshMeta()
-                /* 人像条 / 人像墙各自持一份列表，单独广播一次 */
+                /*
+                 * 人像条 / 人像墙各自持一份列表，单独广播一次。
+                 *
+                 * ⚠️ notifyMetaChanged 不能在这里发：本组件自己就订阅着它，
+                 * 发了等于再重拉一遍（主区会多一次全量查询）。
+                 */
                 notifyPeopleChanged()
               }}
             />
@@ -1422,7 +1427,9 @@ export function ManagerView(props: Props) {
                     ? '这个目录里没有可浏览的图片'
                     : mgr.total === 0 && !mgr.searchInput && mgr.formats.length === 0
                       ? '图库里还没有照片。去左边右键一个目录，选「加入图库」'
-                      : '没有符合当前筛选的照片'}
+                      : mgr.activeFilters.length
+                        ? `没有同时满足 ${mgr.activeFilters.join(' + ')} 的照片。清掉筛选（或换回原来的范围）才能看到照片`
+                        : '没有符合当前筛选的照片'}
             </div>
           ) : mgr.viewMode === 'grid' ? (
             <div

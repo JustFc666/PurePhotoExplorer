@@ -332,4 +332,11 @@ export interface ManagerApi {
   setPersonFilter: (p: { id: number; name: string } | null) => void
   /** 当前范围的显示名（主区标题用） */
   scopeTitle: string
+  /**
+   * 当前生效的**叠加条件**描述（人物 / 标签 / 地点 / 搜索），空数组 = 没有。
+   *
+   * 空态要写清「为什么 0 张」。只写「没有符合当前筛选的照片」时，
+   * 用户完全看不出是哪个条件在卡着 —— 2026-11-01 就是这么被绕进去的。
+   */
+  activeFilters: string[]
 }

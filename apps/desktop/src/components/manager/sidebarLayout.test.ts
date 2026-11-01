@@ -206,8 +206,12 @@ describe('智能图库', () => {
     const fn = managerViewSrc + useManagerSrc
     expect(fn).toContain('mgr.createSmartLibrary(name, rule)')
     expect(useManagerSrc).toContain('await managerCreateSmartLibrary(name, rule)')
+    /*
+     * 2026-11-01：切换范围统一走 `changeScope`（它顺带清掉人物 / 标签 / 地点 /
+     * 搜索这些叠加条件）。断言跟着改口径 —— 语义没变，只是入口改名了。
+     */
     expect(useManagerSrc).toMatch(
-      /managerCreateSmartLibrary\(name, rule\)[\s\S]{0,200}refreshMeta\(\)[\s\S]{0,120}setScope\(/,
+      /managerCreateSmartLibrary\(name, rule\)[\s\S]{0,200}refreshMeta\(\)[\s\S]{0,120}changeScope\(/,
     )
   })
 })

@@ -85,6 +85,7 @@ import { buildGridItems } from './manager/gridItems'
 import { absOfFolder, errText, normPath } from './manager/utils'
 import { EVENT_SET_SORT, MANAGER_SORTS, readSortPref, readThumbTier, saveThumbTier, writeSortPref } from './manager/prefs'
 import type { GridItem, LibChoice, ManagerApi, Scope, ViewMode } from './manager/types'
+import { filtersToClearOnScopeChange, describeActiveFilters } from '../lib/scopeSwitch'
 
 /* ── 再导出：对外 API 面与拆分前完全一致 ─────────────────────────── */
 export type { GridItem, LibChoice, ManagerApi, Scope, ViewMode } from './manager/types'
@@ -162,6 +163,29 @@ export function useManager(): ManagerApi {
    * ⛔ 不要打开独立页面：用户要的是"效果和选 tag 一样"。
    */
   const [personFilter, setPersonFilterState] = useState<{ id: number; name: string } | null>(null)
+
+  /**
+   * 换范围 —— **所有切换范围的入口都必须走这里**，别直接调 `setScope`。
+   *
+   * ⛔⛔ 人物筛选不是 `scope` 的一部分，它是**叠在 scope 上的额外条件**。
+   * 2026-11-01 用户报「点过图像、正常浏览后切回别的图库，显示不了图片」：
+   * 点过人像头像 → `personFilter` 有值；再点侧栏另一个图库，条件就成了
+   * 「新图库 + 那个人」—— 那人没在这个库里拍过，结果恒为 0 张。
+   * 更迷惑的是标题读的是 `personFilter.name`，于是写着「未命名」，
+   * 看着像整个图库的数据都坏了。
+   */
+  const changeScope = useCallback((next: Scope | ((prev: Scope) => Scope)) => {
+    const clear = filtersToClearOnScopeChange()
+    if (clear.person) setPersonFilterState(null)
+    if (clear.tag) setTagFilter(null)
+    if (clear.place) setPlaceFilter([])
+    if (clear.search) {
+      setSearchTerm('')
+      setSearchInput('')
+    }
+    setScope(next)
+  }, [])
+
   const [camera, setCamera] = useState<string[]>([])
   const [searchInput, setSearchInput] = useState('')
   const [searchTerm, setSearchTerm] = useState('')
@@ -367,7 +391,7 @@ export function useManager(): ManagerApi {
       const token = ++browseToken.current
       // 新的一次浏览：之前读过的拍摄时间不算数了
       timesLoadedFor.current = null
-      setScope({ kind: 'browse', path, name })
+      changeScope({ kind: 'browse', path, name })
       setBusy(true)
       setError(null)
       try {
@@ -454,7 +478,7 @@ export function useManager(): ManagerApi {
         setScanInfo(
           `已加入「${target}」${scope}：新增 ${r.added} · 更新 ${r.changed} · 移除 ${r.removed}`,
         )
-        setScope({ kind: 'folder', id: r.folderId, path, name: folderName })
+        changeScope({ kind: 'folder', id: r.folderId, path, name: folderName })
         setQueryVersion((v) => v + 1)
         await refreshMeta()
       } catch (e) {
@@ -519,7 +543,7 @@ export function useManager(): ManagerApi {
             `已删除图库：清理 ${r.images} 张索引 · ${r.folders} 个目录 · ${r.thumbs} 个缩略图（原图都没动）`,
           )
         }
-        setScope((s) => (s.kind === 'library' && s.id === id ? { kind: 'all' } : s))
+        changeScope((s) => (s.kind === 'library' && s.id === id ? { kind: 'all' } : s))
         setQueryVersion((v) => v + 1)
         await refreshMeta()
       } catch (e) {
@@ -538,7 +562,7 @@ export function useManager(): ManagerApi {
    */
 
   const selectTag = useCallback((name: string) => {
-    setScope((prev) => ({
+    changeScope((prev) => ({
       kind: 'tag',
       name,
       // 只在「已进入某个图库」时把图库带过去；从「全部」点标签仍是全局
@@ -584,7 +608,7 @@ export function useManager(): ManagerApi {
     async (id: number) => {
       await managerDeleteTag(id)
       // 删的正是当前在看的标签 → 范围退回「全部照片」，别盯着一个不存在的标签
-      setScope((s) => (s.kind === 'tag' ? { kind: 'all' } : s))
+      changeScope((s) => (s.kind === 'tag' ? { kind: 'all' } : s))
       await refreshMeta()
     },
     [refreshMeta],
@@ -597,7 +621,7 @@ export function useManager(): ManagerApi {
    */
 
   const selectPlace = useCallback((name: string) => {
-    setScope({ kind: 'place', name })
+    changeScope({ kind: 'place', name })
     setQueryVersion((v) => v + 1)
   }, [])
 
@@ -615,7 +639,7 @@ export function useManager(): ManagerApi {
         await ensureOpen()
         const id = await managerCreateSmartLibrary(name, rule)
         await refreshMeta()
-        setScope({ kind: 'library', id, name })
+        changeScope({ kind: 'library', id, name })
         setQueryVersion((v) => v + 1)
         return id
       } catch (e) {
@@ -697,11 +721,11 @@ export function useManager(): ManagerApi {
   }, [addedFolders, browseDir, ensureOpen, libMembers, refreshMeta, scope])
 
   /** 回到「我的电脑」：清空主区（= 启动默认态）。 */
-  const goHome = useCallback(() => setScope({ kind: 'none' }), [])
+  const goHome = useCallback(() => changeScope({ kind: 'none' }), [])
 
-  const selectAllScope = useCallback(() => setScope({ kind: 'all' }), [])
+  const selectAllScope = useCallback(() => changeScope({ kind: 'all' }), [])
   const selectLibrary = useCallback(
-    (id: number, name: string) => setScope({ kind: 'library', id, name }),
+    (id: number, name: string) => changeScope({ kind: 'library', id, name }),
     [],
   )
   /** 点侧栏「已加入图库」里的目录：**不再扫描**，直接切过去看。 */
@@ -709,7 +733,7 @@ export function useManager(): ManagerApi {
     const path = absOfFolder(f)
     if (!path) return
     setRoot(path)
-    setScope({ kind: 'folder', id: f.id, path, name: f.name })
+    changeScope({ kind: 'folder', id: f.id, path, name: f.name })
   }, [])
 
   /**
@@ -749,7 +773,7 @@ export function useManager(): ManagerApi {
           `已移除「${f.name}」：目录 ${r.folders} · 照片 ${r.images} · 缓存 ${r.thumbs}${extra}`,
         )
         // 正看着被移除的目录就退回「全部照片」，否则会停在一个已经不存在的范围上
-        if (scope.kind === 'folder' && scope.id === f.id) setScope({ kind: 'all' })
+        if (scope.kind === 'folder' && scope.id === f.id) changeScope({ kind: 'all' })
         await refreshMeta()
         /*
          * 目录里的照片连同**人脸**一起被删了（`persons` 会少人、`face_count` 会变），
@@ -956,7 +980,7 @@ export function useManager(): ManagerApi {
   /** 标签条点二级类目：按这一组标签筛选（命中任一） */
   const selectTagGroup = useCallback((label: string, names: string[]) => {
     if (names.length === 0) return
-    setScope((prev) => {
+    changeScope((prev) => {
       if (prev.kind !== 'tagGroup') scopeBeforeTag.current = prev
       // 图库上下文：当前就在图库 → 用它；已经在标签筛选里 → 继承原来的；否则全局
       const libId =
@@ -978,7 +1002,7 @@ export function useManager(): ManagerApi {
     // 「我的电脑 → 测试图库 → 点全部」，此时 scope 还是 library、ref 还是 null，
     // 于是直接被踢回「我的电脑」。必须**只在标签筛选态下**才恢复，
     // 否则保持当前范围（点全部 = 看这个图库的全部照片）。
-    setScope((prev) =>
+    changeScope((prev) =>
       prev.kind === 'tagGroup' ? (scopeBeforeTag.current ?? { kind: 'none' }) : prev,
     )
   }, [])
@@ -1192,5 +1216,15 @@ export function useManager(): ManagerApi {
           : scope.kind === 'tagGroup'
             ? scope.label
             : scope.name,
+    /*
+     * 空态用来解释「为什么一张都没有」。只列真正在生效的条件，
+     * 顺序按用户点选的先后直觉：人 → 标签 → 地点 → 搜索。
+     */
+    activeFilters: describeActiveFilters({
+      personName: personFilter?.name,
+      tagFilter,
+      places: placeFilter,
+      search: searchTerm,
+    }),
   }
 }
