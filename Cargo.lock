@@ -3228,7 +3228,7 @@ dependencies = [
 
 [[package]]
 name = "photovault"
-version = "0.2.0"
+version = "1.0.0"
 dependencies = [
  "png 0.17.16",
  "pv-ai",
@@ -3454,7 +3454,7 @@ checksum = "1d8f70e07b9c3962945a74e59ca1c511bba65b6419468acc217c457d93f3c740"
 
 [[package]]
 name = "pv-ai"
-version = "0.2.0"
+version = "1.0.0"
 dependencies = [
  "fast_image_resize",
  "half",
@@ -3469,7 +3469,7 @@ dependencies = [
 
 [[package]]
 name = "pv-archive"
-version = "0.2.0"
+version = "1.0.0"
 dependencies = [
  "blake3",
  "pv-core",
@@ -3481,7 +3481,7 @@ dependencies = [
 
 [[package]]
 name = "pv-cache"
-version = "0.2.0"
+version = "1.0.0"
 dependencies = [
  "lru",
  "pv-core",
@@ -3492,7 +3492,7 @@ dependencies = [
 
 [[package]]
 name = "pv-core"
-version = "0.2.0"
+version = "1.0.0"
 dependencies = [
  "serde",
  "thiserror 1.0.69",
@@ -3501,7 +3501,7 @@ dependencies = [
 
 [[package]]
 name = "pv-decode"
-version = "0.2.0"
+version = "1.0.0"
 dependencies = [
  "avif-decode",
  "fast_image_resize",
@@ -3526,7 +3526,7 @@ dependencies = [
 
 [[package]]
 name = "pv-edit"
-version = "0.2.0"
+version = "1.0.0"
 dependencies = [
  "pv-core",
  "pv-index",
@@ -3537,14 +3537,14 @@ dependencies = [
 
 [[package]]
 name = "pv-geo"
-version = "0.2.0"
+version = "1.0.0"
 dependencies = [
  "serde",
 ]
 
 [[package]]
 name = "pv-index"
-version = "0.2.0"
+version = "1.0.0"
 dependencies = [
  "blake3",
  "pv-core",
@@ -3555,7 +3555,7 @@ dependencies = [
 
 [[package]]
 name = "pv-lib"
-version = "0.2.0"
+version = "1.0.0"
 dependencies = [
  "pv-index",
  "thiserror 1.0.69",
@@ -3563,7 +3563,7 @@ dependencies = [
 
 [[package]]
 name = "pv-meta"
-version = "0.2.0"
+version = "1.0.0"
 dependencies = [
  "chrono",
  "kamadak-exif",
@@ -3574,7 +3574,7 @@ dependencies = [
 
 [[package]]
 name = "pv-scan"
-version = "0.2.0"
+version = "1.0.0"
 dependencies = [
  "notify",
  "pv-core",
@@ -3584,7 +3584,7 @@ dependencies = [
 
 [[package]]
 name = "pv-store"
-version = "0.2.0"
+version = "1.0.0"
 dependencies = [
  "pv-cache",
  "pv-core",
@@ -3599,7 +3599,7 @@ dependencies = [
 
 [[package]]
 name = "pv-vault"
-version = "0.2.0"
+version = "1.0.0"
 dependencies = [
  "pv-core",
  "pv-index",

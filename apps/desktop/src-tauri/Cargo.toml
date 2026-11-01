@@ -1,6 +1,10 @@
 [package]
 name = "photovault"
-version = "0.2.0"
+# 跟着根 `Cargo.toml` 的 `[workspace.package] version` 走。
+# ⚠️ 这里原来是硬编码 "0.2.0"，改版本时容易漏 —— 而 `app_info` 返回的
+# 「构建号」正是 `env!("CARGO_PKG_VERSION")`，漏改就会出现「界面写 1.0、程序说 0.2」。
+# ⚠️ `tauri.conf.json` 的 `version` 仍需手工同步（安装包文件名用它）。
+version.workspace = true
 description = "PurePhotoExplorer - 多格式图像浏览与编辑软件"
 authors = ["PurePhotoExplorer"]
 edition = "2021"

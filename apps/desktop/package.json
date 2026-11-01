@@ -1,6 +1,6 @@
 {
   "name": "photovault",
-  "version": "0.2.0",
+  "version": "1.0.0",
   "description": "多格式图像浏览与编辑软件",
   "type": "module",
   "scripts": {

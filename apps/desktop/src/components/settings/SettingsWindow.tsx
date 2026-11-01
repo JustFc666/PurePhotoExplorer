@@ -32,7 +32,7 @@ import {
 import { managerLibraries, type LibraryItem } from '../../ipc/manager'
 import { AiRunPanel } from './AiRunPanel'
 import { ContextMenu } from '../chrome/ContextMenu'
-import type { AssociationState } from '../../ipc'
+import { getAppInfo, type AssociationState } from '../../ipc'
 import { open as openDialog, save as saveDialog } from '@tauri-apps/plugin-dialog'
 import {
   aiConfig,
@@ -1061,10 +1061,77 @@ function CachePage() {
   )
 }
 
+/**
+ * 关于页展示的**产品版本**（对外叫法）。
+ *
+ * ⛔ 这里写的不是构建号：构建号来自 `app_info`（真源是根 `Cargo.toml` 的
+ * `[workspace.package] version`），改版本时只改 Cargo.toml 那一处，这里跟着改文案。
+ * 之所以分成两个：用户认「Beta V1.0」，排查问题时认 `1.0.0`。
+ */
+const APP_VERSION_LABEL = 'Beta V1.0'
+const APP_AUTHOR = 'Jutsin F.'
+const APP_MAIL = 'fc666@hotmail.com'
+
 function AboutPage() {
+  const [build, setBuild] = useState<string | null>(null)
+  const [copied, setCopied] = useState(false)
+
+  // 构建号：拿不到就不显示（别显示成 undefined）
+  useEffect(() => {
+    let alive = true
+    getAppInfo()
+      .then((i) => {
+        if (alive) setBuild(i.version)
+      })
+      .catch(() => {
+        if (alive) setBuild(null)
+      })
+    return () => {
+      alive = false
+    }
+  }, [])
+
+  // 「已复制」1.6 秒后复原，和 `ErrorDetail` 的提示一个节奏
+  useEffect(() => {
+    if (!copied) return
+    const t = window.setTimeout(() => setCopied(false), 1600)
+    return () => window.clearTimeout(t)
+  }, [copied])
+
+  /**
+   * 邮箱**不做成 mailto 链接**：`app.rs::open_url` 只放行 http/https
+   * （刻意的白名单，不给 `file:` / `javascript:` 开口子），mailto 会被直接拒绝。
+   * 与其为了一个邮箱放宽安全策略，不如点一下复制。
+   */
+  const copyMail = () => {
+    navigator.clipboard
+      .writeText(APP_MAIL)
+      .then(() => setCopied(true))
+      .catch(() => {
+        /* 剪贴板不可用（远程桌面等）就当没点到，不弹错 */
+      })
+  }
+
   return (
     <>
       <h2 className="pv-set-h1">关于</h2>
+      <Row label="版本">
+        <div className="pv-set-info">
+          <span>{APP_VERSION_LABEL}</span>
+          {build && <span className="pv-about-version">构建 {build}</span>}
+        </div>
+      </Row>
+      <Row label="作者">
+        <div className="pv-set-info">{APP_AUTHOR}</div>
+      </Row>
+      <Row label="联系" hint="点击邮箱即可复制">
+        <div className="pv-set-info">
+          <button type="button" className="pv-about-mail" onClick={copyMail} title="点击复制邮箱">
+            {APP_MAIL}
+          </button>
+          {copied && <span className="pv-about-version">已复制</span>}
+        </div>
+      </Row>
       <Row label="软件">
         <div className="pv-set-info">PurePhotoExplorer · 图库模式（S2）· 内部代号 PhotoVault</div>
       </Row>
