@@ -115,9 +115,13 @@ def main() -> None:
     (stage / "portable").write_bytes(b"")
     (stage / "使用说明.txt").write_text(README.format(ver=ver), encoding="utf-8-sig")
 
-    out = OUT_DIR / f"PurePhotoExplorer_{ver}_win64_portable.zip"
+    out = OUT_DIR / (sys.argv[1] if len(sys.argv) > 1 else f"PurePhotoExplorer_{ver}_win64_portable.zip")
     if out.exists():
-        out.unlink()
+        # 旧包常被 7-Zip / 资源管理器占用，删不掉就换个名字，别整个打包流程失败
+        try:
+            out.unlink()
+        except OSError as e:
+            sys.exit(f"{out.name} 正被其他程序占用（{e}），先关掉 7-Zip / 资源管理器，或换个名字：\n    python scripts/pack_portable.py 另一个名字.zip")
 
     total = 0
     with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED, compresslevel=1) as z:
