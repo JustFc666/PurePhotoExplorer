@@ -1,0 +1,288 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>代码地图：每个文件负责什么、用了什么算法 · PurePhotoExplorer</title>
+<meta name="description" content="配套上一份说明的实用版：想知道某个功能在哪个文件、某段代码用了什么算法，直接查表。"/>
+<style>
+:root{
+  --font-sans:"PingFang SC","Microsoft YaHei UI","Microsoft YaHei","Segoe UI",system-ui,sans-serif;
+  --font-mono:"Cascadia Code","Cascadia Mono",Consolas,"SF Mono",Menlo,monospace;
+  --bg:#FBFAF7;
+  --surface:#FFFFFF;
+  --text:#26262A;
+  --muted:#63625D;
+  --faint:#8A8983;
+  --line:#E6E3DA;
+  --accent:#185FA5;
+  --accent-soft:#E6F1FB;
+  --warm:#854F0B;
+  --warm-soft:#FAEEDA;
+  --code-bg:#F5F4EE;
+}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{
+  margin:0;background:var(--bg);color:var(--text);
+  font-family:var(--font-sans);font-size:16px;line-height:1.85;
+  -webkit-font-smoothing:antialiased;
+}
+.wrap{max-width:1180px;margin:0 auto;padding:0 28px}
+
+.hero{padding:72px 0 44px;border-bottom:1px solid var(--line);background:var(--surface)}
+.kicker{margin:0 0 14px;font-size:13px;letter-spacing:.12em;color:var(--faint);text-transform:uppercase}
+.hero h1{margin:0 0 20px;font-size:38px;line-height:1.3;font-weight:500;letter-spacing:-.01em}
+.lede{margin:0;max-width:660px;font-size:17px;color:var(--muted)}
+.facts{display:flex;flex-wrap:wrap;gap:10px;margin:28px 0 0;padding:0;list-style:none}
+.facts li{
+  font-size:13px;color:var(--muted);background:var(--bg);
+  border:1px solid var(--line);border-radius:999px;padding:5px 14px;
+}
+
+.layout{display:grid;grid-template-columns:268px minmax(0,1fr);gap:52px;padding:48px 0 96px}
+.toc{position:sticky;top:28px;align-self:start;max-height:calc(100vh - 56px);overflow:auto}
+.toc h2{margin:0 0 14px;font-size:12px;letter-spacing:.08em;color:var(--faint);font-weight:500;text-transform:uppercase}
+.toc ol{margin:0;padding:0;list-style:none;border-left:1px solid var(--line)}
+.toc li.grp{position:relative}
+.toc li.grp>a{
+  display:block;
+  padding:5px 16px 5px 14px;margin-left:-1px;border-left:2px solid transparent;
+  color:var(--muted);text-decoration:none;font-size:13px;line-height:1.55;cursor:pointer;
+}
+.toc li.grp>a:hover{color:var(--accent)}
+.toc li.grp>a.lv3{padding-left:28px;font-size:12.5px;color:var(--faint)}
+.toc a.on{color:var(--accent);border-left-color:var(--accent);font-weight:500}
+.toc .caret{position:absolute;right:2px;top:9px;font-size:9px;color:var(--faint);transition:transform .15s ease}
+.toc li.grp.open>a .caret{transform:rotate(90deg)}
+.toc .sub{display:none;margin:0;padding:0;list-style:none;border-left:0}
+.toc li.grp.open .sub{display:block}
+.toc .sub a{
+  display:block;padding:4px 0 4px 28px;margin-left:-1px;border-left:2px solid transparent;
+  color:var(--faint);text-decoration:none;font-size:12.5px;line-height:1.5;
+}
+.toc .sub a:hover{color:var(--accent)}
+.toc .sub a.on{color:var(--accent);border-left-color:var(--accent);font-weight:500}
+
+.doc{min-width:0;max-width:760px}
+.doc h2{
+  margin:64px 0 20px;font-size:26px;line-height:1.35;font-weight:500;
+  padding-bottom:12px;border-bottom:1px solid var(--line);
+}
+.doc h2:first-child{margin-top:0}
+.doc h3{margin:40px 0 14px;font-size:19px;font-weight:500;color:var(--text)}
+.doc p{margin:0 0 18px}
+.doc strong{font-weight:500;color:#111114}
+.doc ul,.doc ol{margin:0 0 20px;padding-left:22px}
+.doc li{margin:7px 0}
+.doc li::marker{color:var(--faint)}
+
+.doc code{
+  font-family:var(--font-mono);font-size:.875em;
+  background:var(--code-bg);border:1px solid var(--line);border-radius:4px;
+  padding:1px 5px;color:#3C3489;
+}
+pre.code{
+  margin:0 0 22px;padding:18px 20px;background:var(--code-bg);
+  border:1px solid var(--line);border-radius:10px;overflow-x:auto;
+  font-family:var(--font-mono);font-size:13px;line-height:1.7;
+}
+pre.code code{background:none;border:0;padding:0;color:#33323A;font-size:13px;white-space:pre}
+
+.table-wrap{margin:0 0 24px;overflow-x:auto;border:1px solid var(--line);border-radius:10px;background:var(--surface)}
+table{border-collapse:collapse;width:100%;font-size:14.5px}
+th,td{padding:11px 16px;text-align:left;vertical-align:top;border-bottom:1px solid var(--line)}
+th{background:var(--bg);font-weight:500;color:var(--muted);font-size:13px;white-space:nowrap}
+tbody tr:last-child td{border-bottom:0}
+tbody tr:hover{background:#FCFBF7}
+td code{font-size:13px}
+td:first-child code{white-space:nowrap}
+
+blockquote.note{
+  margin:0 0 22px;padding:16px 20px;background:var(--accent-soft);
+  border-left:3px solid var(--accent);border-radius:0 8px 8px 0;color:#1B3A57;
+}
+blockquote.note p{margin:0 0 10px;font-size:15px}
+blockquote.note p:last-child{margin:0}
+
+hr.sep{border:0;border-top:1px solid var(--line);margin:48px 0}
+
+figure.fig{margin:8px 0 28px;padding:20px 16px 12px;background:var(--surface);
+  border:1px solid var(--line);border-radius:12px}
+figure.fig svg{display:block;width:100%;height:auto}
+figcaption{margin-top:12px;text-align:center;font-size:13px;color:var(--faint)}
+
+footer.end{border-top:1px solid var(--line);padding:32px 0 64px;background:var(--surface)}
+footer.end p{margin:0;font-size:13.5px;color:var(--faint)}
+
+@media (max-width:960px){
+  .wrap{padding:0 20px}
+  .hero{padding:48px 0 32px}
+  .hero h1{font-size:29px}
+  .layout{grid-template-columns:minmax(0,1fr);gap:32px;padding:32px 0 64px}
+  .toc{position:static;max-height:none;padding-bottom:8px;border-bottom:1px solid var(--line)}
+  .toc ol{columns:2;column-gap:24px;border-left:0}
+  .toc a{padding-left:0}
+  .toc a.lv3{display:none}
+  .doc h2{font-size:22px;margin-top:48px}
+}
+@media print{
+  body{background:#fff;font-size:11.5pt}
+  .toc{display:none}
+  .layout{display:block;padding:0}
+  .hero{border:0;padding:0 0 24px}
+  .doc{max-width:none}
+  pre.code,figure.fig,.table-wrap{break-inside:avoid}
+  .doc h2{break-after:avoid}
+}
+</style>
+</head>
+<body>
+<header class="hero">
+  <div class="wrap">
+    <p class="kicker">PurePhotoExplorer · 技术说明</p>
+    <h1>代码地图：每个文件负责什么、用了什么算法</h1>
+    <p class="lede">配套上一份说明的实用版：想知道某个功能在哪个文件、某段代码用了什么算法，直接查表。</p>
+    <ul class="facts"><li>后端 99 个文件 · 前端 104 个文件</li><li>13 个 crate + 41 个命令层文件</li><li>92 个 Tauri 命令</li><li>25 个算法反查</li></ul>
+  </div>
+</header>
+<div class="wrap">
+  <div class="layout">
+    <nav class="toc"><h2>目录</h2><ol><li class="grp"><a class="lv2" href="#h2"><span>怎么读这张表</span></a></li><li class="grp"><a class="lv2" href="#h3"><span>一、后端：13 个 crate</span><span class="caret">▶</span></a><ul class="sub"><li><a href="#h4">1.1 `pv-core` —— 公共地基（1,115 行）</a></li><li><a href="#h5">1.2 `pv-decode` —— 解码（8,782 行，最大的车间）</a></li><li><a href="#h6">1.3 `pv-meta` —— EXIF（2,235 行）</a></li><li><a href="#h7">1.4 `pv-index` —— 索引与 SQL（4,658 行）</a></li><li><a href="#h8">1.5 `pv-scan` —— 文件系统 → 索引（1,359 行）</a></li><li><a href="#h9">1.6 `pv-store` —— 服务层（3,612 行）</a></li><li><a href="#h10">1.7 `pv-cache` —— 两级缓存（483 行）</a></li><li><a href="#h11">1.8 `pv-ai` —— 打标与人脸（2,050 行）</a></li><li><a href="#h12">1.9 其余四个小 crate</a></li></ul></li><li class="grp"><a class="lv2" href="#h13"><span>二、Tauri 命令层（10,830 行）</span></a></li><li class="grp"><a class="lv2" href="#h14"><span>三、前端（23,178 行）</span><span class="caret">▶</span></a><ul class="sub"><li><a href="#h15">3.1 组合根与状态</a></li><li><a href="#h16">3.2 图库视图 `components/manager/`</a></li><li><a href="#h17">3.3 单图查看器 `components/viewer/`</a></li><li><a href="#h18">3.4 通用零件 `components/chrome/`、`icons/`</a></li><li><a href="#h19">3.5 `hooks/`（行为逻辑）</a></li><li><a href="#h20">3.6 `ipc/`（唯一出口）</a></li><li><a href="#h21">3.7 `lib/` 与 `constants/`</a></li></ul></li><li class="grp"><a class="lv2" href="#h22"><span>四、算法反查表</span></a></li><li class="grp"><a class="lv2" href="#h23"><span>五、一条完整链路：点「AI 识别」会发生什么</span></a></li><li class="grp"><a class="lv2" href="#h24"><span>最后</span></a></li></ol></nav>
+    <main class="doc">
+<blockquote class="note">
+<p>配套《一个照片管理器是怎么造出来的》，这份更"实用"：<strong>想知道某个功能在哪个文件、某段代码用了什么算法，直接查表</strong>。</p>
+<p>行数统计的是<strong>生产代码</strong>（不含测试模块）。同一个文件里测试占大头的会在备注里说明。</p>
+</blockquote>
+<hr class="sep"/>
+<h2 id="h2">怎么读这张表</h2>
+<p>三列：</p>
+<ul>
+<li><strong>文件</strong> —— 相对路径，点进编辑器就能定位</li>
+<li><strong>负责什么</strong> —— 一句话说清它的边界（不含的就别指望它）</li>
+<li><strong>算法 / 关键实现</strong> —— 真正"有技术含量"的部分；没有写"——"表示这里主要是搬数据</li>
+</ul>
+<p>先看第四节「算法反查表」也行：那是按算法名反查文件的索引，讲到某个算法时最好用。</p>
+<hr class="sep"/>
+<h2 id="h3">一、后端：13 个 crate</h2>
+<h3 id="h4">1.1 <code>pv-core</code> —— 公共地基（1,115 行）</h3>
+<p>所有 crate 都依赖它，它不依赖任何人。</p>
+<div class="table-wrap"><table><thead><tr><th>文件</th><th>负责什么</th><th>算法 / 关键实现</th></tr></thead><tbody><tr><td><code>src/format.rs</code>（517）</td><td>图像格式探测：给一段字节，判断是什么格式</td><td><strong>只看魔数，不信扩展名</strong>。TIFF 的 <code>II*\0</code> / <code>MM\0*</code> 与 RAW 撞车，这里<strong>统一判成 <code>OtherRaw</code></strong>，留给解码层二次判定</td></tr><tr><td><code>src/raw.rs</code>（321）</td><td>RAW 两阶段管线的接口约定</td><td>阶段一「扫内嵌 JPEG 预览」够快够用；阶段二「全解码」按需升级。接口分离是为了让上层不必知道用的是哪阶段</td></tr><tr><td><code>src/error.rs</code>（85）</td><td>统一错误类型</td><td>一个 enum 覆盖所有 crate 的失败原因，上层一次 <code>match</code> 就能分诊</td></tr><tr><td><code>src/lib.rs</code>（21）</td><td>门面导出</td><td>——</td></tr></tbody></table></div>
+<h3 id="h5">1.2 <code>pv-decode</code> —— 解码（8,782 行，最大的车间）</h3>
+<p>17 种格式，全部纯 Rust，不依赖系统编解码器。</p>
+<div class="table-wrap"><table><thead><tr><th>文件</th><th>负责什么</th><th>算法 / 关键实现</th></tr></thead><tbody><tr><td><code>bitmap/jpeg.rs</code>（174）</td><td>JPEG 解码</td><td><code>zune-jpeg</code>。<strong>关键：DCT 缩放</strong> —— 在熵解码阶段只取 1/2～1/8 的系数块，直接得到缩小图，内存降 64 倍</td></tr><tr><td><code>bitmap/png.rs</code>（83）</td><td>PNG 解码</td><td><code>image</code> crate，含 16bpp → 8bpp 降位</td></tr><tr><td><code>bitmap/gif.rs</code>（253）</td><td>GIF 解码 + 动图多帧合成</td><td>按帧的 disposal method（不处理 / 保留 / 还原背景）逐帧叠加，得到每帧完整画面</td></tr><tr><td><code>bitmap/webp.rs</code>（363）</td><td>WebP</td><td>有损 VP8 / 无损 VP8L / 动画三种走不同分支</td></tr><tr><td><code>bitmap/heif.rs</code>（182）</td><td>HEIC/HEIF</td><td><code>heif-oxide</code> 解容器 + <code>rust_h265</code> 解 HEVC 码流，<strong>全纯 Rust</strong>（不装 HEVC 扩展也能开）</td></tr><tr><td><code>bitmap/avif.rs</code>（201）</td><td>AVIF</td><td>AV1-in-ISOBMFF，<code>ravif</code> / <code>avif-decode</code></td></tr><tr><td><code>bitmap/bmp.rs</code>（882）</td><td>BMP</td><td><strong>纯手写解析</strong>：1/4/8/16/24/32bpp、RLE4/RLE8 压缩、自底向上/自顶向下两种行序。测试占 415 行</td></tr><tr><td><code>bitmap/psd.rs</code>（694）</td><td>PSD / PSB</td><td><strong>纯手写</strong>：PackBits RLE 解压、多图层按混合模式合成取合成图</td></tr><tr><td><code>bitmap/tiff.rs</code>（265）</td><td>TIFF</td><td><code>tiff</code> crate，基线 TIFF + LZW / PackBits</td></tr><tr><td><code>bitmap/resize.rs</code>（114）</td><td>缩放</td><td><code>fast_image_resize</code>：<strong>面积加权</strong>重采样 + SIMD + rayon 多线程。⛔ 不开多线程会慢 8 倍</td></tr><tr><td><code>bitmap/convert.rs</code>（144）</td><td>各色彩空间 → RGBA8</td><td>灰度 / CMYK / 16bpp / 带 alpha 各自换算</td></tr><tr><td><code>bitmap/probe.rs</code>（203）</td><td>只读头拿尺寸</td><td>不解码像素 —— 列表页显示「宽 × 高」靠它，比解码快两个数量级</td></tr><tr><td><code>bitmap/anim.rs</code>（56）</td><td>动图通用类型与资源上限</td><td>帧数 / 总像素上限，防止一张恶意 GIF 吃光内存</td></tr><tr><td><code>decoder/registry.rs</code>（317）</td><td>格式 → 后端路由</td><td><strong>TIFF 歧义解法</strong>：先按 RAW 试，失败降级 TIFF。⛔ 别改 <code>detect()</code> 去区分，那个函数必须保持"只看魔数"</td></tr><tr><td><code>decoder/target.rs</code>（117）</td><td>目标尺寸与等比缩放</td><td>四档：Preview 长边 2048 / Thumb 256 / Edit 4096 / Export 原图</td></tr><tr><td><code>decoder/traits.rs</code>（37）</td><td>解码 trait</td><td>所有后端实现同一套接口</td></tr><tr><td><code>decoder/rgba.rs</code>（60）</td><td>解码产物</td><td>8bit RGBA 像素图 + stride</td></tr><tr><td><code>transform.rs</code>（583）</td><td>旋转 / 裁剪</td><td><strong>只做 90° 整数倍旋转 + 按比例裁剪</strong>。任意角度只存在于预览层 —— 写回会扩边或裁角，永久损失像素，且"所见非所得"</td></tr><tr><td><code>encode.rs</code>（723）</td><td>编码写回</td><td>JPEG（质量可调）/ PNG / BMP；测试占 358 行</td></tr><tr><td><code>raw/jpeg_scan.rs</code>（264）</td><td>在 RAW 里扫内嵌 JPEG</td><td>按 SOI/EOI 标记找最大的一段 —— 相机存的预览图</td></tr><tr><td><code>raw/pipeline.rs</code>（266）</td><td>RAW 两阶段编排</td><td>先出预览，用户要编辑时才走全解码</td></tr><tr><td><code>raw/mod.rs</code>（495）</td><td>RAW 统一入口</td><td>各厂牌（CR3/DNG/NRW/RAF/RW2/ORF/SR2/SRF）的分发</td></tr><tr><td><code>thumbs.rs</code>（221）</td><td>缩略图生成</td><td>解码 → 目标尺寸 → 编码成缓存块</td></tr><tr><td><code>lib.rs</code>（58）</td><td>对外 API</td><td>——</td></tr></tbody></table></div>
+<h3 id="h6">1.3 <code>pv-meta</code> —— EXIF（2,235 行）</h3>
+<div class="table-wrap"><table><thead><tr><th>文件</th><th>负责什么</th><th>算法 / 关键实现</th></tr></thead><tbody><tr><td><code>exif/mod.rs</code>（1111）</td><td>文件 → <code>ExifData</code></td><td><code>kamadak-exif</code>。<strong>两种读法</strong>：<code>II</code>/<code>MM</code> 直接当裸 TIFF 读（覆盖 ORF/RW2），其余走 <code>read_from_container</code>。探嗅后<strong>必须 <code>seek(0)</code></strong>，否则后续解码读到空</td></tr><tr><td><code>exif/extract.rs</code>（214）</td><td>从字段表里取值填模型</td><td>逐 tag 映射，缺字段留 <code>None</code> 而不是填默认值</td></tr><tr><td><code>exif/format.rs</code>（398）</td><td>数值 → 展示字符串</td><td><strong>纯函数</strong>：光圈 <code>f/1.8</code>、快门 <code>1/250s</code>、焦距 <code>35mm</code>、GPS 度分秒。无 IO 无状态，全部可单测</td></tr><tr><td><code>exif/rewrite.rs</code>（458）</td><td>改写 EXIF 字节</td><td>⭐ 核心难点：<strong>只有 <code>count==1</code> 且 <code>type∈{SHORT,LONG}</code> 才是内联值</strong>，否则值域存的是偏移量。写错就把指针改坏、整份 EXIF 报废。看不懂就整份放弃（返回 <code>None</code>）</td></tr></tbody></table></div>
+<h3 id="h7">1.4 <code>pv-index</code> —— 索引与 SQL（4,658 行）</h3>
+<div class="table-wrap"><table><thead><tr><th>文件</th><th>负责什么</th><th>算法 / 关键实现</th></tr></thead><tbody><tr><td><code>schema.rs</code>（240）</td><td>16 张表的 DDL</td><td>索引建在 <code>(library_id, taken_at)</code>、<code>(volume_id, rel_path)</code> 这些高频路径上</td></tr><tr><td><code>migrations.rs</code>（51）</td><td>schema 版本迁移</td><td>版本号 + 顺序脚本</td></tr><tr><td><code>conn.rs</code>（47）</td><td>连接与 PRAGMA</td><td><code>journal_mode=WAL</code>、<code>synchronous=NORMAL</code></td></tr><tr><td><code>cache_key.rs</code>（326）</td><td>缩略图缓存键</td><td><strong>blake3(规范化路径 ‖ size ‖ mtime_ns ‖ 档位)</strong>。⛔ 不含盘符 —— 移动硬盘换接口不能让缓存全废</td></tr><tr><td><code>repo/query.rs</code>（835）</td><td>组合查询</td><td>动态拼 SQL（条件按需追加，不拼字符串值，全走绑定）；分页 <code>LIMIT/OFFSET</code> + 单独 <code>count</code>；排序 <code>COALESCE(taken_at, added_ts)</code>。测试占 424 行</td></tr><tr><td><code>repo/tags.rs</code>（625）</td><td>标签读写与计数</td><td>⭐ <code>ensure</code> 的 <code>kind</code> <strong>只升不降</strong>：<code>NULL</code>/<code>exif</code> 才能被真标签覆盖，反向不许把 <code>user</code>/<code>ai</code> 藏回去</td></tr><tr><td><code>repo/images.rs</code>（379）</td><td>图像行的增删改查</td><td>删除后要触发人物重算</td></tr><tr><td><code>repo/persons.rs</code>（305）</td><td>人物</td><td>只删孤儿（<code>NOT EXISTS</code> 子查询），⛔ 不能 <code>DELETE FROM persons</code> —— 会连别的图库的人一起删</td></tr><tr><td><code>repo/faces.rs</code>（291）</td><td>人脸向量与框</td><td>向量存 BLOB（f32 小端数组）</td></tr><tr><td><code>repo/volumes.rs</code>（184）</td><td>磁盘卷</td><td>⛔ 卷路径比较<strong>必须先规范化</strong>（去尾反斜杠、转小写），差一个字符就建出第二条卷</td></tr><tr><td><code>repo/libraries.rs</code>（154）</td><td>图库</td><td>删库只删 <code>libraries</code> + <code>library_folders</code>，不碰照片</td></tr><tr><td><code>repo/folders.rs</code>（117）</td><td>目录树</td><td>扁平表 + <code>parent_id</code> 表达层级</td></tr><tr><td><code>repo/places.rs</code>（131）</td><td>地点</td><td>——</td></tr><tr><td><code>repo/thumbs.rs</code>（45）</td><td>缩略图记录</td><td>——</td></tr><tr><td><code>repo/fts.rs</code>（45）</td><td>全文检索</td><td><strong>保留但未启用</strong>：FTS5 的 <code>unicode61</code> 不切中文，中文搜索改走 <code>LIKE</code> + 多词 AND</td></tr><tr><td><code>models.rs</code>（335）</td><td>行结构体</td><td>与 DDL 一一对应</td></tr><tr><td><code>lib.rs</code>（340）</td><td>门面</td><td>——</td></tr></tbody></table></div>
+<h3 id="h8">1.5 <code>pv-scan</code> —— 文件系统 → 索引（1,359 行）</h3>
+<div class="table-wrap"><table><thead><tr><th>文件</th><th>负责什么</th><th>算法 / 关键实现</th></tr></thead><tbody><tr><td><code>volume.rs</code>（140）</td><td>绝对路径 → 卷身份</td><td>取卷 GUID + 挂载点；<strong>身份不依赖盘符</strong></td></tr><tr><td><code>walker.rs</code>（207）</td><td>遍历目录读候选</td><td>单层 / 递归两种</td></tr><tr><td><code>format.rs</code>（109）</td><td>扫描时的格式判定</td><td><strong>只看魔数</strong>，扩展名只用来快速跳过明显不是图的</td></tr><tr><td><code>plan.rs</code>（63）</td><td><strong>增量三态 diff</strong></td><td>磁盘现状 vs 已索引 → 新增 / 变化（size 或 mtime 变了）/ 消失。只处理差异，不重扫全库</td></tr><tr><td><code>apply.rs</code>（67）</td><td>把差异写进索引</td><td><strong>单事务</strong>：要么整批成功，要么全回滚</td></tr><tr><td><code>tree.rs</code>（154）</td><td>递归首扫</td><td>建目录树 + 挂图像</td></tr><tr><td><code>watch.rs</code>（204）</td><td>实时监听</td><td><code>notify</code> 事件 → <strong>去抖聚合</strong>（静默一段时间才投递）→ 一批「要重扫的目录」。避免解压一个包触发上千次扫描</td></tr><tr><td><code>lib.rs</code>（415）</td><td>编排</td><td>——</td></tr></tbody></table></div>
+<h3 id="h9">1.6 <code>pv-store</code> —— 服务层（3,612 行）</h3>
+<p>把解码、索引、缓存串成界面能直接用的 API。命令层主要跟它打交道。</p>
+<div class="table-wrap"><table><thead><tr><th>文件</th><th>负责什么</th><th>算法 / 关键实现</th></tr></thead><tbody><tr><td><code>lib.rs</code>（1348）</td><td>总装：<code>Store</code> 结构体</td><td>生产代码约 244 行，<strong>其余 1100 行是测试</strong> —— 别按总行数拆</td></tr><tr><td><code>library.rs</code>（369）</td><td>图库：挂目录、建/改名/删、按库取图</td><td>建库时校验规则；删库不碰文件</td></tr><tr><td><code>export.rs</code>（322）</td><td>批量导出</td><td><strong>字节复制</strong>（不重新编码），保留原文件属性</td></tr><tr><td><code>dims.rs</code>（229）</td><td>尺寸 / 方向 / 拍摄时间回填</td><td>只对缺字段的行跑，避免全表重算</td></tr><tr><td><code>tags.rs</code>（187）</td><td>标签读写、计数、改名、删除</td><td>计数必须同带 scope，否则数字对不上</td></tr><tr><td><code>query.rs</code>（137）</td><td>查询聚合、侧栏节点、全库统计</td><td>——</td></tr><tr><td><code>places.rs</code>（119）</td><td>坐标 → 地名，落 <code>image_places</code></td><td><strong>两段式</strong>：有坐标的纯 SQL 回填；没有的先读 EXIF 补，没 GPS 也落行（避免反复重试）</td></tr><tr><td><code>thumb.rs</code>（108）</td><td>缩略图三级回退</td><td><strong>L1 内存 → L2 磁盘 → 现生成</strong>。读 L2 时必须 <code>exact(档位)</code>，⛔ 不能传 <code>new(Thumbnail)</code> 否则会被重缩成 256</td></tr><tr><td><code>browse.rs</code>（69）</td><td>浏览模式列目录</td><td><strong>不写索引、不写缓存</strong> —— 左键点文件夹走这条</td></tr><tr><td><code>fileops.rs</code>（148）</td><td>改名、从索引移除</td><td>移除 = 删索引 + 删缓存，<strong>绝不碰原图</strong></td></tr><tr><td><code>scan.rs</code>（62）</td><td>入库扫描编排</td><td>——</td></tr></tbody></table></div>
+<h3 id="h10">1.7 <code>pv-cache</code> —— 两级缓存（483 行）</h3>
+<div class="table-wrap"><table><thead><tr><th>文件</th><th>负责什么</th><th>算法 / 关键实现</th></tr></thead><tbody><tr><td><code>l1.rs</code>（115）</td><td>内存缩略图缓存</td><td><strong>按字节预算的 LRU</strong>，默认 512 MB；命中会提升热度</td></tr><tr><td><code>l2.rs</code>（173）</td><td>磁盘缩略图库</td><td>分块文件 + 内存索引；按档位分目录</td></tr><tr><td><code>lib.rs</code>（195）</td><td>对外统一接口</td><td>——</td></tr></tbody></table></div>
+<h3 id="h11">1.8 <code>pv-ai</code> —— 打标与人脸（2,050 行）</h3>
+<p>全部本地跑，ONNX Runtime + DirectML，不联网。</p>
+<div class="table-wrap"><table><thead><tr><th>文件</th><th>负责什么</th><th>算法 / 关键实现</th></tr></thead><tbody><tr><td><code>tagger.rs</code>（270）</td><td>CN-CLIP 零样本打标</td><td>预处理：短边 224 → 中心裁剪 → mean/std 归一化 → RGB → CHW。<strong>向量先归一化，之后点积就等于余弦</strong>。阈值 0.39（二级）/ 0.35（一级），最多 6 个标签</td></tr><tr><td><code>face.rs</code>（382）</td><td>人脸检测 + 特征</td><td><strong>YuNet</strong> 检测（输入 2048 长边、最小脸 56px）+ <strong>SFace</strong> 提 128 维特征；<code>cosine()</code> 单独可测</td></tr><tr><td><code>face_batch.rs</code>（345）</td><td>批量人脸</td><td>同一张图里去重（余弦超阈值算同一张脸）</td></tr><tr><td><code>cluster.rs</code>（248）</td><td>人脸聚类</td><td>⭐ <strong>两阶段</strong>：<code>chinese_whispers(0.55)</code> 出高纯度核心簇 → 散脸按 <code>sim(散脸, 簇心) &gt; 0.50</code> 并入。单阈值必崩：同一人正脸/侧脸 0.45~0.95，不同人圆脸可能 0.55</td></tr><tr><td><code>batch.rs</code>（188）</td><td>批量打标编排</td><td>阈值真源就写在这（<code>DEFAULT_THRESHOLD</code> 等），命令层的 <code>DEF_*</code> 必须从它派生</td></tr><tr><td><code>ort_env.rs</code>（31）</td><td>全局 ORT 环境</td><td><strong>每进程只能有一个</strong>；DirectML EP 是环境级注册，建好一次所有 session 都能用</td></tr><tr><td><code>lib.rs</code>（14）</td><td>导出</td><td>——</td></tr></tbody></table></div>
+<h3 id="h12">1.9 其余四个小 crate</h3>
+<div class="table-wrap"><table><thead><tr><th>文件</th><th>负责什么</th><th>算法 / 关键实现</th></tr></thead><tbody><tr><td><code>pv-geo/src/lib.rs</code>（380）</td><td>坐标 → 城市名</td><td>6.4 万条 GeoNames 城市表（1.9 MB，<code>include_bytes!</code> 编进二进制）。<strong>两段查找</strong>：先按纬度带/经度粗筛，再对候选算 <strong>haversine</strong> 精确距离。⛔ 同城不取最近（澳门会指向珠海、徐汇会指向郊区镇）</td></tr><tr><td><code>pv-lib/src/rule.rs</code>（224）</td><td>智能图库的规则 DSL</td><td>解析（属性 运算符 值，AND 连接）+ 求值成 SQL 条件；建库时校验，非法规则不落库</td></tr><tr><td><code>pv-lib/src/library.rs</code>（206）</td><td>图库领域服务</td><td>普通库 / 智能库两条查询路径。⛔ 智能库没有成员行，JOIN 恒空</td></tr><tr><td><code>pv-vault/src/format.rs</code>（259）</td><td>加密容器 <code>.pvault</code></td><td><strong>Argon2id</strong> 派生主密钥 + <strong>AEAD</strong>（12 字节 nonce）+ 头部 MAC 防降级攻击；4 KiB 明文头只放 KDF 参数与盐，不泄露任何可读信息。威胁模型是"防离线翻阅"，明确不做内存加密/反调试</td></tr><tr><td><code>pv-archive/src/lib.rs</code>（286）</td><td>压缩包内浏览</td><td>zip/cbz 走纯 Rust；rar/cbr/7z 走 7-Zip 命令行</td></tr><tr><td><code>pv-archive/src/cache.rs</code>（248）</td><td>解包到临时目录</td><td>按条目内容哈希命名，同一张图重复打开不重复解</td></tr><tr><td><code>pv-archive/src/cli.rs</code>（154）</td><td>7-Zip 命令行后端</td><td>只解<strong>点中的那一个</strong>条目到 <code>%TEMP%</code></td></tr><tr><td><code>pv-archive/src/zip_backend.rs</code>（100）</td><td>ZIP / CBZ</td><td><code>zip</code> crate，纯 Rust</td></tr><tr><td><code>pv-edit/src/opstack.rs</code>（314）</td><td>编辑操作栈</td><td>旋转/翻转/裁剪按顺序累积，一次性应用；<strong>先编码到内存 → 写临时文件 → 原子 rename</strong></td></tr></tbody></table></div>
+<hr class="sep"/>
+<h2 id="h13">二、Tauri 命令层（10,830 行）</h2>
+<p>界面唯一能碰到后端的地方，一共 <strong>92 个 <code>#[tauri::command]</code></strong>。</p>
+<div class="table-wrap"><table><thead><tr><th>文件</th><th>负责什么</th><th>关键实现</th></tr></thead><tbody><tr><td><code>lib.rs</code>（164）</td><td>应用入口</td><td>注册全部命令、建窗口、初始化状态</td></tr><tr><td><code>state.rs</code></td><td>全局应用状态</td><td><code>Store</code> + AI 会话放在这儿</td></tr><tr><td><code>commands/dto.rs</code>（346）</td><td>前后端数据结构</td><td>字段名改动必须同步测试，否则前端静默拿到 <code>undefined</code></td></tr><tr><td><code>commands/edit.rs</code>（920）</td><td>单图编辑写回</td><td>裁剪/旋转/翻转 + 另存为；测试占一半，覆盖"裁完宽高对不上"这类</td></tr><tr><td><code>commands/batch/delete.rs</code>（130）</td><td>批量删除</td><td><strong>进回收站</strong>（不是 <code>rm</code>）；先删文件、确认不在了才删索引</td></tr><tr><td><code>commands/batch/convert.rs</code>（171）</td><td>转格式 / 按 EXIF 摆正</td><td><strong>重新编码</strong>（和导出区分开）；摆正只处理 3/6/8 三种方向</td></tr><tr><td><code>commands/batch/transform.rs</code>（205）</td><td>批量旋转翻转</td><td>原地重写像素 + Orientation 置 1</td></tr><tr><td><code>commands/batch/saveas.rs</code>（217）</td><td>批量另存为</td><td>目录 + 目标格式 + 文件名模板</td></tr><tr><td><code>commands/batch/transfer.rs</code>（187）</td><td>复制 / 移动到文件夹</td><td>复制源不动，移动源消失</td></tr><tr><td><code>commands/batch/rename.rs</code></td><td>单个 / 批量改名</td><td>模板 <code>{name}</code> / <code>{n}</code></td></tr><tr><td><code>commands/batch/printout.rs</code></td><td>批量打印</td><td>按预览版面逐张送印</td></tr><tr><td><code>commands/ai/jobs.rs</code>（640）</td><td>打标 / 人脸 / 一键流水线</td><td>真正干活的地方；任务是 <code>async</code> + 独立线程，<code>Running::child</code> 恒为 <code>None</code></td></tr><tr><td><code>commands/ai/runner.rs</code>（558）</td><td>AI 任务生命周期</td><td>启动 / 轮询 / 停止；停止靠 <code>cancel.store(true)</code> 让线程下一张收手</td></tr><tr><td><code>commands/ai/vocab.rs</code>（392）</td><td>词表管理</td><td>导入只改<strong>启用状态</strong>，词表编译期固定</td></tr><tr><td><code>commands/ai/config.rs</code>（156）</td><td>阈值 / 开关读写</td><td>阈值默认值从 <code>pv_ai::batch</code> 派生，⛔ 不写字面量</td></tr><tr><td><code>commands/browse.rs</code>（479）</td><td>文件浏览器命令</td><td>列表用 <code>list_dir_images_fast</code>（不逐文件读魔数）</td></tr><tr><td><code>commands/image.rs</code>（486）</td><td>单图加载</td><td>像素走<strong>裸字节 <code>ipc::Response</code></strong>，不 base64</td></tr><tr><td><code>commands/pixel.rs</code>（471）</td><td>像素传输协议</td><td>PVI1 静图 / PVA1 动图的编码端</td></tr><tr><td><code>commands/manager/*</code>（约 1000）</td><td>图库模式的命令</td><td><code>browse</code> / <code>meta</code> / <code>media</code> / <code>library</code> / <code>dto</code> 分文件</td></tr><tr><td><code>commands/people.rs</code>（342）</td><td>人物</td><td>封面设置、改名、删除</td></tr><tr><td><code>commands/print.rs</code>（222）</td><td>单张打印</td><td>——</td></tr><tr><td><code>commands/app.rs</code>（296）</td><td>能力列表 / 文件关联</td><td><code>supported_formats()</code> 必须与前端 <code>constants/formats.ts</code> 同步</td></tr><tr><td><code>fs_browse.rs</code>（479）</td><td>「我的电脑」式枚举</td><td>盘符、系统目录、懒加载</td></tr><tr><td><code>shell_icon.rs</code>（369）</td><td>系统图标</td><td><code>SHGetFileInfoW</code> → BMP → base64，进程内缓存</td></tr><tr><td><code>win_print.rs</code>（737）</td><td>Windows 打印</td><td><code>PrintDlgW</code> + GDI <code>StretchDIBits</code></td></tr><tr><td><code>win_trash.rs</code></td><td>删除到回收站</td><td><code>SHFileOperationW</code></td></tr><tr><td><code>win_assoc.rs</code>（294）</td><td>文件关联</td><td>写注册表"打开方式"</td></tr><tr><td><code>win_style.rs</code>（177）</td><td>窗口最大化修正</td><td>绕开 <code>WS_EX_WINDOWEDGE</code> 导致的错位</td></tr><tr><td><code>win_shell.rs</code></td><td>用系统程序打开</td><td><code>ShellExecuteW</code></td></tr><tr><td><code>paths.rs</code></td><td>虚拟路径解析</td><td>压缩包内路径的统一入口</td></tr></tbody></table></div>
+<hr class="sep"/>
+<h2 id="h14">三、前端（23,178 行）</h2>
+<h3 id="h15">3.1 组合根与状态</h3>
+<div class="table-wrap"><table><thead><tr><th>文件</th><th>负责什么</th><th>算法 / 关键实现</th></tr></thead><tbody><tr><td><code>App.tsx</code>（1374）</td><td>S1 单图浏览的组合根</td><td>把查看器、工具栏、状态栏装到一起；模式切换（查看器 ↔ 图库）</td></tr><tr><td><code>hooks/useImageView.ts</code>（909）</td><td>单图浏览的视图状态机</td><td>缩放 / 平移 / 裁剪 / 旋转的<strong>唯一真源</strong>；行为都在这儿，组件只画</td></tr><tr><td><code>hooks/useImageLoader.ts</code>（417）</td><td>图像加载状态机</td><td>同目录浏览、上一张/下一张、预加载</td></tr><tr><td><code>hooks/useManager.ts</code>（1190）</td><td>图库模式的状态与动作</td><td>范围、筛选、排序、选中、缩略图版本；所有 <code>mgr.*</code> 都出自这里</td></tr><tr><td><code>hooks/useShortcuts.ts</code>（286）</td><td>键盘快捷键</td><td>分模式绑定；<code>F</code> 切换全屏、<code>Esc</code> 逐级退出</td></tr><tr><td><code>hooks/useWheelNavigation.ts</code></td><td>滚轮翻页</td><td><strong>窗口级监听</strong>、和"有没有图"解耦</td></tr><tr><td><code>hooks/useSlideshow.ts</code>（246）</td><td>幻灯片</td><td>定时器 + 暂停/继续</td></tr><tr><td><code>hooks/useAnimationPlayer.ts</code></td><td>GIF 播放</td><td>帧调度、按帧延迟走</td></tr></tbody></table></div>
+<h3 id="h16">3.2 图库视图 <code>components/manager/</code></h3>
+<div class="table-wrap"><table><thead><tr><th>文件</th><th>负责什么</th><th>算法 / 关键实现</th></tr></thead><tbody><tr><td><code>ManagerView.tsx</code>（1698）</td><td>图库主视图组合根</td><td>只做组装；渲染块已拆到下面几个组件</td></tr><tr><td><code>ManagerSidebar.tsx</code>（977）</td><td>左侧栏</td><td>文件树懒加载 + 图库列表；右键菜单作用对象</td></tr><tr><td><code>ManagerTopBar.tsx</code>（490）</td><td>顶栏（兼窗口标题栏）</td><td><code>decorations: false</code> 自绘，要处理拖动窗口</td></tr><tr><td><code>ManagerList.tsx</code>（183）</td><td>列表视图</td><td>表头 9px 拖动条骑在列边界；排序三角</td></tr><tr><td><code>ManagerFilters.tsx</code>（183）</td><td>四个筛选下拉</td><td>格式 → 年份 → 相机 → 地点；「全部」显示该维度合计</td></tr><tr><td><code>ManagerStatusBar.tsx</code></td><td>状态栏</td><td>只摆数字，口径由调用方算</td></tr><tr><td><code>DriveGrid.tsx</code></td><td>磁盘卡片</td><td>单击高亮、双击进入</td></tr><tr><td><code>PhotoCard.tsx</code>（270）</td><td>网格里的照片卡片</td><td>选中/悬停/重命名态</td></tr><tr><td><code>ThumbCanvas.tsx</code>（178）</td><td>取图单元</td><td>网格与胶片条共用；<code>useInView</code> 判定"真的可见"</td></tr><tr><td><code>cardMenu.ts</code>（535）</td><td>卡片右键 + 空白右键菜单</td><td><strong>纯函数</strong>构建菜单项，按选中内容决定能点什么</td></tr><tr><td><code>tagMenu.ts</code>（164）</td><td>标签弹层内容</td><td>纯函数；两行 × 每行 6 个标签</td></tr><tr><td><code>PersonStrip.tsx</code>（236）</td><td>人像条</td><td>横向头像列表 + 「更多」入口</td></tr><tr><td><code>PersonWall.tsx</code>（229）</td><td>人像墙浮层</td><td>5×2 布局，宽 494</td></tr><tr><td><code>FaceAvatar.tsx</code>（238）</td><td>人脸头像</td><td>按归一化框从缩略图裁正方形；<strong>Magic Kernel Sharp 2013</strong> 缩放</td></tr><tr><td><code>AiTagStrip.tsx</code>（353）</td><td>AI 标签条</td><td>两级钻取（一级类目 → 二级标签）</td></tr><tr><td><code>AiPipelineDialog.tsx</code>（202）</td><td>一键 AI 进度</td><td>只显示两行进度，干活在后端</td></tr><tr><td><code>TagPicker.tsx</code>（193）</td><td>批量打标签浮层</td><td>——</td></tr><tr><td><code>FilterDropdown.tsx</code> / <code>ListCells.tsx</code> / <code>viewConfig.ts</code></td><td>下拉框 / 列表单元格 / 视图常量与纯函数</td><td><code>viewConfig</code> 里是可单测的纯函数（宽度夹紧、格式名、已选文案）</td></tr></tbody></table></div>
+<h3 id="h17">3.3 单图查看器 <code>components/viewer/</code></h3>
+<div class="table-wrap"><table><thead><tr><th>文件</th><th>负责什么</th><th>算法 / 关键实现</th></tr></thead><tbody><tr><td><code>ImageCanvas.tsx</code>（391）</td><td>画布渲染</td><td><code>putImageData</code> + 绝对定位；变换矩阵 <code>translate(tx,ty) rotate(r) scale(s) translate(-w/2,-h/2)</code>，<code>tx/ty</code> 是<strong>图像中心</strong></td></tr><tr><td><code>PrintPreview.tsx</code>（573）</td><td>打印预览</td><td>适应页面时等比缩放并居中，页边距体现为偏移</td></tr><tr><td><code>AdjustPanel.tsx</code>（288）</td><td>亮度/对比度调整浮层</td><td>——</td></tr><tr><td><code>InfoPanel.tsx</code>（183）</td><td>图片信息浮层</td><td>——</td></tr><tr><td><code>ThumbRail.tsx</code></td><td>左侧胶片条</td><td>滚它不翻页（属于"自己滚自己的"区域）</td></tr><tr><td><code>ZoomControl.tsx</code></td><td>缩放控件</td><td>滑块用<strong>对数刻度</strong>（5%–3200%），否则小倍率区挤成一点</td></tr><tr><td><code>HelpPanel.tsx</code> / <code>ModalShell.tsx</code> / <code>EmptyState.tsx</code> / <code>ErrorDetail.tsx</code></td><td>帮助浮层 / 模态壳 / 空态 / 错误详情</td><td>——</td></tr></tbody></table></div>
+<h3 id="h18">3.4 通用零件 <code>components/chrome/</code>、<code>icons/</code></h3>
+<div class="table-wrap"><table><thead><tr><th>文件</th><th>负责什么</th><th>关键实现</th></tr></thead><tbody><tr><td><code>ContextMenu.tsx</code>（387）</td><td>右键菜单</td><td><strong>必须 <code>createPortal(…, document.body)</code></strong>：作子元素会顶掉 <code>:last-child</code>，塞进 <code>overflow:hidden</code> 会直接看不见。坐标当 <code>key</code> 强制重挂载</td></tr><tr><td><code>Toolbar.tsx</code>（379）</td><td>顶部工具栏（兼标题栏）</td><td>——</td></tr><tr><td><code>ConfirmDialog.tsx</code> / <code>PromptDialog.tsx</code></td><td>自绘确认框 / 输入框</td><td>Tauri 没有原生 <code>prompt</code>，全部自绘</td></tr><tr><td><code>ResizeHandles.tsx</code> / <code>WindowControls.tsx</code></td><td>窗口边缘热区 / 窗口按钮</td><td>4 边 + 4 角共 8 个热区</td></tr><tr><td><code>StatusBar.tsx</code></td><td>底部信息栏</td><td>——</td></tr><tr><td><code>icons/*.tsx</code></td><td>文件夹 / 磁盘 / 压缩包 / 图库图标</td><td><strong>全部内联 SVG</strong>。⛔ 不做"白底转透明"的位图处理</td></tr></tbody></table></div>
+<h3 id="h19">3.5 <code>hooks/</code>（行为逻辑）</h3>
+<div class="table-wrap"><table><thead><tr><th>文件</th><th>负责什么</th><th>算法 / 关键实现</th></tr></thead><tbody><tr><td><code>useGridWindow.ts</code></td><td>网格可见窗口</td><td>用 <code>IntersectionObserver</code> 而不是 <code>scrollTop / 行高</code> —— 列数随容器宽度变、<code>content-visibility</code> 让离屏高度只是估算，累加几十行就偏出十几张</td></tr><tr><td><code>useInView.ts</code></td><td>元素是否进入过视口</td><td><code>IntersectionObserver</code>，只触发一次</td></tr><tr><td><code>useFsTree.ts</code>（197）</td><td>文件树懒加载</td><td>展开才拉子节点</td></tr><tr><td><code>listColumns.ts</code>（278）</td><td>列表列定义与偏好</td><td>宽度/显隐存 localStorage，跨窗口用自定义事件同步</td></tr><tr><td><code>manager/query.ts</code>（152）</td><td>界面状态 → 查询参数</td><td>顺带算"范围指纹"，指纹没变就不重查</td></tr><tr><td><code>manager/gridItems.ts</code></td><td>两种数据源 → 同一个行模型</td><td>浏览模式（无 id）与图库模式（有 id）归一成 <code>GridItem</code></td></tr><tr><td><code>manager/batchActions.ts</code>（685）</td><td>文件级批量操作</td><td>导出 / 转格式 / 摆正 / 打印的统一入口</td></tr><tr><td><code>manager/prefs.ts</code></td><td>偏好读写</td><td>缩略图四档：116 / 168 / 236 / 320 px</td></tr><tr><td><code>manager/useSideResize.ts</code> / <code>useColumnResize.ts</code></td><td>拖拽调宽</td><td>监听挂 <code>window</code>（挂元素上鼠标一移出就丢事件）；松手才落盘</td></tr><tr><td><code>manager/useTagPopover.ts</code></td><td>标签弹层 + AI 词表</td><td>——</td></tr><tr><td><code>imageView/geometry.ts</code>（218）</td><td>屏幕坐标 ↔ 图像坐标</td><td>纯函数，含旋转后的坐标反算</td></tr><tr><td><code>imageView/fit.ts</code>（197）</td><td>适应窗口 / 能否拖动</td><td>纯函数；<code>canPanImage</code> 决定左键拖动是否平移</td></tr><tr><td><code>imageView/frame.ts</code>（278）</td><td>裁剪框几何</td><td>裁剪坐标是<strong>"旋转后的图"的归一化坐标</strong>，这个约定写在注释里</td></tr><tr><td><code>sortItems.ts</code></td><td>内存排序</td><td>浏览模式在内存排（图库模式交给 SQL）</td></tr><tr><td><code>siblingsCache.ts</code></td><td>同目录列表缓存决策</td><td>纯函数，便于单测</td></tr><tr><td><code>mergeDimensions.ts</code></td><td>尺寸原地合并进列表</td><td>不重建数组，避免整屏重渲染</td></tr><tr><td><code>libDrop.ts</code></td><td>拖文件夹到图库行</td><td>——</td></tr><tr><td><code>filterRules.ts</code></td><td>检索条件互斥规则</td><td>例如选"无标签"就不能同时选具体标签</td></tr><tr><td><code>useShellIcons.ts</code></td><td>系统图标</td><td>模块级缓存，否则树里每行都发一次 IPC</td></tr><tr><td><code>useWindowDrag.ts</code>（199）</td><td>自绘标题栏拖动</td><td>——</td></tr></tbody></table></div>
+<h3 id="h20">3.6 <code>ipc/</code>（唯一出口）</h3>
+<div class="table-wrap"><table><thead><tr><th>文件</th><th>负责什么</th><th>关键实现</th></tr></thead><tbody><tr><td><code>index.ts</code></td><td>汇总导出</td><td>调用方只从这里 import</td></tr><tr><td><code>protocol.ts</code>（184）</td><td>像素协议解析</td><td>PVI1 静图 / PVA1 动图，裸字节头部解析</td></tr><tr><td><code>thumbQueue.ts</code></td><td>缩略图请求闸门</td><td><strong>最多 4 个同时在飞</strong>，超出的排队</td></tr><tr><td><code>image.ts</code>（273）</td><td>单图相关命令</td><td>含解码结果缓存</td></tr><tr><td><code>manager.ts</code>（735）</td><td>图库相关命令</td><td>图库模式下最多的一批</td></tr><tr><td><code>ai.ts</code></td><td>AI 命令</td><td>2026-11 从 <code>manager.ts</code> 拆出</td></tr><tr><td><code>browse.ts</code>（176） / <code>folder.ts</code></td><td>文件浏览器</td><td>——</td></tr><tr><td><code>edit.ts</code></td><td>编辑落盘</td><td>覆盖 / 另存为</td></tr><tr><td><code>print.ts</code></td><td>打印</td><td>系统对话框 + GDI</td></tr><tr><td><code>people.ts</code></td><td>人物</td><td>——</td></tr><tr><td><code>errors.ts</code></td><td>错误解析</td><td>把后端错误变可读信息</td></tr><tr><td><code>format.ts</code></td><td>展示格式化</td><td>文件大小、可写格式白名单、RAW 提示</td></tr><tr><td><code>types.ts</code>（302）</td><td>数据类型</td><td>与 <code>commands/dto.rs</code> 对齐</td></tr></tbody></table></div>
+<h3 id="h21">3.7 <code>lib/</code> 与 <code>constants/</code></h3>
+<div class="table-wrap"><table><thead><tr><th>文件</th><th>负责什么</th><th>算法 / 关键实现</th></tr></thead><tbody><tr><td><code>lib/mksResample.ts</code>（289）</td><td>高质量降采样</td><td><strong>Magic Kernel Sharp 2013</strong>（三次卷积的锐化变体），给头像这种小尺寸用，比浏览器默认的双线性锐利</td></tr><tr><td><code>lib/errText.ts</code></td><td>异常 → 人话</td><td>统一文案出口</td></tr><tr><td><code>lib/peopleEvents.ts</code></td><td>人物变更广播</td><td>——</td></tr><tr><td><code>constants/formats.ts</code></td><td>支持格式<strong>唯一真源</strong></td><td>17 种；<code>UNVERIFIED_RAW_EXTS</code> 单独列（不承诺能开）</td></tr><tr><td><code>constants/sort.ts</code></td><td>排序选项</td><td>顶栏菜单共用</td></tr></tbody></table></div>
+<hr class="sep"/>
+<h2 id="h22">四、算法反查表</h2>
+<p>按算法找文件，比按文件找算法快。</p>
+<div class="table-wrap"><table><thead><tr><th>算法 / 技术</th><th>用在哪</th><th>文件</th><th>关键参数</th></tr></thead><tbody><tr><td><strong>DCT 缩放</strong>（跳着解 JPEG）</td><td>缩略图、预览</td><td><code>pv-decode/src/bitmap/jpeg.rs</code></td><td>1/2～1/8 缩放，内存降 64 倍</td></tr><tr><td><strong>面积加权重采样 + SIMD</strong></td><td>大图缩到目标尺寸</td><td><code>pv-decode/src/bitmap/resize.rs</code></td><td><code>fast_image_resize</code> 必须开 <code>rayon</code></td></tr><tr><td><strong>Magic Kernel Sharp 2013</strong></td><td>72～100px 头像</td><td><code>apps/desktop/src/lib/mksResample.ts</code></td><td>比双线性锐利，比 Lanczos 快</td></tr><tr><td><strong>纯手写格式解析</strong></td><td>BMP / PSD</td><td><code>bitmap/bmp.rs</code>、<code>bitmap/psd.rs</code></td><td>PackBits RLE、多图层混合</td></tr><tr><td><strong>两阶段管线</strong></td><td>RAW</td><td><code>pv-decode/src/raw/</code></td><td>先扫内嵌 JPEG 预览，再按需全解码</td></tr><tr><td><strong>格式歧义降级</strong></td><td>TIFF vs RAW</td><td><code>decoder/registry.rs</code></td><td>先试 RAW，失败降级 TIFF</td></tr><tr><td><strong>原子写</strong></td><td>所有写回</td><td><code>pv-edit/src/opstack.rs</code></td><td>内存编码 → 临时文件 → rename</td></tr><tr><td><strong>EXIF 内联值判定</strong></td><td>改方向标记</td><td><code>pv-meta/src/exif/rewrite.rs</code></td><td><code>count==1</code> 且 <code>type∈{SHORT,LONG}</code></td></tr><tr><td><strong>blake3 内容哈希</strong></td><td>缩略图缓存键</td><td><code>pv-index/src/cache_key.rs</code></td><td><code>path‖size‖mtime_ns‖tier</code></td></tr><tr><td><strong>LRU + 字节预算</strong></td><td>L1 内存缓存</td><td><code>pv-cache/src/l1.rs</code></td><td>默认 512 MB</td></tr><tr><td><strong>三级回退</strong></td><td>取缩略图</td><td><code>pv-store/src/thumb.rs</code></td><td>L1 → L2 → 现生成</td></tr><tr><td><strong>三态增量 diff</strong></td><td>重扫目录</td><td><code>pv-scan/src/plan.rs</code></td><td>新增 / 变化 / 消失</td></tr><tr><td><strong>事件去抖聚合</strong></td><td>文件监听</td><td><code>pv-scan/src/watch.rs</code></td><td>静默一段时间才投递一批</td></tr><tr><td><strong>动态 SQL + 分页</strong></td><td>组合查询</td><td><code>pv-index/src/repo/query.rs</code></td><td><code>LIMIT/OFFSET</code> + 单独 <code>count</code></td></tr><tr><td><strong>COALESCE 兜底排序</strong></td><td>默认按拍摄时间</td><td><code>repo/query.rs</code></td><td><code>COALESCE(taken_at, added_ts)</code></td></tr><tr><td><strong>余弦相似度</strong></td><td>打标 / 人脸比对</td><td><code>pv-ai/src/tagger.rs</code>、<code>face.rs</code></td><td>向量先归一化，点积即余弦</td></tr><tr><td><strong>两阶段图聚类</strong></td><td>人脸归人</td><td><code>pv-ai/src/cluster.rs</code></td><td><code>chinese_whispers(0.55)</code> → 簇心归并 <code>0.50</code></td></tr><tr><td><strong>haversine + 粗筛</strong></td><td>坐标 → 城市</td><td><code>pv-geo/src/lib.rs</code></td><td>6.4 万条表，先按经纬带筛再算精确距离</td></tr><tr><td><strong>Argon2id + AEAD</strong></td><td>加密图库</td><td><code>pv-vault/src/format.rs</code></td><td>4 KiB 明文头 + 12 B nonce + 头部 MAC</td></tr><tr><td><strong>规则 DSL 解析</strong></td><td>智能图库</td><td><code>pv-lib/src/rule.rs</code></td><td>属性 运算符 值，AND 连接</td></tr><tr><td><strong>IntersectionObserver 窗口化</strong></td><td>网格预取</td><td><code>hooks/useGridWindow.ts</code></td><td>不用 <code>scrollTop / 行高</code></td></tr><tr><td><strong>对数刻度</strong></td><td>缩放滑块</td><td><code>components/viewer/ZoomControl.tsx</code></td><td>5%–3200%</td></tr><tr><td><strong>裸字节传输</strong></td><td>像素回传</td><td><code>commands/pixel.rs</code> + <code>ipc/protocol.ts</code></td><td>不 base64，省 33% 体积</td></tr></tbody></table></div>
+<hr class="sep"/>
+<h2 id="h23">五、一条完整链路：点「AI 识别」会发生什么</h2>
+<p>把上面这些文件串起来看，最直观。</p>
+<pre class="code"><code>你点「AI 识别」
+ └─ AiPipelineDialog.tsx —— 只负责显示两行进度
+    └─ ipc/ai.ts —— 发命令（前端唯一出口）
+       └─ commands/ai/jobs.rs —— 收到命令，起一个 session
+          ├─ tagger_dir() —— 定位 assets/ai/tag
+          ├─ Tagger::load —— 加载 165 MB 视觉塔（一次）
+          ├─ pv_ai::batch::tag —— 逐张：解码 → 预处理 → 向量 → 打分
+          │   └─ pv-decode —— 解码（跳着解到 1024）
+          ├─ repo::tags —— 把标签写进 image_tags
+          └─ 接着跑人脸
+             ├─ pv_ai::face —— YuNet 检测 + SFace 特征
+             ├─ pv_ai::cluster —— 两阶段聚类出人物
+             └─ repo::persons —— 建人物、清孤儿
+
+完成后：前端收到进度 → useManager 触发 reload()</code></pre>
+<p><strong>这条链路里能看出分层的价值</strong>：界面对"AI 怎么跑"一无所知，它只知道"发一条命令、收一串进度"。想换模型、换阈值、换聚类算法，全在 <code>pv-ai</code> 里改完就行，前端一行不用动。</p>
+<hr class="sep"/>
+<h2 id="h24">最后</h2>
+<p>三个可以拿来复述的观察：</p>
+<ol>
+<li><strong>越靠下的层越"纯"</strong>。<code>pv-core</code> / <code>pv-geo</code> / <code>pv-vault</code> 几乎没有 IO 副作用，所以测试最好写；越往上（命令层、视图层）越是"编排"，测试也更偏集成。</li>
+<li><strong>最贵的逻辑往往最少代码</strong>。<code>plan.rs</code> 只有 63 行，但它决定了"重扫一个十万张的目录要 3 秒还是 3 分钟"；<code>rewrite.rs</code> 的 <code>orientation_slot</code> 只有 14 行，判错就毁原图。</li>
+<li><strong>算法清单其实很短</strong>。真正称得上"算法"的不到 25 个（见第四节），剩下 6 万行的绝大部分是<strong>把这些算法接到正确的地方</strong>、以及<strong>处理它们出错时的情况</strong>。</li>
+</ol>
+    </main>
+  </div>
+</div>
+<footer class="end"><div class="wrap"><p>基于 2026-11-01 的代码状态生成 · 行数为生产代码，不含测试模块</p></div></footer>
+<script>
+(function(){
+  var groups = Array.prototype.slice.call(document.querySelectorAll('.toc li.grp'));
+  var links = Array.prototype.slice.call(document.querySelectorAll('.toc a[href^="#"]'));
+
+  groups.forEach(function(li){
+    var a = li.querySelector('a.lv2');
+    if(!a || !li.querySelector('.sub')) return;
+    a.addEventListener('click', function(){
+      groups.forEach(function(o){ if(o !== li) o.classList.remove('open'); });
+      li.classList.toggle('open');
+    });
+  });
+
+  var targets = links.map(function(a){
+    return document.getElementById(a.getAttribute('href').slice(1));
+  }).filter(Boolean);
+  if(!targets.length) return;
+
+  var io = new IntersectionObserver(function(entries){
+    entries.forEach(function(e){
+      if(!e.isIntersecting) return;
+      var id = e.target.id;
+      links.forEach(function(a){
+        a.classList.toggle('on', a.getAttribute('href') === '#' + id);
+      });
+      var cur = document.getElementById(id);
+      while(cur && cur !== document.body){
+        if(cur.tagName === 'H2'){
+          groups.forEach(function(o){
+            var a = o.querySelector('a.lv2');
+            if(a && a.getAttribute('href') === '#' + cur.id) o.classList.add('open');
+          });
+          break;
+        }
+        cur = cur.parentElement;
+      }
+    });
+  }, {rootMargin:'-8% 0px -75% 0px', threshold:0});
+  targets.forEach(function(t){ io.observe(t); });
+})();
+</script>
+</body>
+</html>

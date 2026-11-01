@@ -391,6 +391,7 @@ th{background:var(--bg);font-weight:500;color:var(--muted);font-size:13px;white-
 tbody tr:last-child td{border-bottom:0}
 tbody tr:hover{background:#FCFBF7}
 td code{font-size:13px}
+td:first-child code{white-space:nowrap}
 
 blockquote.note{
   margin:0 0 22px;padding:16px 20px;background:var(--accent-soft);
@@ -475,9 +476,40 @@ JS = """
 """
 
 
-def build() -> None:
-    md = SRC.read_text(encoding="utf-8")
+def extract_hero(md: str) -> tuple[str, str]:
+    """从 md 里取 h1 标题与导语（h1 之后第一段，引用块也算）。"""
+    lines = md.split("\n")
+    title = ""
+    start = 0
+    for idx, ln in enumerate(lines):
+        if ln.startswith("# "):
+            title = ln[2:].strip()
+            start = idx + 1
+            break
+    i = start
+    while i < len(lines) and not lines[i].strip():
+        i += 1
+    buf: list[str] = []
+    while i < len(lines):
+        s = lines[i].strip()
+        if not s or s.startswith(("#", "---", "```", "|")):
+            break
+        buf.append(s.lstrip("> ").strip())
+        i += 1
+    lede = re.sub(r"\*\*|`", "", " ".join(buf))
+    if len(lede) > 58:
+        lede = lede[:58].rstrip("，。、") + "…"
+    return title, lede
+
+
+def build(src: Path | None = None, facts: str = "", out: Path | None = None, lede_override: str = "") -> None:
+    src = src or SRC
+    out = out or src.with_suffix(".html")
+    md = src.read_text(encoding="utf-8")
     body, toc = convert(md)
+    title, lede = extract_hero(md)
+    if lede_override:
+        lede = lede_override
 
     # 目录：按 h2 分组，h3 收进各组（默认折叠，点开才展开）
     groups: list[tuple[str, str, list[tuple[str, str]]]] = []
@@ -503,28 +535,24 @@ def build() -> None:
             f'<span>{html.escape(text)}</span>{caret}</a>{sub_html}</li>'
         )
 
+    fact_items = "".join(f"<li>{html.escape(f.strip())}</li>" for f in facts.split("|") if f.strip())
+
     doc = f"""<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>一个照片管理器是怎么造出来的 · PurePhotoExplorer</title>
-<meta name="description" content="写给非计算机专业读者的软件架构、算法与工程实现说明"/>
+<title>{html.escape(title)} · PurePhotoExplorer</title>
+<meta name="description" content="{html.escape(lede)}"/>
 <style>{CSS}</style>
 </head>
 <body>
 <header class="hero">
   <div class="wrap">
     <p class="kicker">PurePhotoExplorer · 技术说明</p>
-    <h1>一个照片管理器是怎么造出来的</h1>
-    <p class="lede">写给不学计算机的读者：这软件由哪几块组成、每块在干什么、为什么要这么干、哪些地方是真的难。</p>
-    <ul class="facts">
-      <li>Rust 37,590 行 · 前端 23,178 行</li>
-      <li>13 个后端模块</li>
-      <li>92 个命令</li>
-      <li>16 张表</li>
-      <li>875 个自动化测试</li>
-    </ul>
+    <h1>{html.escape(title)}</h1>
+    <p class="lede">{html.escape(lede)}</p>
+    <ul class="facts">{fact_items}</ul>
   </div>
 </header>
 <div class="wrap">
@@ -535,14 +563,29 @@ def build() -> None:
     </main>
   </div>
 </div>
-<footer class="end"><div class="wrap"><p>基于 2026-10-31 的代码状态生成 · 数字均为实测（Rust 37,590 行 / 前端 23,178 行 / 343 前端测试 + 532 后端测试）</p></div></footer>
+<footer class="end"><div class="wrap"><p>基于 2026-11-01 的代码状态生成 · 行数为生产代码，不含测试模块</p></div></footer>
 <script>{JS}</script>
 </body>
 </html>
 """
-    OUT.write_text(doc, encoding="utf-8")
-    print(f"写出 {OUT.relative_to(ROOT)} · {len(doc):,} 字符")
+    out.write_text(doc, encoding="utf-8")
+    try:
+        shown = out.resolve().relative_to(ROOT)
+    except ValueError:
+        shown = out
+    print(f"写出 {shown} · {len(doc):,} 字符")
 
 
 if __name__ == "__main__":
-    build()
+    import sys
+
+    args = [a for a in sys.argv[1:] if not a.startswith("--")]
+    fact_arg = ""
+    lede_arg = ""
+    for a in sys.argv[1:]:
+        if a.startswith("--facts="):
+            fact_arg = a.split("=", 1)[1]
+        elif a.startswith("--lede="):
+            lede_arg = a.split("=", 1)[1]
+    src_path = Path(args[0]) if args else None
+    build(src_path, fact_arg, None, lede_arg)

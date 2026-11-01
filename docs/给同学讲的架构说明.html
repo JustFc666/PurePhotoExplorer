@@ -4,7 +4,7 @@
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
 <title>一个照片管理器是怎么造出来的 · PurePhotoExplorer</title>
-<meta name="description" content="写给非计算机专业读者的软件架构、算法与工程实现说明"/>
+<meta name="description" content="写给不学计算机的读者：这软件由哪几块组成、每块在干什么、为什么要这么干、哪些地方是真的难。"/>
 <style>
 :root{
   --font-sans:"PingFang SC","Microsoft YaHei UI","Microsoft YaHei","Segoe UI",system-ui,sans-serif;
@@ -96,6 +96,7 @@ th{background:var(--bg);font-weight:500;color:var(--muted);font-size:13px;white-
 tbody tr:last-child td{border-bottom:0}
 tbody tr:hover{background:#FCFBF7}
 td code{font-size:13px}
+td:first-child code{white-space:nowrap}
 
 blockquote.note{
   margin:0 0 22px;padding:16px 20px;background:var(--accent-soft);
@@ -142,13 +143,7 @@ footer.end p{margin:0;font-size:13.5px;color:var(--faint)}
     <p class="kicker">PurePhotoExplorer · 技术说明</p>
     <h1>一个照片管理器是怎么造出来的</h1>
     <p class="lede">写给不学计算机的读者：这软件由哪几块组成、每块在干什么、为什么要这么干、哪些地方是真的难。</p>
-    <ul class="facts">
-      <li>Rust 37,590 行 · 前端 23,178 行</li>
-      <li>13 个后端模块</li>
-      <li>92 个命令</li>
-      <li>16 张表</li>
-      <li>875 个自动化测试</li>
-    </ul>
+    <ul class="facts"><li>Rust 37,590 行 · 前端 23,178 行</li><li>13 个后端模块</li><li>92 个命令</li><li>16 张表</li><li>875 个自动化测试</li></ul>
   </div>
 </header>
 <div class="wrap">
@@ -582,7 +577,7 @@ cargo test -p pv-meta</code></pre>
     </main>
   </div>
 </div>
-<footer class="end"><div class="wrap"><p>基于 2026-10-31 的代码状态生成 · 数字均为实测（Rust 37,590 行 / 前端 23,178 行 / 343 前端测试 + 532 后端测试）</p></div></footer>
+<footer class="end"><div class="wrap"><p>基于 2026-11-01 的代码状态生成 · 行数为生产代码，不含测试模块</p></div></footer>
 <script>
 (function(){
   var groups = Array.prototype.slice.call(document.querySelectorAll('.toc li.grp'));
