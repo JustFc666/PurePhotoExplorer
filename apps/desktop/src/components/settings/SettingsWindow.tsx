@@ -1069,7 +1069,7 @@ function CachePage() {
  * 之所以分成两个：用户认「Beta V1.0」，排查问题时认 `1.0.0`。
  */
 const APP_VERSION_LABEL = 'Beta V1.0'
-const APP_AUTHOR = 'Jutsin F.'
+const APP_AUTHOR = 'Justin F.'
 const APP_MAIL = 'fc666@hotmail.com'
 
 function AboutPage() {
