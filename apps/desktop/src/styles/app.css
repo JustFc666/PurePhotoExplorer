@@ -1174,6 +1174,27 @@
   user-select: text;
 }
 
+/*
+ * 内容更长的面板（图库帮助）用这一档：默认 600px 放「左标签 + 一长句」太挤，
+ * 每行只剩六七个字。820px 能把右边一列撑到 580px 左右，一句说明基本一行放得下。
+ */
+.pv-modal-wide {
+  width: 820px;
+}
+
+/* 帮助面板开头那段导语（「这个软件是做什么的」）：比表格正文略大、行距松一点 */
+.pv-help-lede {
+  margin: 0;
+  font-size: 13.5px;
+  line-height: 1.75;
+  color: var(--pv-text-secondary);
+}
+
+.pv-help-lede strong {
+  color: var(--pv-text-primary);
+  font-weight: 600;
+}
+
 .pv-modal-head {
   display: flex;
   align-items: center;
@@ -1258,6 +1279,24 @@
 
 .pv-about-mail {
   color: var(--pv-accent);
+}
+
+/*
+ * 邮箱是一个 `<button>`（点一下复制），要抹掉浏览器默认的按钮外观。
+ * ⛔ 别改成 `<a href="mailto:">`：`app.rs::open_url` 只放行 http/https，
+ * mailto 会被拒；走系统默认邮件客户端还得另开后端口子，不值得。
+ */
+button.pv-about-mail {
+  background: none;
+  border: 0;
+  padding: 0;
+  font: inherit;
+  cursor: pointer;
+  color: var(--pv-accent);
+}
+
+button.pv-about-mail:hover {
+  text-decoration: underline;
 }
 
 /* 数据来源署名（GeoNames，CC BY 4.0） */
@@ -1960,7 +1999,16 @@
   background: rgba(0, 0, 0, 0.42);
 }
 
-.pv-modal {
+/*
+ * ⚠️ 这里的 `.pv-modal` 是**对话框**（ConfirmDialog / PromptDialog）的尺寸，
+ * 必须限定在 `.pv-modal-mask` 之内。
+ *
+ * ⛔ 别写成裸 `.pv-modal`：它在本文件里与上半部分（1161 行，帮助/设置面板用的
+ * `.pv-modal`）同名，后定义会覆盖前者 —— 于是帮助面板被压成 380px，
+ * 每行只剩六七个字（2026-11-01 实际踩到）。
+ * 区别只在遮罩类名：面板用 `.pv-modal-backdrop`，对话框用 `.pv-modal-mask`。
+ */
+.pv-modal-mask .pv-modal {
   width: min(380px, calc(100vw - 32px));
   padding: 16px;
   border-radius: 10px;
@@ -1969,7 +2017,7 @@
   box-shadow: var(--pv-shadow-lg);
 }
 
-.pv-modal-title {
+.pv-modal-mask .pv-modal-title {
   font-size: 14px;
   font-weight: 600;
   color: var(--pv-text-primary);

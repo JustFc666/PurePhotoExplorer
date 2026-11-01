@@ -52,6 +52,7 @@ import { ManagerSidebar } from './ManagerSidebar'
 import { ManagerStatusBar } from './ManagerStatusBar'
 import { ManagerList } from './ManagerList'
 import { ManagerFilters } from './ManagerFilters'
+import { ManagerHelp } from './ManagerHelp'
 import { AiTagStrip } from './AiTagStrip'
 import { TagPicker } from './TagPicker'
 import { ManagerTopBar } from './ManagerTopBar'
@@ -278,6 +279,8 @@ export function ManagerView(props: Props) {
     name: string
     error?: string
   } | null>(null)
+  /** 顶栏「帮助」浮层 */
+  const [helpOpen, setHelpOpen] = useState(false)
 
   const doRenameLibrary = async (id: number, name: string) => {
     try {
@@ -1115,6 +1118,7 @@ export function ManagerView(props: Props) {
         onSaveAs={() => void doSaveAs(selectedPaths)}
         onExit={onExit}
         onOpenSettings={props.onOpenSettings}
+        onOpenHelp={() => setHelpOpen(true)}
         onDragMouseDown={onDragMouseDown}
         isMaximized={props.isMaximized}
         onMinimize={props.onMinimize}
@@ -1502,6 +1506,9 @@ export function ManagerView(props: Props) {
           onCancel={() => askTree.resolve('cancel')}
         />
       )}
+
+      {/* 顶栏「帮助」：三个区域 / 看图与入库的区别 / 鼠标与快捷键 */}
+      {helpOpen && <ManagerHelp onClose={() => setHelpOpen(false)} />}
 
       {/* 「加进新图库…」的名字输入框 */}
       {newLibFor && (

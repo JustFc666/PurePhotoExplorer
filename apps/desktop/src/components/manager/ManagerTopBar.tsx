@@ -212,6 +212,8 @@ interface Props {
   onClose: () => void
   /** 打开设置窗口（菜单栏「设置」按钮；2026-10-24 与浏览模式共用同一个窗口） */
   onOpenSettings: () => void
+  /** 打开帮助浮层（紧跟在「设置」后面的「帮助」按钮） */
+  onOpenHelp: () => void
 }
 
 export function ManagerTopBar(props: Props) {
@@ -248,6 +250,7 @@ export function ManagerTopBar(props: Props) {
     onClearSelection,
     onExit,
     onOpenSettings,
+    onOpenHelp,
     onClose,
     onDragMouseDown,
   } = props
@@ -401,6 +404,19 @@ export function ManagerTopBar(props: Props) {
           aria-label="设置"
         >
           设置
+        </button>
+        {/*
+          「帮助」紧跟在「设置」后面：两个都是「拿不准的时候点一下」的入口，
+          放在一起比塞进菜单里好找。内容见 `ManagerHelp.tsx`。
+        */}
+        <button
+          type="button"
+          className="pv-mg-menubtn"
+          onClick={() => onOpenHelp()}
+          title="帮助：三个区域怎么用、看图与入库的区别、快捷键"
+          aria-label="帮助"
+        >
+          帮助
         </button>
       </nav>
 
