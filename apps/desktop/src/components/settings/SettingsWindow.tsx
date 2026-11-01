@@ -638,6 +638,13 @@ function AssocPage({
  * ⭐ 2026-10-28 用户要求：把「打标」和「人脸」拆成两页（原来挤在一页叫「打标与人脸」），
  * 并把「词表」也并进来 —— 词表本来就是打标的配置，分开放要来回跳。
  */
+/**
+ * 「每张最多标签」的可选档位。
+ * ⚠️ 6 必须在里面：它是后端 `pv_ai::batch::DEFAULT_MAX_TAGS` 的值，
+ * 少这一档就会出现「实际用 6、面板三个都不高亮」的错位。
+ */
+const MAX_TAG_OPTIONS = [3, 5, 6]
+
 function TagPage() {
   const [cfg, setCfg] = useState<AiConfig | null>(null)
   /** 二级（具体词）门槛 */
@@ -682,6 +689,15 @@ function TagPage() {
     setMaxTags(n)
     void aiSaveConfig({ maxTags: n }).catch(() => undefined)
   }
+
+  /** 老配置存过 3/5/6 以外的值（如 8）时保留成一个档，否则面板会一个都不亮 */
+  const maxTagOptions = useMemo(
+    () =>
+      maxTags > 0 && !MAX_TAG_OPTIONS.includes(maxTags)
+        ? [...MAX_TAG_OPTIONS, maxTags]
+        : MAX_TAG_OPTIONS,
+    [maxTags],
+  )
 
   const list = useMemo(() => {
     if (!terms) return []
@@ -779,7 +795,7 @@ function TagPage() {
             />
           </Row>
           <Row label="每张最多标签">
-            {[3, 5, 8].map((n) => (
+            {maxTagOptions.map((n) => (
               <Choice key={n} on={maxTags === n} label={`${n} 个`} onClick={() => pickMax(n)} />
             ))}
           </Row>
