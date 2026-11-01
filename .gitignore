@@ -56,3 +56,6 @@ rednote/
 
 # 打包用的运行时 DLL（18MB，从 release/ 或 ort 缓存复制，不入库）
 /apps/desktop/src-tauri/resources/DirectML.dll
+
+# 含真实人物（家庭/儿童）的截图，不入库
+docs/design/S2排序-按拍摄时间.png
