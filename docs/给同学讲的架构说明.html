@@ -1,0 +1,629 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>一个照片管理器是怎么造出来的 · PurePhotoExplorer</title>
+<meta name="description" content="写给非计算机专业读者的软件架构、算法与工程实现说明"/>
+<style>
+:root{
+  --font-sans:"PingFang SC","Microsoft YaHei UI","Microsoft YaHei","Segoe UI",system-ui,sans-serif;
+  --font-mono:"Cascadia Code","Cascadia Mono",Consolas,"SF Mono",Menlo,monospace;
+  --bg:#FBFAF7;
+  --surface:#FFFFFF;
+  --text:#26262A;
+  --muted:#63625D;
+  --faint:#8A8983;
+  --line:#E6E3DA;
+  --accent:#185FA5;
+  --accent-soft:#E6F1FB;
+  --warm:#854F0B;
+  --warm-soft:#FAEEDA;
+  --code-bg:#F5F4EE;
+}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{
+  margin:0;background:var(--bg);color:var(--text);
+  font-family:var(--font-sans);font-size:16px;line-height:1.85;
+  -webkit-font-smoothing:antialiased;
+}
+.wrap{max-width:1180px;margin:0 auto;padding:0 28px}
+
+.hero{padding:72px 0 44px;border-bottom:1px solid var(--line);background:var(--surface)}
+.kicker{margin:0 0 14px;font-size:13px;letter-spacing:.12em;color:var(--faint);text-transform:uppercase}
+.hero h1{margin:0 0 20px;font-size:38px;line-height:1.3;font-weight:500;letter-spacing:-.01em}
+.lede{margin:0;max-width:660px;font-size:17px;color:var(--muted)}
+.facts{display:flex;flex-wrap:wrap;gap:10px;margin:28px 0 0;padding:0;list-style:none}
+.facts li{
+  font-size:13px;color:var(--muted);background:var(--bg);
+  border:1px solid var(--line);border-radius:999px;padding:5px 14px;
+}
+
+.layout{display:grid;grid-template-columns:268px minmax(0,1fr);gap:52px;padding:48px 0 96px}
+.toc{position:sticky;top:28px;align-self:start;max-height:calc(100vh - 56px);overflow:auto}
+.toc h2{margin:0 0 14px;font-size:12px;letter-spacing:.08em;color:var(--faint);font-weight:500;text-transform:uppercase}
+.toc ol{margin:0;padding:0;list-style:none;border-left:1px solid var(--line)}
+.toc li.grp{position:relative}
+.toc li.grp>a{
+  display:block;
+  padding:5px 16px 5px 14px;margin-left:-1px;border-left:2px solid transparent;
+  color:var(--muted);text-decoration:none;font-size:13px;line-height:1.55;cursor:pointer;
+}
+.toc li.grp>a:hover{color:var(--accent)}
+.toc li.grp>a.lv3{padding-left:28px;font-size:12.5px;color:var(--faint)}
+.toc a.on{color:var(--accent);border-left-color:var(--accent);font-weight:500}
+.toc .caret{position:absolute;right:2px;top:9px;font-size:9px;color:var(--faint);transition:transform .15s ease}
+.toc li.grp.open>a .caret{transform:rotate(90deg)}
+.toc .sub{display:none;margin:0;padding:0;list-style:none;border-left:0}
+.toc li.grp.open .sub{display:block}
+.toc .sub a{
+  display:block;padding:4px 0 4px 28px;margin-left:-1px;border-left:2px solid transparent;
+  color:var(--faint);text-decoration:none;font-size:12.5px;line-height:1.5;
+}
+.toc .sub a:hover{color:var(--accent)}
+.toc .sub a.on{color:var(--accent);border-left-color:var(--accent);font-weight:500}
+
+.doc{min-width:0;max-width:760px}
+.doc h2{
+  margin:64px 0 20px;font-size:26px;line-height:1.35;font-weight:500;
+  padding-bottom:12px;border-bottom:1px solid var(--line);
+}
+.doc h2:first-child{margin-top:0}
+.doc h3{margin:40px 0 14px;font-size:19px;font-weight:500;color:var(--text)}
+.doc p{margin:0 0 18px}
+.doc strong{font-weight:500;color:#111114}
+.doc ul,.doc ol{margin:0 0 20px;padding-left:22px}
+.doc li{margin:7px 0}
+.doc li::marker{color:var(--faint)}
+
+.doc code{
+  font-family:var(--font-mono);font-size:.875em;
+  background:var(--code-bg);border:1px solid var(--line);border-radius:4px;
+  padding:1px 5px;color:#3C3489;
+}
+pre.code{
+  margin:0 0 22px;padding:18px 20px;background:var(--code-bg);
+  border:1px solid var(--line);border-radius:10px;overflow-x:auto;
+  font-family:var(--font-mono);font-size:13px;line-height:1.7;
+}
+pre.code code{background:none;border:0;padding:0;color:#33323A;font-size:13px;white-space:pre}
+
+.table-wrap{margin:0 0 24px;overflow-x:auto;border:1px solid var(--line);border-radius:10px;background:var(--surface)}
+table{border-collapse:collapse;width:100%;font-size:14.5px}
+th,td{padding:11px 16px;text-align:left;vertical-align:top;border-bottom:1px solid var(--line)}
+th{background:var(--bg);font-weight:500;color:var(--muted);font-size:13px;white-space:nowrap}
+tbody tr:last-child td{border-bottom:0}
+tbody tr:hover{background:#FCFBF7}
+td code{font-size:13px}
+
+blockquote.note{
+  margin:0 0 22px;padding:16px 20px;background:var(--accent-soft);
+  border-left:3px solid var(--accent);border-radius:0 8px 8px 0;color:#1B3A57;
+}
+blockquote.note p{margin:0 0 10px;font-size:15px}
+blockquote.note p:last-child{margin:0}
+
+hr.sep{border:0;border-top:1px solid var(--line);margin:48px 0}
+
+figure.fig{margin:8px 0 28px;padding:20px 16px 12px;background:var(--surface);
+  border:1px solid var(--line);border-radius:12px}
+figure.fig svg{display:block;width:100%;height:auto}
+figcaption{margin-top:12px;text-align:center;font-size:13px;color:var(--faint)}
+
+footer.end{border-top:1px solid var(--line);padding:32px 0 64px;background:var(--surface)}
+footer.end p{margin:0;font-size:13.5px;color:var(--faint)}
+
+@media (max-width:960px){
+  .wrap{padding:0 20px}
+  .hero{padding:48px 0 32px}
+  .hero h1{font-size:29px}
+  .layout{grid-template-columns:minmax(0,1fr);gap:32px;padding:32px 0 64px}
+  .toc{position:static;max-height:none;padding-bottom:8px;border-bottom:1px solid var(--line)}
+  .toc ol{columns:2;column-gap:24px;border-left:0}
+  .toc a{padding-left:0}
+  .toc a.lv3{display:none}
+  .doc h2{font-size:22px;margin-top:48px}
+}
+@media print{
+  body{background:#fff;font-size:11.5pt}
+  .toc{display:none}
+  .layout{display:block;padding:0}
+  .hero{border:0;padding:0 0 24px}
+  .doc{max-width:none}
+  pre.code,figure.fig,.table-wrap{break-inside:avoid}
+  .doc h2{break-after:avoid}
+}
+</style>
+</head>
+<body>
+<header class="hero">
+  <div class="wrap">
+    <p class="kicker">PurePhotoExplorer · 技术说明</p>
+    <h1>一个照片管理器是怎么造出来的</h1>
+    <p class="lede">写给不学计算机的读者：这软件由哪几块组成、每块在干什么、为什么要这么干、哪些地方是真的难。</p>
+    <ul class="facts">
+      <li>Rust 37,590 行 · 前端 23,178 行</li>
+      <li>13 个后端模块</li>
+      <li>92 个命令</li>
+      <li>16 张表</li>
+      <li>875 个自动化测试</li>
+    </ul>
+  </div>
+</header>
+<div class="wrap">
+  <div class="layout">
+    <nav class="toc"><h2>目录</h2><ol><li class="grp"><a class="lv2" href="#h2"><span>0. 先说它是干什么的</span></a></li><li class="grp"><a class="lv2" href="#h3"><span>1. 整体结构：三层，各管各的</span></a></li><li class="grp"><a class="lv2" href="#h4"><span>2. 为什么用 Rust 写后端、React 写界面</span></a></li><li class="grp"><a class="lv2" href="#h5"><span>3. 代码怎么分家：13 个&quot;车间&quot;</span></a></li><li class="grp"><a class="lv2" href="#h6"><span>4. 一次「点开文件夹」的完整旅程</span><span class="caret">▶</span></a><ul class="sub"><li><a href="#h7">第 1 步：界面问后端&quot;这个目录里有什么&quot;</a></li><li><a href="#h8">第 2 步：后端扫目录，只认后缀名，不读内容</a></li><li><a href="#h9">第 3 步：后端回一份&quot;清单&quot;</a></li><li><a href="#h10">第 4 步：界面按&quot;谁快要看见&quot;排队要缩略图</a></li><li><a href="#h11">第 5 步：后端找缓存，命中就直接返回</a></li><li><a href="#h12">第 6 步：没命中缓存 → 真的去解码</a></li><li><a href="#h13">第 7 步：把像素递回界面——不走&quot;文字&quot;，走&quot;裸字节&quot;</a></li><li><a href="#h14">第 8 步：界面把字节画进格子</a></li></ul></li><li class="grp"><a class="lv2" href="#h15"><span>5. 五个值得讲的算法</span><span class="caret">▶</span></a><ul class="sub"><li><a href="#h16">5.1 缩略图：为什么不能&quot;先解码再缩小&quot;</a></li><li><a href="#h17">5.2 EXIF 方向：为什么&quot;旋转照片&quot;可以不动一个像素</a></li><li><a href="#h18">5.3 拍照地点：6.4 万座城市塞进一个文件</a></li><li><a href="#h19">5.4 AI 打标：把图片和文字放进同一个坐标系</a></li><li><a href="#h20">5.5 人脸：为什么&quot;一个阈值&quot;聚不出人</a></li></ul></li><li class="grp"><a class="lv2" href="#h21"><span>6. 数据库：16 张表，为什么不&quot;文件夹就是相册&quot;</span></a></li><li class="grp"><a class="lv2" href="#h22"><span>7. 改照片：怎么做到&quot;改坏了也不丢原图&quot;</span><span class="caret">▶</span></a><ul class="sub"><li><a href="#h23">7.1 原子写：先写新文件，再改名替换</a></li><li><a href="#h24">7.2 EXIF 写回：一个能毁掉整份文件的陷阱</a></li></ul></li><li class="grp"><a class="lv2" href="#h25"><span>8. 工程纪律：这部分其实比算法更值钱</span><span class="caret">▶</span></a><ul class="sub"><li><a href="#h26">8.1 一次只改一件事，改完立刻验证</a></li><li><a href="#h27">8.2 测试不是&quot;证明对&quot;，是&quot;防止退步&quot;</a></li><li><a href="#h28">8.3 把踩过的坑写下来，而不是记住</a></li></ul></li><li class="grp"><a class="lv2" href="#h29"><span>9. 想自己跑起来</span></a></li><li class="grp"><a class="lv2" href="#h30"><span>10. 名词小抄</span></a></li><li class="grp"><a class="lv2" href="#h31"><span>最后</span></a></li></ol></nav>
+    <main class="doc">
+<blockquote class="note">
+<p>这份说明写给<strong>不学计算机</strong>的读者。 目标不是让你会写代码，而是让你看完之后能说清楚：这软件由哪几块组成、每块在干什么、为什么要这么干、哪些地方是真的难。</p>
+<p>全篇尽量避免行话。实在绕不开的，第一次出现时会用括号解释，文末还有一张「名词小抄」。</p>
+</blockquote>
+<hr class="sep"/>
+<h2 id="h2">0. 先说它是干什么的</h2>
+<p><strong>PurePhotoExplorer 是一个装在 Windows 上的照片管理工具。</strong></p>
+<p>你可以把它想成一个"图书馆管理员"：</p>
+<ul>
+<li>你的照片散落在 D 盘、E 盘、移动硬盘的几十个文件夹里 → 它负责<strong>登记造册</strong>，建一份目录卡片；</li>
+<li>你想找"去年在杭州拍的、带猫的照片" → 它负责<strong>按条件查卡片</strong>，不用真的去翻硬盘；</li>
+<li>你想看看某张照片拍得好不好 → 它负责把照片<strong>缩成小图快速铺给你看</strong>，你点开哪张才去读原图；</li>
+<li>你想给照片打标签、认人脸、改曝光、裁一刀 → 它负责<strong>动手改</strong>，而且保证改坏了原图也不会丢。</li>
+</ul>
+<p>听起来简单。但真正做起来，难点全在三个地方：<strong>文件格式特别多</strong>、<strong>照片特别大</strong>、<strong>"看起来瞬间出图"其实很费劲</strong>。</p>
+<p>下面按顺序讲：软件分成哪几层 → 代码怎么分家 → 一张照片从硬盘到屏幕的完整旅程 → 五个有意思的算法 → 工程上踩过的坑。</p>
+<hr class="sep"/>
+<h2 id="h3">1. 整体结构：三层，各管各的</h2>
+<figure class="fig">
+<svg viewBox="0 0 680 500" width="100%" role="img" xmlns="http://www.w3.org/2000/svg">
+<title>PurePhotoExplorer 三层架构</title>
+<desc>界面层用 React，通过 92 个命令访问 Rust 后端，后端再读写数据库、缓存与原图。</desc>
+<defs>
+<marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+<path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+</marker>
+</defs>
+<rect x="40" y="40" width="600" height="100" rx="12" fill="#E6F1FB" stroke="#185FA5" stroke-width="0.5"/>
+<text x="62" y="66" font-size="14" font-weight="500" fill="#042C53" dominant-baseline="central">界面层 · React + TypeScript</text>
+<text x="62" y="88" font-size="12" fill="#185FA5" dominant-baseline="central">23,178 行 · 只负责「点了就有反应」，不碰硬盘</text>
+<rect x="62" y="102" width="104" height="24" rx="6" fill="#FFFFFF" stroke="#85B7EB" stroke-width="0.5"/>
+<text x="114" y="114" font-size="12" fill="#185FA5" text-anchor="middle" dominant-baseline="central">图库网格</text>
+<rect x="176" y="102" width="104" height="24" rx="6" fill="#FFFFFF" stroke="#85B7EB" stroke-width="0.5"/>
+<text x="228" y="114" font-size="12" fill="#185FA5" text-anchor="middle" dominant-baseline="central">单张查看器</text>
+<rect x="290" y="102" width="104" height="24" rx="6" fill="#FFFFFF" stroke="#85B7EB" stroke-width="0.5"/>
+<text x="342" y="114" font-size="12" fill="#185FA5" text-anchor="middle" dominant-baseline="central">侧栏与菜单</text>
+<line x1="340" y1="142" x2="340" y2="172" stroke="#888780" stroke-width="1.5" marker-end="url(#arrow)"/>
+<text x="354" y="157" font-size="12" fill="#5F5E5A" dominant-baseline="central">92 个命令 · 唯一通道（沙箱里出不去）</text>
+<rect x="40" y="178" width="600" height="172" rx="12" fill="#E1F5EE" stroke="#0F6E56" stroke-width="0.5"/>
+<text x="62" y="204" font-size="14" font-weight="500" fill="#04342C" dominant-baseline="central">大脑层 · Rust · 13 个车间</text>
+<text x="62" y="226" font-size="12" fill="#0F6E56" dominant-baseline="central">37,590 行 · 算得快、不崩、写文件出事能回滚</text>
+<rect x="62" y="240" width="130" height="42" rx="8" fill="#FFFFFF" stroke="#5DCAA5" stroke-width="0.5"/>
+<text x="127" y="254" font-size="13" font-weight="500" fill="#085041" text-anchor="middle" dominant-baseline="central">解码图片</text>
+<text x="127" y="271" font-size="11" fill="#0F6E56" text-anchor="middle" dominant-baseline="central">pv-decode</text>
+<rect x="202" y="240" width="130" height="42" rx="8" fill="#FFFFFF" stroke="#5DCAA5" stroke-width="0.5"/>
+<text x="267" y="254" font-size="13" font-weight="500" fill="#085041" text-anchor="middle" dominant-baseline="central">目录卡片</text>
+<text x="267" y="271" font-size="11" fill="#0F6E56" text-anchor="middle" dominant-baseline="central">pv-index</text>
+<rect x="342" y="240" width="130" height="42" rx="8" fill="#FFFFFF" stroke="#5DCAA5" stroke-width="0.5"/>
+<text x="407" y="254" font-size="13" font-weight="500" fill="#085041" text-anchor="middle" dominant-baseline="central">AI 打标与人脸</text>
+<text x="407" y="271" font-size="11" fill="#0F6E56" text-anchor="middle" dominant-baseline="central">pv-ai</text>
+<rect x="482" y="240" width="130" height="42" rx="8" fill="#FFFFFF" stroke="#5DCAA5" stroke-width="0.5"/>
+<text x="547" y="254" font-size="13" font-weight="500" fill="#085041" text-anchor="middle" dominant-baseline="central">编辑写回</text>
+<text x="547" y="271" font-size="11" fill="#0F6E56" text-anchor="middle" dominant-baseline="central">pv-edit</text>
+<rect x="62" y="290" width="130" height="42" rx="8" fill="#FFFFFF" stroke="#5DCAA5" stroke-width="0.5"/>
+<text x="127" y="304" font-size="13" font-weight="500" fill="#085041" text-anchor="middle" dominant-baseline="central">扫描目录</text>
+<text x="127" y="321" font-size="11" fill="#0F6E56" text-anchor="middle" dominant-baseline="central">pv-scan</text>
+<rect x="202" y="290" width="130" height="42" rx="8" fill="#FFFFFF" stroke="#5DCAA5" stroke-width="0.5"/>
+<text x="267" y="304" font-size="13" font-weight="500" fill="#085041" text-anchor="middle" dominant-baseline="central">两级缓存</text>
+<text x="267" y="321" font-size="11" fill="#0F6E56" text-anchor="middle" dominant-baseline="central">pv-cache</text>
+<rect x="342" y="290" width="130" height="42" rx="8" fill="#FFFFFF" stroke="#5DCAA5" stroke-width="0.5"/>
+<text x="407" y="304" font-size="13" font-weight="500" fill="#085041" text-anchor="middle" dominant-baseline="central">地名查询</text>
+<text x="407" y="321" font-size="11" fill="#0F6E56" text-anchor="middle" dominant-baseline="central">pv-geo</text>
+<rect x="482" y="290" width="130" height="42" rx="8" fill="#FFFFFF" stroke="#5DCAA5" stroke-width="0.5"/>
+<text x="547" y="304" font-size="13" font-weight="500" fill="#085041" text-anchor="middle" dominant-baseline="central">EXIF 读写</text>
+<text x="547" y="321" font-size="11" fill="#0F6E56" text-anchor="middle" dominant-baseline="central">pv-meta</text>
+<line x1="340" y1="352" x2="340" y2="382" stroke="#888780" stroke-width="1.5" marker-end="url(#arrow)"/>
+<text x="354" y="367" font-size="12" fill="#5F5E5A" dominant-baseline="central">读文件 / 写索引，全都集中在下一层</text>
+<rect x="40" y="388" width="600" height="92" rx="12" fill="#FAEEDA" stroke="#854F0B" stroke-width="0.5"/>
+<text x="62" y="410" font-size="14" font-weight="500" fill="#412402" dominant-baseline="central">仓库层</text>
+<rect x="62" y="422" width="175" height="42" rx="8" fill="#FFFFFF" stroke="#EF9F27" stroke-width="0.5"/>
+<text x="149" y="436" font-size="13" font-weight="500" fill="#633806" text-anchor="middle" dominant-baseline="central">SQLite 数据库</text>
+<text x="149" y="453" font-size="11" fill="#854F0B" text-anchor="middle" dominant-baseline="central">16 张表 · 一个文件</text>
+<rect x="252" y="422" width="175" height="42" rx="8" fill="#FFFFFF" stroke="#EF9F27" stroke-width="0.5"/>
+<text x="339" y="436" font-size="13" font-weight="500" fill="#633806" text-anchor="middle" dominant-baseline="central">缩略图缓存</text>
+<text x="339" y="453" font-size="11" fill="#854F0B" text-anchor="middle" dominant-baseline="central">按指纹命中，省掉重算</text>
+<rect x="442" y="422" width="175" height="42" rx="8" fill="#FFFFFF" stroke="#EF9F27" stroke-width="0.5"/>
+<text x="529" y="436" font-size="13" font-weight="500" fill="#633806" text-anchor="middle" dominant-baseline="central">你的原始照片</text>
+<text x="529" y="453" font-size="11" fill="#854F0B" text-anchor="middle" dominant-baseline="central">只读，除非你主动改</text>
+</svg>
+<figcaption>图 1 · 三层结构：界面只管响应，后端负责算和写，数据落在最下面</figcaption>
+</figure>
+<p><strong>为什么要分层？</strong></p>
+<p>因为"界面"和"干活"的节奏完全不一样。</p>
+<p>界面要做到<strong>点了就有反应</strong>（哪怕只是转个圈），所以它不能干重活——一旦在主界面上解码一张 50MB 的 RAW，整个窗口就会卡住，看起来像死机。</p>
+<p>而干活的部分要<strong>尽量快</strong>，还要<strong>不能崩</strong>（一个损坏的 JPEG 不能让整个软件退出）。</p>
+<p>所以两边分开：界面负责"好看 + 响应"，后端负责"算得快 + 算得稳"，中间用一条固定的通道说话。</p>
+<p>这条通道很重要，值得解释一下它为什么存在：</p>
+<blockquote class="note">
+<p><strong>界面层不能直接读硬盘。</strong> 在浏览器里，网页是被"关在笼子里"运行的（这个笼子叫沙箱），碰不到你电脑上的文件。 这个软件的窗口本质上也是个网页（用 Tauri 打包成了桌面程序），所以它同样碰不到硬盘。</p>
+<p>想读一张照片，界面必须发一句请求——"请把 D:\照片\01.jpg 的缩略图给我"——后端收到、干完活、把结果递回去。 这样的请求现在有 <strong>92 种</strong>，全部写在 <code>apps/desktop/src/ipc/</code> 目录里。</p>
+<p>好处是：所有碰硬盘、碰数据库的动作都集中在后端这一处，出了问题只要查一个地方。坏处是：每次来回都要"打包—传输—解包"，所以传大块数据时要想办法省事（后面会讲缩略图怎么取巧）。</p>
+</blockquote>
+<hr class="sep"/>
+<h2 id="h4">2. 为什么用 Rust 写后端、React 写界面</h2>
+<p>先说这两个东西是什么。</p>
+<p><strong>Rust</strong> 是一门编程语言，特点是<strong>跑得快</strong>而且<strong>几乎不会因为内存用错而崩溃</strong>。它的规矩特别严，编译的时候就把很多错误拦住了。</p>
+<p><strong>React</strong> 是一个做界面的工具库，特点是<strong>数据一变，界面自动跟着变</strong>，不用手动去改每一个像素。</p>
+<p>为什么这么配？</p>
+<div class="table-wrap"><table><thead><tr><th>需求</th><th>谁来做</th><th>为什么</th></tr></thead><tbody><tr><td>解码 JPEG / RAW / HEIC</td><td>Rust</td><td>解码一张 2400 万像素的照片要做几亿次运算，慢一点就是"卡成幻灯片"。Rust 跟 C 一个速度，但不会像 C 那样一不小心访问了不该访问的内存。</td></tr><tr><td>界面上几百张缩略图的滚动、选中、拖拽</td><td>React</td><td>这些是"状态变化"，React 的模型很贴：你只改数据，它负责把界面刷新到对的样子。</td></tr><tr><td>读文件、写文件、改 EXIF</td><td>Rust</td><td>要处理"写一半断电了怎么办"，这类事必须做得非常严谨。</td></tr><tr><td>让窗口长得好看</td><td>React + CSS</td><td>网页技术做界面最快也最灵活。</td></tr></tbody></table></div>
+<p>一句话：<strong>重活交给 Rust（快），花活交给 React（好改）。</strong></p>
+<hr class="sep"/>
+<h2 id="h5">3. 代码怎么分家：13 个"车间"</h2>
+<p>37,590 行 Rust 如果全塞一个文件里，没人看得懂。所以按"职责"切成 13 个独立的包（Rust 里叫 crate，可以理解成<strong>车间</strong>，每个车间只做一类活，有自己的大门和出货口）。</p>
+<div class="table-wrap"><table><thead><tr><th>车间</th><th>干什么</th><th>行数</th></tr></thead><tbody><tr><td><code>pv-decode</code></td><td><strong>解码</strong>：把 17 种图片格式变成像素，把照片缩小</td><td>8,782</td></tr><tr><td><code>pv-index</code></td><td><strong>目录卡片</strong>：SQLite 里的 16 张表，谁增谁删谁查</td><td>4,658</td></tr><tr><td><code>pv-store</code></td><td><strong>仓库总管</strong>：把"解码"和"索引"粘起来，对上提供服务</td><td>3,612</td></tr><tr><td><code>pv-meta</code></td><td><strong>EXIF</strong>：读出拍摄时间/相机/光圈/GPS，写回方向标记</td><td>2,235</td></tr><tr><td><code>pv-ai</code></td><td><strong>AI</strong>：打标签、识别人脸、聚类人物</td><td>2,050</td></tr><tr><td><code>pv-scan</code></td><td><strong>扫描</strong>：遍历文件夹，找出所有图片，判断是否变过</td><td>1,359</td></tr><tr><td><code>pv-core</code></td><td><strong>公共语言</strong>：格式判断、像素容器、几个基础类型</td><td>1,115</td></tr><tr><td><code>pv-archive</code></td><td><strong>压缩包</strong>：zip / 7z / cbz 里的图片</td><td>1,015</td></tr><tr><td><code>pv-cache</code></td><td><strong>缓存</strong>：内存里留热图（L1）、磁盘上存小图（L2）</td><td>483</td></tr><tr><td><code>pv-lib</code></td><td><strong>图库概念</strong>：图库、智能图库的增删改</td><td>460</td></tr><tr><td><code>pv-geo</code></td><td><strong>地名</strong>：经纬度 → "杭州市西湖区"</td><td>380</td></tr><tr><td><code>pv-edit</code></td><td><strong>编辑</strong>：旋转、翻转、裁剪后写回文件</td><td>336</td></tr><tr><td><code>pv-vault</code></td><td><strong>加密图库</strong>：加锁的那种图库</td><td>275</td></tr></tbody></table></div>
+<p>再往上一层，<code>apps/desktop/src-tauri/</code> 是"总装车间"——它把 13 个车间拼起来，对外提供那 92 个命令。</p>
+<p>前端也这么分：</p>
+<pre class="code"><code>src/
+├── App.tsx              组合根：把各个零件装到一起（几百行，不长）
+├── hooks/               行为逻辑：useManager（图库状态）、useImageView（查看器）、
+│                        useShortcuts（快捷键）…… 一个文件一件事
+├── ipc/                 唯一出口：所有跟后端说话的函数都在这
+├── components/
+│   ├── manager/         图库视图：网格、列表、侧栏、筛选、状态栏
+│   ├── viewer/          单张查看器：缩放、裁剪、打印预览
+│   └── chrome/          通用零件：右键菜单、确认框、输入框
+└── constants/           常量：支持的格式清单等</code></pre>
+<p><strong>这个"分家"不是一开始就这样的。</strong> 最初图库视图是一个 2168 行的巨型文件，改一个小地方要滚半天。后来按"一次只搬一块、搬完就验证"的节奏，拆成了现在十几个小文件（这次拆分后面第 8 节会讲，因为它暴露了两个真 bug）。</p>
+<hr class="sep"/>
+<h2 id="h6">4. 一次「点开文件夹」的完整旅程</h2>
+<p>这是全篇最值得看的一节。<strong>你点一下鼠标，到看见缩略图，中间发生了什么。</strong></p>
+<figure class="fig">
+<svg viewBox="0 0 680 368" width="100%" role="img" xmlns="http://www.w3.org/2000/svg">
+<title>缩略图取图流程</title>
+<desc>点击文件夹后，后端只按后缀列清单，界面先铺占位框，再按可见范围排队取图，命中缓存则直接返回。</desc>
+<defs>
+<marker id="arrow2" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+<path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+</marker>
+</defs>
+<rect x="40" y="40" width="360" height="56" rx="8" fill="#E6F1FB" stroke="#185FA5" stroke-width="0.5"/>
+<text x="220" y="60" font-size="13" font-weight="500" fill="#042C53" text-anchor="middle" dominant-baseline="central">你点了侧栏的「2024杭州」</text>
+<text x="220" y="78" font-size="11" fill="#185FA5" text-anchor="middle" dominant-baseline="central">一次普通的单击</text>
+<line x1="220" y1="96" x2="220" y2="120" stroke="#888780" stroke-width="1.5" marker-end="url(#arrow2)"/>
+<rect x="40" y="124" width="360" height="56" rx="8" fill="#E6F1FB" stroke="#185FA5" stroke-width="0.5"/>
+<text x="220" y="144" font-size="13" font-weight="500" fill="#042C53" text-anchor="middle" dominant-baseline="central">后端只按后缀名列清单</text>
+<text x="220" y="162" font-size="11" fill="#185FA5" text-anchor="middle" dominant-baseline="central">不打开任何文件，所以快</text>
+<line x1="220" y1="180" x2="220" y2="204" stroke="#888780" stroke-width="1.5" marker-end="url(#arrow2)"/>
+<rect x="40" y="208" width="360" height="56" rx="8" fill="#E6F1FB" stroke="#185FA5" stroke-width="0.5"/>
+<text x="220" y="228" font-size="13" font-weight="500" fill="#042C53" text-anchor="middle" dominant-baseline="central">界面先把格子铺满，里面是空的</text>
+<text x="220" y="246" font-size="11" fill="#185FA5" text-anchor="middle" dominant-baseline="central">先给形状，再填内容</text>
+<line x1="220" y1="264" x2="220" y2="288" stroke="#888780" stroke-width="1.5" marker-end="url(#arrow2)"/>
+<rect x="40" y="292" width="360" height="56" rx="8" fill="#E1F5EE" stroke="#0F6E56" stroke-width="0.5"/>
+<text x="220" y="312" font-size="13" font-weight="500" fill="#04342C" text-anchor="middle" dominant-baseline="central">按「看得见」排队取图，最多同时 4 个</text>
+<text x="220" y="330" font-size="11" fill="#0F6E56" text-anchor="middle" dominant-baseline="central">缓存命中直接回，没命中才解码</text>
+<line x1="400" y1="68" x2="430" y2="68" stroke="#B4B2A9" stroke-width="0.5" stroke-dasharray="3 3"/>
+<text x="436" y="68" font-size="12" fill="#5F5E5A" dominant-baseline="central">一切从这次点击开始</text>
+<line x1="400" y1="152" x2="430" y2="152" stroke="#B4B2A9" stroke-width="0.5" stroke-dasharray="3 3"/>
+<text x="436" y="152" font-size="12" fill="#5F5E5A" dominant-baseline="central">约 30 毫秒</text>
+<line x1="400" y1="236" x2="430" y2="236" stroke="#B4B2A9" stroke-width="0.5" stroke-dasharray="3 3"/>
+<text x="436" y="236" font-size="12" fill="#5F5E5A" dominant-baseline="central">你已经觉得「加载好了」</text>
+<line x1="400" y1="320" x2="430" y2="320" stroke="#B4B2A9" stroke-width="0.5" stroke-dasharray="3 3"/>
+<text x="436" y="320" font-size="12" fill="#5F5E5A" dominant-baseline="central">只解 1/64 的像素</text>
+</svg>
+<figcaption>图 2 · 从点一下到看见缩略图：快的原因不是算得快，是「先摆空框、只解能看见的」</figcaption>
+</figure>
+<p>假设你点了左边侧栏的 <code>D:\照片\2024杭州</code>。</p>
+<h3 id="h7">第 1 步：界面问后端"这个目录里有什么"</h3>
+<p>界面发出命令 <code>fs_list_images</code>，参数是路径。</p>
+<h3 id="h8">第 2 步：后端扫目录，只认后缀名，不读内容</h3>
+<p>遍历这个文件夹，按扩展名筛出图片文件。<strong>这一步不打开任何文件</strong>——打开 500 个文件头去判断类型要好几秒，而你现在只是想看看列表。</p>
+<p>代价是：一个叫 <code>.jpg</code> 但其实是文本的文件会被误列。可以接受，因为打开时会再校验一次（那时才读文件头那几个字节，也就是"魔数"）。</p>
+<h3 id="h9">第 3 步：后端回一份"清单"</h3>
+<p>每条记录包含：文件名、大小、修改时间、是否在索引里。界面拿到后立刻把格子铺出来——<strong>这时候格子里还是空的，只有一个占位框</strong>。</p>
+<p>这一步只花了二三十毫秒。<strong>"看起来很快"的第一个秘密就在这里：先把框摆出来，图慢慢填。</strong></p>
+<h3 id="h10">第 4 步：界面按"谁快要看见"排队要缩略图</h3>
+<p>不是一次性要 500 张。而是：</p>
+<ol>
+<li>只算<strong>当前屏幕上真的看得见</strong>的那几十张（用一个叫 <code>useInView</code> 的机制判断）；</li>
+<li>再加<strong>后面差不多两屏</strong>的 30 张做预取（你往下滚的时候不会白屏）；</li>
+<li>丢进一个有 <strong>4 个位置</strong>的队列（<code>thumbQueue</code>），同时最多只跑 4 个请求。</li>
+</ol>
+<p>为什么要限 4 个？因为解码是 CPU 密集的活，开 20 个同时跑只会互相抢，反而全部变慢；而且会把风扇吹起来。</p>
+<h3 id="h11">第 5 步：后端找缓存，命中就直接返回</h3>
+<p>每张缩略图都有一个"身份证号"（缓存键），算法是：</p>
+<pre class="code"><code>缓存键 = 哈希(磁盘卷的唯一编号 + 相对路径 + 文件大小 + 修改时间)</code></pre>
+<p>注意这里<strong>没有用盘符</strong>（<code>D:</code> 这种）。为什么？因为你的移动硬盘今天插上是 <code>D:</code>，明天可能是 <code>E:</code>。如果按盘符算，换个接口就全部失效，白算一遍。</p>
+<p>用"卷的编号 + 从卷根开始的相对路径"就稳了：盘符变了，身份不变。</p>
+<h3 id="h12">第 6 步：没命中缓存 → 真的去解码</h3>
+<p>这一步是全场最费劲的，细节在第 5 节讲。</p>
+<h3 id="h13">第 7 步：把像素递回界面——不走"文字"，走"裸字节"</h3>
+<p>一般的做法是把图片变成一段文本（base64 编码），塞进请求结果里。缺点是<strong>体积膨胀 33%</strong>，而且编码解码两头都要花时间。</p>
+<p>这个项目走的是另一条路：直接把像素字节流递回去，走的是专门的通道（<code>tauri::ipc::Response</code>）。</p>
+<blockquote class="note">
+<p>为什么要专门提这件事？因为这条路有个前提：窗口的<strong>安全策略</strong>必须允许它。 项目里那段配置（CSP，可以理解成"网页的白名单"）必须写着允许 <code>ipc:</code> 通道， 否则浏览器会直接把这条数据流掐掉——表现就是"图一块也出不来"，而且不报错。 这个坑有专门的测试守着（<code>anim_protocol.rs</code>）。</p>
+</blockquote>
+<h3 id="h14">第 8 步：界面把字节画进格子</h3>
+<p>拿到的是原始像素，用 canvas（网页里的画布）画上去。</p>
+<p><strong>为什么不用 <code>&lt;img&gt;</code> 标签直接给个文件路径？</strong> 因为那样做每次滚动都要重新解码，而且没法统一处理"这张图是横向的还是竖向的"（EXIF 方向的问题，见 5.2）。</p>
+<hr class="sep"/>
+<p>到这里，你已经看到图了。</p>
+<p><strong>如果你点的是"加入图库"而不是"点开看看"，流程会多出一大截</strong>：遍历（这次真的读每个文件）、算指纹、判断新增/修改/删除、写进数据库、生成缩略图存到缓存目录。这部分在 <code>pv-scan</code> 和 <code>pv-store</code> 里。</p>
+<p><strong>这里有个刻意的设计</strong>：浏览 ≠ 入库。</p>
+<ul>
+<li>左键点文件夹 = <strong>只是看看</strong>（只读，不写数据库，不写缓存）</li>
+<li>右键「加入图库」 = <strong>真的登记</strong>（写索引、算缓存、以后能搜索能打标）</li>
+</ul>
+<p>为什么分开？因为"随手看看"是高频动作，如果每次看一眼都往数据库里塞 500 条记录，索引会迅速膨胀，而且你根本没打算管理那些照片。</p>
+<hr class="sep"/>
+<h2 id="h15">5. 五个值得讲的算法</h2>
+<h3 id="h16">5.1 缩略图：为什么不能"先解码再缩小"</h3>
+<p>这是整个项目<strong>性能上最关键的一个决定</strong>，值得展开讲。</p>
+<p>一张 2400 万像素的照片，解码出来是这样一块内存：</p>
+<pre class="code"><code>6000（宽） × 4000（高） × 3 个字节（红绿蓝） = 72,000,000 字节 ≈ 72 MB</code></pre>
+<p>而你只需要一张 236 像素宽的小图。如果老老实实"整张解码 → 再缩小"，等于为了一个 200KB 的小图，先吃掉 72MB 内存、算完 2400 万像素。</p>
+<p><strong>更聪明的做法是：让解码器一开始就只解一部分。</strong></p>
+<p>以 JPEG 为例，这种格式把图片切成 8×8 的小块压缩。解码器支持一种"跳着解"的模式（业界叫 DCT 缩放）：只取每 8 个块里的 1 个，直接得到 1/8 大小的图。这样：</p>
+<pre class="code"><code>6000 × 4000  →  750 × 500（只解 1/64 的像素量）</code></pre>
+<p><strong>内存从 72MB 降到 1MB 出头，速度快 10 倍以上。</strong></p>
+<p>关键在于：<strong>这个"跳着解"必须发生在"格式自己的空间里"，不能等转成了通用像素格式之后再做。</strong> 一旦转成通用格式（RGBA），就已经吃过 72MB 了，再缩小也来不及。</p>
+<blockquote class="note">
+<p>项目里有一条硬规矩写在这块代码的注释里： <strong>降采样要在源格式的空间里做完，再转成通用像素。⛔ 不要先转整幅 RGBA。</strong> 这条规矩是踩过坑才写下来的——早期版本就是这么写的，打开一个大目录时内存飙到几个 GB。</p>
+</blockquote>
+<p>还有一个小细节：缩小本身也是个算法活。简单的"取最近的点"会出锯齿，好的做法是按面积加权平均。项目用了一个专门的库（<code>fast_image_resize</code>），并且<strong>必须开启它的多线程特性</strong>——不开的话，一张图缩小要 40ms，开了之后 5ms。</p>
+<h3 id="h17">5.2 EXIF 方向：为什么"旋转照片"可以不动一个像素</h3>
+<p>手机拍照时，感光元件是固定方向的。你竖着拿手机拍，实际记录下来的图像是横的，然后相机会在文件里写一个标记：</p>
+<pre class="code"><code>Orientation = 6   （意思是"显示的时候顺时针转 90 度"）</code></pre>
+<p><strong>照片的像素一个都没动，只是加了一句话。</strong></p>
+<p>这个设计的好处是：旋转零成本，不损失画质（重新编码一次就掉一点质量）。</p>
+<p>坏处是：<strong>每个读照片的程序都必须尊重这句话。</strong></p>
+<p>这个项目里，方向标记在三个地方被处理：</p>
+<ol>
+<li><strong>显示时</strong>：解码后按标记旋转像素，再画到屏幕上；</li>
+<li><strong>编辑时</strong>：你点"顺时针旋转"，程序是<strong>真的重新编码</strong>了一次（因为要保存成你看到的样子），同时把标记改成 <code>1</code>（表示"正常，不用转了"）；</li>
+<li><strong>写回时</strong>：⚠️ 这里有个真陷阱，见 7.2。</li>
+</ol>
+<blockquote class="note">
+<p>还有一个容易忽略的点：<strong>只有当用户真的旋转过，才把标记置 1。</strong> 如果程序"好心"地在每次保存时都把方向"摆正"并置 1，那用户原始的方向信息就丢了—— 有些软件（比如某些相册）依赖这个标记判断"这张是竖拍的"，丢了就判断错。</p>
+</blockquote>
+<h3 id="h18">5.3 拍照地点：6.4 万座城市塞进一个文件</h3>
+<p>照片的 EXIF 里可能带 GPS 坐标，比如 <code>北纬 30.2741, 东经 120.1551</code>。这串数字对人没意义，你想看的是"杭州市西湖区"。</p>
+<p><strong>常规做法是调在线地图接口</strong>（高德、百度）。这个项目<strong>不这么做</strong>，理由三条：</p>
+<ol>
+<li><strong>隐私</strong>：照片的拍摄地点是你最私密的信息之一。为了显示一个地名，把坐标发给第三方服务器，不值得。</li>
+<li><strong>离线可用</strong>：断网、在飞机上、在没有网的相机旁边，也得能用。</li>
+<li><strong>免费且无限制</strong>：在线接口有配额、有延迟、有服务挂掉的可能。</li>
+</ol>
+<p>那怎么办？<strong>内置一份城市表</strong>：</p>
+<ul>
+<li>数据来自 GeoNames（一个公开的地理数据库），取人口大于 5000 的城镇，<strong>6.4 万条</strong>；</li>
+<li>预处理成紧凑的二进制格式，<strong>1.9 MB</strong>；</li>
+<li>编译时直接<strong>编进程序里</strong>（<code>include_bytes!</code>），不是放在外面的文件——这样不会被误删、不会找不到路径。</li>
+</ul>
+<p>运行时怎么查？给一个坐标，遍历 6.4 万条算距离，取最近的。听起来很笨，实际上一次也就几毫秒（而且可以先用粗略的矩形筛掉 99%）。</p>
+<p><strong>这里有个很"产品"的细节</strong>：取"最近的"不一定对。</p>
+<p>比如你在澳门，最近的可能是珠海；在上海徐汇，最近的可能是郊区某个镇。用户看到"你在珠海"会觉得软件坏了。</p>
+<p>所以规则是：<strong>先按行政层级判断，同城范围内不取最近，取上级城市名</strong>。这类规则没有算法能自动学到，是一遍遍试出来的。</p>
+<blockquote class="note">
+<p>还有一点属于合规要求：港澳台必须按规范命名（中国香港 / 中国台湾 / 中国澳门）。这不是技术问题，是必须做对的事。</p>
+</blockquote>
+<h3 id="h19">5.4 AI 打标：把图片和文字放进同一个坐标系</h3>
+<p>"自动识别照片内容"听起来很玄。实际原理不复杂，值得讲清楚。</p>
+<p><strong>核心思路：让模型学会"图和文字可以互相比较"。</strong></p>
+<p>具体做法（这类模型叫 CLIP）：</p>
+<ol>
+<li>找一个"看图"的网络（视觉塔）和一个"看字"的网络（文本塔），一起训练；</li>
+<li>训练目标是：<strong>一张猫的图片，跟"一只猫"这句话，在某个高维空间里应该离得很近；跟"一辆汽车"应该离得很远</strong>；</li>
+<li>训练好之后，<strong>图片和文字就都能变成一个 512 个数字组成的向量</strong>（可以想成"512 个维度的坐标"）。</li>
+</ol>
+<p>那么"给照片打标签"就变成了：</p>
+<pre class="code"><code>1. 预先准备好所有候选词："风景"、"人像"、"猫"、"汽车"、"美食"……（111 个词）
+   每个词都算成一个向量，存下来（就是那个 448KB 的 text_embeds.bin）
+2. 来一张新照片 → 算它的向量
+3. 跟 111 个词的向量逐一算"相似度"（就是看两个箭头夹角有多小）
+4. 相似度超过门槛的，就是这张照片的标签</code></pre>
+<p><strong>实测数据</strong>：一张 1024 长边的图，模型加载 560 毫秒（只做一次），单张推理约 430 毫秒，输出 512 维向量。</p>
+<p>几个工程上的讲究：</p>
+<ul>
+<li><strong>门槛是 0.39</strong>（二级标签）/ <strong>0.35</strong>（一级类目）。这不是拍脑袋，是拿一批人工标过的图试出来的：阈值高了漏标，低了乱标；</li>
+<li><strong>一张图最多给 6 个标签</strong>。多了就变成"什么都像"，用户反而看不出重点；</li>
+<li><strong>输入图要缩到 1024 长边再送进去</strong>。试过 640，结果分数系统性偏低 0.01~0.02——因为缩小太狠，细节没了，模型"看不清"。这个 0.02 在 0.40 门槛附近就是整批漏标；</li>
+<li><strong>门槛只在配置里写一份</strong>。曾经出现过"设置面板显示 0.40、实际跑的是 0.39"这种低级但致命的不一致，所以现在常量只有一处定义，其他地方都从它派生。</li>
+</ul>
+<blockquote class="note">
+<p><strong>一个必须说清楚的点</strong>：这套 AI 是<strong>本地跑的</strong>。模型文件（165MB）就在你电脑上，不联网、不上传照片。这也是为什么安装包有 200 多 MB。</p>
+</blockquote>
+<h3 id="h20">5.5 人脸：为什么"一个阈值"聚不出人</h3>
+<p>自动把同一个人的照片归到一起，看起来是"算两张脸像不像"，其实难点在<strong>怎么分组</strong>。</p>
+<p>每张脸经过模型，也变成一个向量。两张脸的向量越接近，越可能是同一个人。于是最简单的做法：<strong>设一个门槛，像的就连起来</strong>。</p>
+<p><strong>这个做法会崩。</strong> 原因很直观：</p>
+<ul>
+<li>同一个人的照片，有正脸有侧脸，有笑有不笑，相似度可能在 0.45~0.95 之间波动；</li>
+<li>不同的人，如果都是圆脸戴眼镜，相似度也可能到 0.55。</li>
+</ul>
+<p><strong>两拨分数重叠了，一条线切不开。</strong></p>
+<p>项目的解法是<strong>分两步</strong>（这是人脸聚类里很成熟的思路，叫"核心簇 + 归并"）：</p>
+<pre class="code"><code>第一步：用很高的门槛（0.55）先聚出"绝对是同一个人"的小簇
+        —— 宁可漏，不可错。这些是"核心"
+
+第二步：把剩下的散脸，逐个去跟每个核心簇的"代表脸"比
+        超过稍低的门槛（0.50）就并进去
+        —— 这一步宽松些，因为核心簇已经很干净，不容易误并</code></pre>
+<p>还有两条保底规则：</p>
+<ul>
+<li><strong>只有照片多的簇才建成"人物"</strong>（至少 3 张脸）。1 张脸的簇大概率是误检，做成人物只会干扰你；</li>
+<li><strong>删人物时不能把其他图库的人物一起删掉</strong>。技术上是个数据库外键问题，产品上是个"你删了我另一个图库的人就没了"的灾难。</li>
+</ul>
+<hr class="sep"/>
+<h2 id="h21">6. 数据库：16 张表，为什么不"文件夹就是相册"</h2>
+<p>一个自然的想法是：<strong>相册不就是文件夹吗？为什么还要数据库？</strong></p>
+<p>因为你要做的是这些事：</p>
+<ul>
+<li>一张照片<strong>同时</strong>属于"2024 杭州"、"猫"、"评分 5 星"、"人物：小王"——<strong>四类关系同时成立</strong>；</li>
+<li>换台电脑，移动硬盘插到别的接口，<strong>图库还得认得它</strong>；</li>
+<li>按"拍摄时间"排序，但有些照片没有拍摄时间，得退回用"入库时间"；</li>
+<li>一张照片在一处，但要能在多个"智能图库"里出现（比如"所有 5 星照片"）。</li>
+</ul>
+<p><strong>文件夹只能表达"一个东西在一个地方"。上面这些它一个都做不到。</strong></p>
+<p>所以用 SQLite（一个单文件的数据库，整个库就是你硬盘上的一个文件，不需要装服务器）。</p>
+<p>16 张表大致分五组：</p>
+<div class="table-wrap"><table><thead><tr><th>组</th><th>表</th><th>存什么</th></tr></thead><tbody><tr><td>位置</td><td><code>volumes</code> / <code>folders</code></td><td>磁盘卷、目录树</td></tr><tr><td>组织</td><td><code>libraries</code> / <code>library_folders</code></td><td>图库（用户建的"相册"）、图库包含哪些目录</td></tr><tr><td>照片</td><td><code>images</code> / <code>image_exif</code> / <code>places</code> / <code>image_places</code></td><td>每张照片一行、EXIF 明细、地点</td></tr><tr><td>语义</td><td><code>tags</code> / <code>image_tags</code> / <code>ai_results</code> / <code>persons</code> / <code>faces</code></td><td>标签、打标结果、人物、人脸</td></tr><tr><td>其他</td><td><code>thumbs</code> / <code>settings</code> / <code>vaults</code></td><td>缩略图记录、设置、加密图库</td></tr></tbody></table></div>
+<p><strong>几个设计决定值得说：</strong></p>
+<p><strong>① 卷的身份用编号，不用盘符。</strong></p>
+<pre class="code"><code>volumes(id, guid, path)   ← guid 是这块盘的唯一编号
+folders(id, volume_id, rel_path, ...)
+images(id, folder_id, ...)</code></pre>
+<p>移动硬盘今天 <code>D:</code>、明天 <code>E:</code>，数据库里存的还是同一个 <code>volume_id</code>，照片不会"消失"。</p>
+<p>⚠️ 但这里踩过一个很隐蔽的坑：<strong>比较卷路径时必须先规范化</strong>（去掉结尾的反斜杠、转小写）。差一个反斜杠，程序就认为"这是两块不同的盘"，于是同一批照片被索引两遍；更糟的是"移除目录"时删掉一份，另一份还在。</p>
+<p><strong>② 删图库 ≠ 删照片。</strong></p>
+<p>"删除图库"只删 <code>libraries</code> 和 <code>library_folders</code> 里的记录，<strong>原图一张都不碰</strong>。这是必须守住的红线：用户点"删除"的时候，心里想的是"不想在这个相册里看到"，不是"把这些文件从硬盘抹掉"。</p>
+<p><strong>③ 默认排序是拍摄时间，但要有兜底。</strong></p>
+<pre class="code"><code class="lang-sql">ORDER BY COALESCE(taken_at, added_ts)</code></pre>
+<p>有些照片（截图、从网上下载的、老相机）没有拍摄时间，就退回用入库时间。不用 <code>COALESCE</code> 的话，这些照片会全部沉到底部或者顶到最前。</p>
+<hr class="sep"/>
+<h2 id="h22">7. 改照片：怎么做到"改坏了也不丢原图"</h2>
+<p>编辑照片意味着<strong>重新写文件</strong>。这里出错的后果很严重：写一半断电、磁盘满了、程序崩了——都可能得到一个"打不开"的文件，而原图已经没了。</p>
+<h3 id="h23">7.1 原子写：先写新文件，再改名替换</h3>
+<pre class="code"><code>1. 完整地在内存里编码好新图
+2. 写到同目录下的临时文件（xxx.tmp）
+3. 确认写完了 → 用一个"改名"操作把 tmp 换成原名</code></pre>
+<p>关键在<strong>第 3 步</strong>：在文件系统里，"改名"是一个<strong>要么全成、要么全不成</strong>的操作（原子操作）。所以任何时刻，硬盘上要么是完整的旧图、要么是完整的新图，<strong>不存在"半个文件"</strong>。</p>
+<p>如果第 2 步就失败了（磁盘满），直接删掉 tmp，原图分毫未动。</p>
+<h3 id="h24">7.2 EXIF 写回：一个能毁掉整份文件的陷阱</h3>
+<p>这个技术细节很硬核，但它是这个项目里"最值得讲"的 bug 之一。</p>
+<p>EXIF 数据（拍摄时间、相机、方向）存在图片文件的一块区域里，结构像一张表格：每行有"标签、类型、数量、值"。</p>
+<p><strong>陷阱在于"值"这一格。</strong></p>
+<p>表格里这么设计是有原因的：大部分值很小（比如方向就是个 1~8 的数字），直接塞在"值"这一格里最省空间；但有些值很长（比如相机型号字符串、GPS 坐标数组），塞不进去，就在这一格里存一个<strong>"到别处的偏移量"</strong>（相当于"详情见第 300 字节"）。</p>
+<p><strong>问题来了</strong>：你怎么知道这一格是"值本身"还是"一个地址"？</p>
+<p>规则是：<strong>当"数量 × 类型长度 ≤ 4 字节"时是值本身，否则是偏移量。</strong></p>
+<p>于是有了这样一个 bug：</p>
+<blockquote class="note">
+<p>早期代码写方向标记时，默认"这一格一定是 2 字节的小数字，直接改"，就把值写了进去。 但如果这个文件里那一格存的其实是个<strong>偏移量</strong>（因为别的软件写入时用了更宽的格式）， 那么"直接改数字"等于<strong>把指针改坏了</strong>——读图软件顺着这个假地址去读，读到一堆垃圾， 结果整个文件的 EXIF 全部解析失败，严重时文件打不开。</p>
+</blockquote>
+<p>修复后的逻辑是<strong>先辨类型和数量，再决定怎么写</strong>：</p>
+<pre class="code"><code class="lang-rust">fn orientation_slot(e: &amp;Entry, tiff: &amp;[u8]) -&gt; Option&lt;(usize, Width)&gt; {
+    if e.count != 1 { return None; }          // 数量不是 1 → 不是内联值，别碰
+    let width = match e.ty {
+        TYPE_SHORT =&gt; Width::Short,           // 2 字节
+        TYPE_LONG  =&gt; Width::Long,            // 4 字节
+        _ =&gt; return None,                     // 其他类型 → 别碰
+    };
+    let at = e.offset.checked_add(8)?;        // 内联值的位置
+    tiff.get(at..at.checked_add(width.bytes())?)?;  // 越界就放弃
+    Some((at, width))
+}</code></pre>
+<p><strong>看不懂代码没关系，记住这个思路就行</strong>：不确定的地方，<strong>宁可放弃，也不要猜着写</strong>。返回 <code>None</code> 的后果只是"这次没改成功"，而猜错的后果是"用户的原图废了"。这个取舍在生产代码里是标准答案。</p>
+<hr class="sep"/>
+<h2 id="h25">8. 工程纪律：这部分其实比算法更值钱</h2>
+<p>前面讲的都是"做了什么"。这一节讲"怎么保证做得对"——<strong>这部分是外行最难体会、但内行最看重的</strong>。</p>
+<h3 id="h26">8.1 一次只改一件事，改完立刻验证</h3>
+<p>这个项目有条硬规矩：<strong>每一刀只搬代码、不改逻辑</strong>，然后跑三项检查（类型检查、单元测试、代码规范检查），全绿才提交。</p>
+<p>为什么要这么死板？因为<strong>如果一次改三件事，出了问题你根本不知道是哪一件引起的</strong>。</p>
+<p>举个真实的例子：把图库视图里"拖拽调宽"这段搬出去的时候，顺手发现了一个真 bug——</p>
+<blockquote class="note">
+<p>双击侧栏那条缝，界面上的宽度确实回到默认了，但这个值<strong>没有存下来</strong>。 重启软件，宽度又变成上次拖的那个值。 界面上写着"双击恢复默认"，行为却是"暂时恢复默认"。</p>
+</blockquote>
+<p>这个 bug 存在了很久，但没人发现。<strong>为什么搬代码的时候会突然发现？</strong></p>
+<p>因为在原来那一堆内联的事件处理里，你只能看到"改了内存里的值"；搬出来单独看的时候，"改内存"和"写磁盘"这两件事摆在一起，缺了哪个一目了然。</p>
+<blockquote class="note">
+<p>这就是重构（把代码重新摆放）的真正价值：<strong>它不是为了好看，是为了让错误无处藏身。</strong></p>
+</blockquote>
+<h3 id="h27">8.2 测试不是"证明对"，是"防止退步"</h3>
+<p>项目里现在有 <strong>343 个前端测试 + 532 个后端测试</strong>。</p>
+<p>这些测试绝大多数不测"高深的算法"，而测<strong>很容易被后人改坏的小规则</strong>。举几个真实的例子：</p>
+<pre class="code"><code>"全选文件夹时，不能显示大小"
+  → 因为目录没有 size，算出来是 0，会显示"已选 3 张 · 0 B"，
+    既把文件夹说成"张"，又摆了个假的大小
+
+"取路径的函数故意不过滤目录"
+  → 因为侧栏"加入图库"正是靠它取目录路径的，
+    谁要是"顺手优化"加上"排除目录"，这个功能立刻坏掉
+
+"0.55 和 0.50 是两个不同的门槛，别合成一个"
+  → 人脸聚类分两步的原因就写在这个测试的注释里</code></pre>
+<p><strong>关键在注释。</strong> 每条测试都写清楚"为什么是这个行为"，以及"⛔ 别改成什么样"。因为半年后回来看代码的人（可能就是自己）只会看到一行奇怪的断言，然后想"这明显是多余的，删了吧"。</p>
+<h3 id="h28">8.3 把踩过的坑写下来，而不是记住</h3>
+<p>项目里有一份"记忆索引"，全是这种条目：</p>
+<pre class="code"><code>⛔ 读缓存不能传 new(Thumbnail)，要用 exact(Thumbnail, None)
+⛔ 弹层必须挂在 body 上，塞进 overflow:hidden 的容器里会看不见
+⛔ hook 必须写在所有提前 return 之前，否则整页白屏
+⛔ 后端别按总行数拆：lib.rs 1348 行里 1104 行是测试</code></pre>
+<p>这些每一条背后都是一次真实的排查。写下来的原因很简单：<strong>人会忘，文件不会。</strong></p>
+<hr class="sep"/>
+<h2 id="h29">9. 想自己跑起来</h2>
+<p>前置：装 Node.js、Rust 工具链、和 Windows 的 C++ 编译工具。</p>
+<pre class="code"><code class="lang-bash"># 1. 装前端依赖
+cd apps/desktop
+npm install
+
+# 2. 开发模式（改代码自动刷新）
+npm run tauri:dev
+
+# 3. 打包成安装包
+npm run tauri:build</code></pre>
+<p><strong>跑测试</strong>（这是了解项目最快的方式，测试就是最好的说明书）：</p>
+<pre class="code"><code class="lang-bash"># 前端 343 个
+cd apps/desktop &amp;&amp; npx vitest run
+
+# 后端
+cargo test -p photovault --lib
+cargo test -p pv-index --lib
+cargo test -p pv-meta</code></pre>
+<p>⚠️ <strong>一个坑</strong>：AI 模型（165MB + 37MB）不在代码仓库里（太大）。如果你想跑 AI 部分，得先把模型文件放到 <code>assets/ai/tag/</code> 和 <code>assets/ai/face/</code> 下，否则打包会报"资源路径不存在"。</p>
+<hr class="sep"/>
+<h2 id="h30">10. 名词小抄</h2>
+<div class="table-wrap"><table><thead><tr><th>名词</th><th>一句话解释</th></tr></thead><tbody><tr><td><strong>Rust</strong></td><td>一门编程语言，跑得快、不容易崩，编译时检查特别严</td></tr><tr><td><strong>React</strong></td><td>做界面的工具库，"数据一变界面自动变"</td></tr><tr><td><strong>Tauri</strong></td><td>把网页打包成桌面程序的框架，比 Electron 小得多（因为它用系统自带的浏览器内核）</td></tr><tr><td><strong>crate</strong></td><td>Rust 的"包/车间"，一个独立编译的代码单元</td></tr><tr><td><strong>IPC / 命令</strong></td><td>界面和后端说话的通道；一次请求就是一条"命令"</td></tr><tr><td><strong>SQLite</strong></td><td>一个文件就是一个数据库，不用装服务器</td></tr><tr><td><strong>EXIF</strong></td><td>照片里附带的"说明书"：拍摄时间、相机、光圈、GPS、方向</td></tr><tr><td><strong>RAW</strong></td><td>相机原始数据格式，没经过压缩处理，画质最好但文件巨大</td></tr><tr><td><strong>解码</strong></td><td>把压缩的图片文件变成屏幕上能显示的像素</td></tr><tr><td><strong>编码</strong></td><td>反过来，把像素存成 jpg/png 文件</td></tr><tr><td><strong>降采样</strong></td><td>把大图缩小（缩略图的关键步骤）</td></tr><tr><td><strong>缓存</strong></td><td>把算过的东西存起来，下次直接用</td></tr><tr><td><strong>哈希</strong></td><td>把任意内容算成一串固定长度的"指纹"，内容变一点指纹就全变</td></tr><tr><td><strong>向量 / 相似度</strong></td><td>把事物变成一串数字，两个向量的夹角越小越相似</td></tr><tr><td><strong>CLIP</strong></td><td>一类能把"图"和"文字"放进同一个坐标系的 AI 模型</td></tr><tr><td><strong>阈值 / 门槛</strong></td><td>判断"算不算"的那条线，比如相似度 0.39 以上算是这个标签</td></tr><tr><td><strong>聚类</strong></td><td>把相似的东西自动分成一堆一堆</td></tr><tr><td><strong>原子操作</strong></td><td>要么全做完、要么完全没做，不存在"做了一半"</td></tr><tr><td><strong>单元测试</strong></td><td>一段小程序，自动检查某个功能还是不是预期的样子</td></tr><tr><td><strong>重构</strong></td><td>不改功能，只重新摆放代码，让它更好懂、更好改</td></tr></tbody></table></div>
+<hr class="sep"/>
+<h2 id="h31">最后</h2>
+<p>如果只能记住三件事：</p>
+<ol>
+<li><strong>分层是为了各司其职</strong>——界面负责"快响应"，后端负责"算得快又不崩"，中间那条通道让责任边界很清晰。</li>
+<li><strong>性能的关键往往在"少干活"</strong>，而不是"干得快"。缩略图不解整张、缓存按指纹命中、地名不联网——都是"少干"。</li>
+<li><strong>工程上最值钱的不是聪明，是纪律</strong>：一次只改一件事、每件事都有测试守着、每个坑都写下来。</li>
+</ol>
+<p>一个 6 万行的软件，本质上是<strong>几百个这样的决定堆起来的</strong>。每个决定单看都不难，难的是让它们互相不打架，并且在半年后还能被改。</p>
+    </main>
+  </div>
+</div>
+<footer class="end"><div class="wrap"><p>基于 2026-10-31 的代码状态生成 · 数字均为实测（Rust 37,590 行 / 前端 23,178 行 / 343 前端测试 + 532 后端测试）</p></div></footer>
+<script>
+(function(){
+  var groups = Array.prototype.slice.call(document.querySelectorAll('.toc li.grp'));
+  var links = Array.prototype.slice.call(document.querySelectorAll('.toc a[href^="#"]'));
+
+  groups.forEach(function(li){
+    var a = li.querySelector('a.lv2');
+    if(!a || !li.querySelector('.sub')) return;
+    a.addEventListener('click', function(){
+      groups.forEach(function(o){ if(o !== li) o.classList.remove('open'); });
+      li.classList.toggle('open');
+    });
+  });
+
+  var targets = links.map(function(a){
+    return document.getElementById(a.getAttribute('href').slice(1));
+  }).filter(Boolean);
+  if(!targets.length) return;
+
+  var io = new IntersectionObserver(function(entries){
+    entries.forEach(function(e){
+      if(!e.isIntersecting) return;
+      var id = e.target.id;
+      links.forEach(function(a){
+        a.classList.toggle('on', a.getAttribute('href') === '#' + id);
+      });
+      var cur = document.getElementById(id);
+      while(cur && cur !== document.body){
+        if(cur.tagName === 'H2'){
+          groups.forEach(function(o){
+            var a = o.querySelector('a.lv2');
+            if(a && a.getAttribute('href') === '#' + cur.id) o.classList.add('open');
+          });
+          break;
+        }
+        cur = cur.parentElement;
+      }
+    });
+  }, {rootMargin:'-8% 0px -75% 0px', threshold:0});
+  targets.forEach(function(t){ io.observe(t); });
+})();
+</script>
+</body>
+</html>
