@@ -27,6 +27,7 @@ import {
   type LibraryItem,
 } from '../../ipc/manager'
 import { errText } from '../../lib/errText'
+import { notifyMetaChanged, notifyPeopleChanged } from '../../lib/peopleEvents'
 
 interface Props {
   task: 'tag' | 'face'
@@ -94,6 +95,13 @@ export function AiRunPanel({ task, title, hint }: Props) {
         if (st.done) {
           setBusy(false)
           refreshCov(picked)
+          notifyMetaChanged()
+          /*
+           * 设置面板跑完也要广播：人像条 / 人像墙都挂着这个事件。
+           * ⛔ 少这一句 = 库里建了人物、主区人像条还是空
+           * （2026-11-01 用户报的「人脸识别没完成」就是这个症状）。
+           */
+          notifyPeopleChanged()
           return
         }
         window.setTimeout(tick, 500)
@@ -123,7 +131,12 @@ export function AiRunPanel({ task, title, hint }: Props) {
       try {
         const st = await aiTaskStatus()
         setStatus(st)
-        if (st.done) return
+        if (st.done) {
+          /* 打标这一段刚从跑完，标签条要刷新（人物阶段随后还会再广播一次） */
+          notifyMetaChanged()
+          notifyPeopleChanged()
+          return
+        }
       } catch {
         return
       }

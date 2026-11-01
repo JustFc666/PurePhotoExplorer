@@ -1173,6 +1173,12 @@ export function useManager(): ManagerApi {
     setRating,
     setFlag,
     reload,
+    /*
+     * `reload` 只把图片列表重查一遍；带标签 / 筛选条 / 侧栏计数的**元数据**
+     * 全在这个里。AI 跑完必须用这个 —— 只 reload 的话，新标签和新人物
+     * 在界面上一个都不会出现（2026-11-01 用户报「人脸识别没完成」的真因）。
+     */
+    refreshMeta,
     refreshLibraries: refreshMeta,
     bumpThumbs,
     thumbRevOf,

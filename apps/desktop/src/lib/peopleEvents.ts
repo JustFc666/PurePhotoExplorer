@@ -34,3 +34,27 @@ export function onPeopleChanged(fn: () => void): () => void {
   window.addEventListener(PEOPLE_CHANGED_EVENT, fn)
   return () => window.removeEventListener(PEOPLE_CHANGED_EVENT, fn)
 }
+
+/*
+ * ── 「库元数据变了」 ─────────────────────────────────────────────
+ *
+ * 和「人物变了」分开：人物只影响人像条 / 人像墙，而**标签、统计、筛选维度**
+ * 影响的是主区一整套下拉和标签条。
+ *
+ * 加它的直接原因（2026-11-01）：在设置面板里跑完打标 / 人脸，主区既不刷新
+ * 标签条也不刷新人像条 —— 照片列表没变，用户以为「识别没跑」。
+ * 主区自己没有「任务结束」这个信号，只能靠广播。
+ */
+
+export const META_CHANGED_EVENT = 'pv:meta-changed'
+
+/** 广播「库的元数据（标签 / 统计 / 人物）已变化」，主区据此重拉一次。 */
+export function notifyMetaChanged(): void {
+  window.dispatchEvent(new Event(META_CHANGED_EVENT))
+}
+
+/** 订阅元数据变更。 */
+export function onMetaChanged(fn: () => void): () => void {
+  window.addEventListener(META_CHANGED_EVENT, fn)
+  return () => window.removeEventListener(META_CHANGED_EVENT, fn)
+}

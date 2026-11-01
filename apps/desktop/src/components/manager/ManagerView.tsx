@@ -31,7 +31,7 @@ import { confirm, open as openDialog } from '@tauri-apps/plugin-dialog'
 import { formatFileSize } from '../../ipc'
 import { managerCreateLibrary, type TagItem } from '../../ipc/manager'
 import { subscribeThumbPending } from '../../ipc/thumbQueue'
-import { notifyPeopleChanged } from '../../lib/peopleEvents'
+import { notifyPeopleChanged, onMetaChanged } from '../../lib/peopleEvents'
 import { useFsTree } from '../../hooks/useFsTree'
 import { useGridWindow } from '../../hooks/useGridWindow'
 import { errText, useManager, type GridItem } from '../../hooks/useManager'
@@ -132,6 +132,14 @@ export function ManagerView(props: Props) {
   const [pendingThumbs, setPendingThumbs] = useState(0)
 
   useEffect(() => subscribeThumbPending(setPendingThumbs), [])
+
+  /*
+   * 别处（设置面板）跑完 AI 后广播的「元数据变了」→ 重拉标签条 / 筛选条 / 统计。
+   *
+   * ⛔ 不能只靠 `mgr.reload()`：那次重查的只是图片列表，而 AI 改的是标签和人物，
+   * 照片本身一张都没变。少这一次重拉，用户看到的就是「跑完了但界面什么都没动」。
+   */
+  useEffect(() => onMetaChanged(() => void mgr.refreshMeta()), [mgr.refreshMeta])
 
   /** 多选集合的**唯一真源在 `useManager`**（它会随范围/筛选变化清空）。 */
   const selected = useMemo(() => new Set(mgr.selectedKeys), [mgr.selectedKeys])
@@ -1208,7 +1216,16 @@ export function ManagerView(props: Props) {
               onClose={() => setPipeOpen(false)}
               onDone={() => {
                 setPipeOpen(false)
-                mgr.reload()
+                /*
+                 * ⭐ 2026-11-01 修：原来这里只调 `mgr.reload()`（= 重查图片列表）。
+                 * AI 跑完**变的不是图片**，而是标签、筛选计数和人物 ——
+                 * 那些全在 `refreshMeta` 里。只 reload 的结果是：
+                 * 库里明明写进了 22 个人物，界面上人像条一片空白，
+                 * 用户只能得出「人脸识别没完成」的结论（本次真实故障）。
+                 */
+                void mgr.refreshMeta()
+                /* 人像条 / 人像墙各自持一份列表，单独广播一次 */
+                notifyPeopleChanged()
               }}
             />
           )}

@@ -9,8 +9,11 @@
 
 import { beforeEach, describe, expect, test, vi } from 'vitest'
 import {
+  META_CHANGED_EVENT,
   PEOPLE_CHANGED_EVENT,
+  notifyMetaChanged,
   notifyPeopleChanged,
+  onMetaChanged,
   onPeopleChanged,
 } from './peopleEvents'
 
@@ -52,5 +55,45 @@ describe('人物变更广播', () => {
 
     offA()
     offB()
+  })
+})
+
+/**
+ * 「库元数据变了」是另一条线：标签 / 统计 / 筛选维度变了，照片本身没变。
+ *
+ * 加它的原因（2026-11-01）：在设置面板跑完 AI，主区的标签条和人像条都不动 ——
+ * 库里明明写进了 22 个人物，界面上还是空的人像条，用户只能认为「识别没完成」。
+ */
+describe('元数据变更广播', () => {
+  beforeEach(() => {
+    vi.stubGlobal('window', new EventTarget())
+  })
+
+  test('和人物事件不是同一个标识 —— 两条线各管各的', () => {
+    expect(META_CHANGED_EVENT).toBe('pv:meta-changed')
+    expect(META_CHANGED_EVENT).not.toBe(PEOPLE_CHANGED_EVENT)
+  })
+
+  test('派发元数据事件不会惊动只关心人物的监听方', () => {
+    const people = vi.fn()
+    const meta = vi.fn()
+    const offP = onPeopleChanged(people)
+    const offM = onMetaChanged(meta)
+
+    notifyMetaChanged()
+    expect(meta).toHaveBeenCalledTimes(1)
+    // 主区的 refreshMeta 里本来就会重拉人物，再收一次人物事件等于白跑一遍
+    expect(people).not.toHaveBeenCalled()
+
+    offP()
+    offM()
+  })
+
+  test('退订后不再收到', () => {
+    const fn = vi.fn()
+    const off = onMetaChanged(fn)
+    off()
+    notifyMetaChanged()
+    expect(fn).not.toHaveBeenCalled()
   })
 })
