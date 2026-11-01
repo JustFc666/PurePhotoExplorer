@@ -205,6 +205,60 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* 滑块 + 轨道下方的定性刻度（宽松 / 标准 / 严格 + 默认值） */
+.pv-set-slider-col {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* 父级变成 column 后，`flex: 1 1 auto` 会在纵轴拉伸，这里改回固定高度 */
+.pv-set-slider-col .pv-set-slider {
+  width: 100%;
+  flex: 0 0 auto;
+}
+
+/* 轨道下方一行刻度：高度固定，避免有无 marks 时行高跳动 */
+.pv-set-marks {
+  position: relative;
+  height: 15px;
+  /* 左右各 6px ≈ thumb 半径，让 0% / 100% 的刻度对齐滑块两端 */
+  margin: -1px 6px 0;
+}
+
+.pv-set-mark {
+  position: absolute;
+  top: 0;
+  transform: translateX(-50%);
+  font-size: 10.5px;
+  line-height: 1.35;
+  white-space: nowrap;
+  color: var(--pv-text-tertiary);
+  font-variant-numeric: tabular-nums;
+}
+
+/* 首尾刻度不出框 */
+.pv-set-mark:first-child {
+  transform: none;
+}
+.pv-set-mark:last-child {
+  transform: translateX(-100%);
+}
+
+.pv-set-mark.is-on {
+  color: var(--pv-accent);
+}
+
+.pv-set-mark-def {
+  margin-left: 4px;
+  padding: 0 3px;
+  border: 1px solid var(--pv-border-strong);
+  border-radius: 3px;
+  font-size: 9.5px;
+  color: var(--pv-text-secondary);
+}
+
 /* 滑块：行内绘制，没有原生弹层问题，所以用 input[type=range] 保留键盘/读屏 */
 .pv-set-slider {
   flex: 1 1 auto;

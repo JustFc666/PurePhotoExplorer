@@ -25,12 +25,19 @@ pub struct FaceBatchOpts {
     pub model: &'static str,
 }
 
+/// 检测置信度缺省值（Python 版默认 0.6），**唯一真源**：设置面板由它派生。
+pub const DEFAULT_SCORE_THRESH: f32 = 0.6;
+/// 脸宽像素下限缺省值（解码后坐标）。
+pub const DEFAULT_MIN_FACE_PX: f32 = 56.0;
+/// 解码长边缺省值。
+pub const DEFAULT_LONG_SIDE: u32 = 1600;
+
 impl Default for FaceBatchOpts {
     fn default() -> Self {
         Self {
-            score_thresh: 0.6,
-            min_face_px: 56.0,
-            long_side: 1600,
+            score_thresh: DEFAULT_SCORE_THRESH,
+            min_face_px: DEFAULT_MIN_FACE_PX,
+            long_side: DEFAULT_LONG_SIDE,
             model: "sface_2021dec",
         }
     }

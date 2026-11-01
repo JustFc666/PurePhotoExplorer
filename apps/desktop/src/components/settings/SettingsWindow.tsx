@@ -342,6 +342,8 @@ function Slider({
   onInput,
   onCommit,
   format,
+  marks,
+  defaultValue,
 }: {
   value: number
   min: number
@@ -350,20 +352,42 @@ function Slider({
   onInput: (v: number) => void
   onCommit: (v: number) => void
   format: (v: number) => string
+  /** 轨道下方的定性刻度（宽松 / 标准 / 严格），`at` 必须是滑轨上的真实数值 */
+  marks?: { at: number; label: string }[]
+  /** 默认值：该刻度会额外标「默认」，当前值落在附近时高亮 */
+  defaultValue?: number
 }) {
+  const pct = (v: number) => (max > min ? ((v - min) / (max - min)) * 100 : 0)
+  const isDef = (at: number) => defaultValue !== undefined && Math.abs(at - defaultValue) < 1e-6
   return (
     <div className="pv-set-slider-wrap">
-      <input
-        className="pv-set-slider"
-        type="range"
-        min={min}
-        max={max}
-        step={step}
-        value={value}
-        onChange={(e) => onInput(Number(e.target.value))}
-        onPointerUp={(e) => onCommit(Number((e.target as HTMLInputElement).value))}
-        onKeyUp={(e) => onCommit(Number((e.target as HTMLInputElement).value))}
-      />
+      <div className="pv-set-slider-col">
+        <input
+          className="pv-set-slider"
+          type="range"
+          min={min}
+          max={max}
+          step={step}
+          value={value}
+          onChange={(e) => onInput(Number(e.target.value))}
+          onPointerUp={(e) => onCommit(Number((e.target as HTMLInputElement).value))}
+          onKeyUp={(e) => onCommit(Number((e.target as HTMLInputElement).value))}
+        />
+        {marks && marks.length > 0 && (
+          <div className="pv-set-marks">
+            {marks.map((m) => (
+              <span
+                key={m.label}
+                className={`pv-set-mark${Math.abs(value - m.at) < step / 2 ? ' is-on' : ''}`}
+                style={{ left: `${pct(m.at)}%` }}
+              >
+                {m.label} {format(m.at)}
+                {isDef(m.at) && <span className="pv-set-mark-def">默认</span>}
+              </span>
+            ))}
+          </div>
+        )}
+      </div>
       <span className="pv-set-value">{format(value)}</span>
     </div>
   )
@@ -907,6 +931,14 @@ function FacePage() {
     void aiSaveConfig({ faces: on }).catch(() => undefined)
   }
 
+  /** 人脸四档：`onInput` 只改本地值，松手（`onCommit`）才写库 —— 同打标滑块的习惯 */
+  const saveFace = (
+    p: Partial<Pick<AiConfig, 'faceScoreThresh' | 'faceMinFacePx' | 'faceTCore' | 'faceMinCore'>>,
+  ) => {
+    setCfg((c) => (c ? { ...c, ...p } : c))
+    void aiSaveConfig(p).catch(() => undefined)
+  }
+
   const clear = () => {
     if (!confirming) {
       setConfirming(true)
@@ -935,6 +967,98 @@ function FacePage() {
             <Switch on={cfg.faces} onChange={setFaces} label="人脸识别" />
           </Row>
           <div className="pv-set-info">模型 YuNet（检测）+ SFace（128 维特征）</div>
+
+          {/* ── 四档门槛（2026-11 从硬编码提到面板）──
+              「宽松 / 标准 / 严格」只是定性刻度，`at` 是滑轨上的真实数值；
+              「默认」由后端 `defaults` 下发，⛔ 前端别自己写字面量。 */}
+          <Row
+            label="检测严格度"
+            hint="YuNet 的置信度门槛。调低能捞出侧脸和小脸，但也更容易把公仔、浮雕、镜面反光认成人脸。"
+          >
+            <Slider
+              value={cfg.faceScoreThresh}
+              min={0.4}
+              max={0.9}
+              step={0.01}
+              format={(v) => v.toFixed(2)}
+              marks={[
+                { at: 0.5, label: '宽松' },
+                { at: 0.6, label: '标准' },
+                { at: 0.7, label: '严格' },
+              ]}
+              defaultValue={cfg.defaults.faceScoreThresh}
+              onInput={(v) => setCfg((c) => (c ? { ...c, faceScoreThresh: v } : c))}
+              onCommit={(v) => saveFace({ faceScoreThresh: v })}
+            />
+          </Row>
+
+          <Row
+            label="最小脸宽（像素）"
+            hint="解码后小于这个宽度的脸直接丢：大合照里的远景小脸向量不可信，硬聚只会造出一堆假人物。"
+          >
+            <Slider
+              value={cfg.faceMinFacePx}
+              min={32}
+              max={120}
+              step={2}
+              format={(v) => String(Math.round(v))}
+              marks={[
+                { at: 40, label: '宽松' },
+                { at: 56, label: '标准' },
+                { at: 80, label: '严格' },
+              ]}
+              defaultValue={cfg.defaults.faceMinFacePx}
+              onInput={(v) => setCfg((c) => (c ? { ...c, faceMinFacePx: v } : c))}
+              onCommit={(v) => saveFace({ faceMinFacePx: v })}
+            />
+          </Row>
+
+          <Row
+            label="聚类严格度"
+            hint="两阶段聚类的第一阶段门槛。调低更容易把同一个人认出来（也可能把两个人并成一个），调高则同一个人会被拆成几个。"
+          >
+            <Slider
+              value={cfg.faceTCore}
+              min={0.4}
+              max={0.75}
+              step={0.01}
+              format={(v) => v.toFixed(2)}
+              marks={[
+                { at: 0.45, label: '宽松' },
+                { at: 0.55, label: '标准' },
+                { at: 0.65, label: '严格' },
+              ]}
+              defaultValue={cfg.defaults.faceTCore}
+              onInput={(v) => setCfg((c) => (c ? { ...c, faceTCore: v } : c))}
+              onCommit={(v) => saveFace({ faceTCore: v })}
+            />
+          </Row>
+
+          <Row
+            label="建人物最少张数"
+            hint="少于这个张数的簇不建人物 —— 只在一两照片里出现的脸会留在「人物」之外，避免人像墙被一次性面孔塞满。"
+          >
+            <Slider
+              value={cfg.faceMinCore}
+              min={2}
+              max={12}
+              step={1}
+              format={(v) => String(v)}
+              marks={[
+                { at: 2, label: '宽松' },
+                { at: 3, label: '标准' },
+                { at: 6, label: '严格' },
+              ]}
+              defaultValue={cfg.defaults.faceMinCore}
+              onInput={(v) => setCfg((c) => (c ? { ...c, faceMinCore: v } : c))}
+              onCommit={(v) => saveFace({ faceMinCore: v })}
+            />
+          </Row>
+          <div className="pv-set-hint" style={{ marginTop: 2 }}>
+            四档改完都要「重新识别」才对已入库的照片生效；重新识别会重建人物，**已起好的名字会丢**。
+            第二阶段的并入阈值固定比第一阶段松 0.05，不单独暴露。
+          </div>
+
           <FaceRerun />
         </>
       )}

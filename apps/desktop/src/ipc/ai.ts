@@ -27,6 +27,23 @@ export interface AiConfig {
   thresholdL1: number
   maxTags: number
   faces: boolean
+  /** 人脸检测置信度：低于它的不当作人脸 */
+  faceScoreThresh: number
+  /** 脸宽像素下限（解码后）：小脸向量不可信，直接丢 */
+  faceMinFacePx: number
+  /** 聚类第一阶段阈值：越高越严，人物分得越细 */
+  faceTCore: number
+  /** 建人物所需的最少张数 */
+  faceMinCore: number
+  /** 出厂默认值 —— 由后端下发，面板照它标「默认」，前端⛔ 不写字面量 */
+  defaults: AiDefaults
+}
+
+export interface AiDefaults {
+  faceScoreThresh: number
+  faceMinFacePx: number
+  faceTCore: number
+  faceMinCore: number
 }
 
 export interface VocabTerm {
@@ -47,6 +64,10 @@ export function aiSaveConfig(p: {
   thresholdL1?: number
   maxTags?: number
   faces?: boolean
+  faceScoreThresh?: number
+  faceMinFacePx?: number
+  faceTCore?: number
+  faceMinCore?: number
 }): Promise<void> {
   return invoke<void>('ai_save_config', p)
 }

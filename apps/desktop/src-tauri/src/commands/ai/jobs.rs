@@ -16,8 +16,9 @@ use crate::commands::dto::ErrorDto;
 use crate::state::AppState;
 
 use super::config::{
-    read_f32, DEF_MAX_TAGS, DEF_THRESHOLD, DEF_THRESHOLD_L1, KEY_MAX_TAGS, KEY_THRESHOLD,
-    KEY_THRESHOLD_L1,
+    read_f32, read_i64, DEF_FACE_MIN_CORE, DEF_FACE_MIN_PX, DEF_FACE_SCORE, DEF_FACE_T_CORE,
+    DEF_MAX_TAGS, DEF_THRESHOLD, DEF_THRESHOLD_L1, KEY_FACE_MIN_CORE, KEY_FACE_MIN_PX,
+    KEY_FACE_SCORE, KEY_FACE_T_CORE, KEY_MAX_TAGS, KEY_THRESHOLD, KEY_THRESHOLD_L1,
 };
 use super::{err, AiRunner, Running, Session};
 
@@ -235,7 +236,23 @@ pub(super) fn run_face_batch_blocking(app: tauri::AppHandle, library: String, ma
     sess.log("模型就绪 · YuNet + SFace".into());
 
     // ── 3. 检测 + 特征（锁外）──
-    let opts = FaceBatchOpts::default();
+    // 四档都来自设置页「人脸」面板；缺省值派生自 pv_ai（config.rs 的 DEF_FACE_*），
+    // ⛔ 别在这里写死 —— 面板写 0.7、实际按 0.6 跑属于静默偏差。
+    let opts = FaceBatchOpts {
+        score_thresh: read_f32(&state, KEY_FACE_SCORE, DEF_FACE_SCORE as f32),
+        min_face_px: read_f32(&state, KEY_FACE_MIN_PX, DEF_FACE_MIN_PX as f32),
+        ..FaceBatchOpts::default()
+    };
+    let t_core = read_f32(&state, KEY_FACE_T_CORE, DEF_FACE_T_CORE as f32).clamp(0.3, 0.9);
+    // 第二阶段固定比第一阶段松 0.05：两阶段的全部意义就在这个落差上（见 cluster.rs）
+    let t_join = t_core - (pv_ai::cluster::DEFAULT_T_CORE - pv_ai::cluster::DEFAULT_T_JOIN);
+    let min_core = read_i64(&state, KEY_FACE_MIN_CORE, DEF_FACE_MIN_CORE).clamp(1, 50) as usize;
+
+    sess.log(format!(
+        "参数 · 检测分 {:.2} · 最小脸宽 {:.0}px · 聚类 {:.2}/{:.2} · 最少 {} 张建人物",
+        opts.score_thresh, opts.min_face_px, t_core, t_join, min_core
+    ));
+
     let mut last_log = 0usize;
     let (faces, stats) = detect_batch(
         &images,
@@ -298,7 +315,12 @@ pub(super) fn run_face_batch_blocking(app: tauri::AppHandle, library: String, ma
     // ── 4. 聚类（锁外）──
     sess.log("聚类中…".into());
     let embs: Vec<Vec<f32>> = faces.iter().map(|f| f.embedding.clone()).collect();
-    let c_opts = ClusterOpts::default();
+    let c_opts = ClusterOpts {
+        t_core,
+        t_join,
+        min_core,
+        ..ClusterOpts::default()
+    };
     let labels = two_stage_cluster(&embs, &c_opts);
     let mut sizes: std::collections::HashMap<i32, usize> = std::collections::HashMap::new();
     for &l in &labels {

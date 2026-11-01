@@ -14,6 +14,18 @@
 //! 每次迭代让每个点投奔「邻居标签权重**总和**最大」的标签 ——
 //! 只有**持续**的强连接才能把两个大簇拉到一起，单条弱边拉不动。
 
+/// 第一阶段（核心簇）默认阈值，**唯一真源**：设置面板的 `DEF_*` 由它派生。
+///
+/// 调低 = 更宽松（更容易把不同的人并成一个），调高 = 更严格（认识的人被拆开）。
+pub const DEFAULT_T_CORE: f32 = 0.55;
+/// 第二阶段（散脸并入簇心）默认阈值。
+///
+/// ⛔ **必须比 `t_core` 松一点**（差 0.05）：两阶段的意义就是「严出核心、松收散脸」，
+/// 取成同一个值等于退回单阈值，美颜图会连成一片。
+pub const DEFAULT_T_JOIN: f32 = 0.50;
+/// 核心簇的最少张数：少于它不建人物（否则人像墙上全是只出现一次的脸）。
+pub const DEFAULT_MIN_CORE: usize = 3;
+
 /// 聚类参数。
 #[derive(Debug, Clone)]
 pub struct ClusterOpts {
@@ -31,9 +43,9 @@ impl Default for ClusterOpts {
     fn default() -> Self {
         // 与 face_probe.py 的默认一致（文档 §12 实测定稿）
         Self {
-            t_core: 0.55,
-            t_join: 0.50,
-            min_core: 3,
+            t_core: DEFAULT_T_CORE,
+            t_join: DEFAULT_T_JOIN,
+            min_core: DEFAULT_MIN_CORE,
             iters: 30,
         }
     }
