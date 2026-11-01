@@ -1,6 +1,8 @@
 # PurePhotoExplorer
 
 > 多格式图像浏览与本地照片管理器 · Windows 桌面版 · Rust + Tauri 2 + React
+>
+> **当前版本：`1.0.0 Beta`**（`v1.0.0` 起）
 
 PurePhotoExplorer 是一个轻量、快速的本地图片浏览器、编辑器与照片管理器。
 **解码链全部用纯 Rust 实现，无 C 依赖**；**所有数据留在本机，不联网、不上传**。绿色免安装。
@@ -50,6 +52,19 @@ PurePhotoExplorer 是一个轻量、快速的本地图片浏览器、编辑器�
 
 - Windows 10 1809+ / Windows 11
 - WebView2 Runtime（Win10/11 一般已内置）
+- 磁盘：程序 + AI 模型约 280 MB
+
+### 两种版本，区别只在数据放哪
+
+| 版本 | 数据目录 | 适合 |
+| --- | --- | --- |
+| 安装版（`..._x64-setup.exe`） | `%LOCALAPPDATA%\PurePhotoExplorer` | 装在本机长期用，注册图片「打开方式」 |
+| 绿色版（`..._portable.zip`） | 解压目录下的 `data\` | 放 U 盘、换电脑、不想装 |
+
+绿色版靠 exe 旁边一个空的 `portable` 文件识别：**整个文件夹拷走就是搬家**，
+索引、缩略图、人脸向量都跟着走。删掉这个文件，程序就回到安装版的行为。
+
+AI 模型（约 200 MB）两个版本都随包附带，不联网、不另外下载。
 
 ## 构建
 
@@ -62,15 +77,22 @@ cd ../.. && cargo build --release
 # 发布时再改名为 PurePhotoExplorer.exe（crate 名沿用 photovault，未改）
 ```
 
+打绿色版（一条命令，自动带上模型、DirectML.dll 与 7z）：
+
+```bash
+python scripts/pack_portable.py
+# 产物：release/PurePhotoExplorer_<版本>_win64_portable.zip
+```
+
 > ⚠️ 改过 `apps/desktop/src-tauri/tauri.conf.json` 之后，必须先
 > `touch apps/desktop/src-tauri/{build.rs,tauri.conf.json,src/main.rs}` 再构建。
 > ⚠️ 挪动过工程目录的话，先 `rm -rf target/release/build/tauri-*`，否则会读到旧的绝对路径。
 
 ## 技术栈
 
-- **后端**：Rust workspace，12 个 crate
+- **后端**：Rust workspace，13 个 crate
   `pv-core` / `pv-decode` / `pv-meta` / `pv-cache` / `pv-index` / `pv-vault` /
-  `pv-edit` / `pv-ai` / `pv-geo` / `pv-scan` / `pv-store` / `pv-lib`
+  `pv-edit` / `pv-ai` / `pv-geo` / `pv-scan` / `pv-store` / `pv-lib` / `pv-archive`
 - **前端**：React 18 + TypeScript + Vite
 - **外壳**：Tauri 2（无边框全自绘窗口）
 
@@ -79,6 +101,8 @@ cd ../.. && cargo build --release
 | 文档 | 内容 |
 | --- | --- |
 | [docs/项目历程与踩坑总结.md](docs/项目历程与踩坑总结.md) | **接手先读**：25 天做了什么、哪些方案已被推翻、踩过哪些坑 |
+| [docs/给同学讲的架构说明.md](docs/给同学讲的架构说明.md) | 面向非技术读者的架构、算法与工程纪律（配两张图解） |
+| [docs/代码地图-文件功能与算法.md](docs/代码地图-文件功能与算法.md) | 每个文件负责什么、用了什么算法；附算法反查表 |
 | [docs/S1使用说明.md](docs/S1使用说明.md) | 单图浏览怎么用 |
 | [docs/S2使用说明.md](docs/S2使用说明.md) | 图库模式怎么用 |
 | [docs/S2图像资源管理器开发手册.md](docs/S2图像资源管理器开发手册.md) | 图库模式开发手册（架构 / 数据模型 / UI 规范） |
