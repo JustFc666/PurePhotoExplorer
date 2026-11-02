@@ -35,7 +35,7 @@
   user-select: none;
 }
 .pv-mg-brand {
-  font-size: 14px;
+  font-size: 15px;
   font-weight: 500;
   white-space: nowrap;
   padding: 0 6px 0 2px;
@@ -54,7 +54,7 @@
   border: 0;
   background: transparent;
   color: var(--pv-text-secondary);
-  font-size: 14px;
+  font-size: 15px;
   padding: 4px 8px;
   border-radius: 6px;
   cursor: default;
@@ -116,7 +116,7 @@
   border: 0;
   background: transparent;
   color: var(--pv-text-primary);
-  font-size: 14px;
+  font-size: 15px;
   padding: 5px 8px;
   border-radius: 6px;
   text-align: left;
@@ -152,13 +152,13 @@
   flex: 1 1 auto;
   min-width: 130px;
   max-width: 340px;
-  height: 28px;
+  height: 30px;
   padding: 0 12px;
   border-radius: 999px;
   border: 1px solid var(--pv-border-subtle);
   background: var(--pv-bg-input);
   color: inherit;
-  font-size: 14px;
+  font-size: 15px;
 }
 .pv-mg-search:focus {
   outline: none;
@@ -209,7 +209,7 @@
   flex: 0 0 auto;
 }
 .pv-mg-sortlabel {
-  font-size: 14px;
+  font-size: 15px;
   color: var(--pv-text-secondary);
   user-select: none;
 }
@@ -217,13 +217,13 @@
   display: flex;
   align-items: center;
   gap: 6px;
-  height: 28px;
+  height: 30px;
   padding: 0 8px;
   border-radius: 6px;
   border: 1px solid var(--pv-border-subtle);
   background: var(--pv-bg-input);
   color: var(--pv-text-primary);
-  font-size: 14px;
+  font-size: 15px;
   font-family: inherit;
   cursor: pointer;
 }
@@ -326,7 +326,7 @@ body.is-col-resizing {
   user-select: none;
 }
 .pv-mg-sectitle {
-  font-size: 14px; /* 与树行（.pv-mg-row）同字号，顶栏菜单也统一到 14px —— 文字整体加大 */
+  font-size: 15px; /* 与树行（.pv-mg-row）同字号，顶栏菜单也统一到 15px —— 文字整体加大 */
   font-weight: 600;
   color: var(--pv-text-secondary);
 }
@@ -407,7 +407,7 @@ body.is-col-resizing {
 .pv-mg-rownote {
   flex: 0 0 auto;
   margin-left: 4px;
-  font-size: 12px;
+  font-size: 13px;
   color: var(--pv-text-tertiary);
 }
 .pv-mg-ico:hover:not(:disabled) {
@@ -427,11 +427,11 @@ body.is-col-resizing {
   display: flex;
   align-items: center;
   gap: 3px;
-  height: 29px;
+  height: 31px;
   padding-right: 8px;
   border-radius: 6px;
   color: var(--pv-text-secondary);
-  font-size: 14px;
+  font-size: 15px;
   cursor: default;
   user-select: none;
 }
@@ -474,7 +474,7 @@ body.is-col-resizing {
 .pv-mg-rowcount {
   flex: 0 0 auto;
   color: var(--pv-text-tertiary);
-  font-size: 12.5px;
+  font-size: 13.5px;
   font-variant-numeric: tabular-nums;
 }
 .pv-mg-row.is-on .pv-mg-rowcount {
