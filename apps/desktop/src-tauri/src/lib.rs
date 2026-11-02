@@ -124,7 +124,6 @@ pub fn run() {
             commands::manager_delete_tag,
             commands::manager_places,
             commands::manager_people,
-            commands::manager_faces,
             commands::manager_person_faces,
             commands::manager_rename_person,
             commands::manager_set_person_cover,

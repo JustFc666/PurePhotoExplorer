@@ -23,33 +23,6 @@ export interface FaceBox {
   quality: number | null
 }
 
-/** 一张脸（人像条 / 人像墙的数据源）：在 `FaceBox` 基础上带人物归属与图片路径。 */
-export interface FaceItem extends FaceBox {
-  /** `null` = 这张脸没被聚进任何人物 */
-  personId: number | null
-  personName: string | null
-  score: number | null
-  /** 原图绝对路径；卷没挂上时为 `null` */
-  path: string | null
-}
-
-/** 全部人脸，按脸的大小倒序。 */
-export async function managerFaces(o?: {
-  limit?: number
-  libraryId?: number
-  /** 只要未归类的脸 */
-  orphansOnly?: boolean
-  /** 同一张照片只留最大那张脸（人像条必须开，否则一张合影塞满整条） */
-  onePerImage?: boolean
-}): Promise<FaceItem[]> {
-  return invoke<FaceItem[]>('manager_faces', {
-    limit: o?.limit ?? null,
-    libraryId: o?.libraryId ?? null,
-    orphansOnly: o?.orphansOnly ?? null,
-    onePerImage: o?.onePerImage ?? null,
-  })
-}
-
 /** 侧栏「人物」条目。 */
 export interface PersonItem {
   id: number
