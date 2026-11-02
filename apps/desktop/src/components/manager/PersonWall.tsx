@@ -14,13 +14,7 @@
  */
 
 import { useEffect, useRef, useState } from 'react'
-import {
-  managerOrphanFaces,
-  managerPeople,
-  managerRenamePerson,
-  type OrphanFace,
-  type PersonItem,
-} from '../../ipc/people'
+import { managerPeople, managerRenamePerson, type PersonItem } from '../../ipc/people'
 import { notifyPeopleChanged } from '../../lib/peopleEvents'
 import { FaceAvatar } from './FaceAvatar'
 
@@ -44,8 +38,6 @@ interface Props {
   onClose: () => void
   /** 选中某人：调用方负责按这个人筛主区并关闭浮层 */
   onSelect: (id: number, name: string) => void
-  /** 点「未归类」里的照片：打开那张原图 */
-  onOpenFace: (path: string) => void
 }
 
 /**
@@ -57,15 +49,8 @@ interface Props {
 export const PERSON_POP_W = 494
 
 export function PersonWall({
-  libraryId, anchor, currentId, onClose, onSelect, onOpenFace }: Props) {
+  libraryId, anchor, currentId, onClose, onSelect }: Props) {
   const [people, setPeople] = useState<PersonItem[]>([])
-  /**
-   * 没归入任何人物的脸（每张照片只留最大那张）。
-   *
-   * ⭐ 2026-11-02 用户要求「图库里每张有脸的照片都要能在人像里找到」。
-   * 人物只覆盖聚成簇的那部分，剩下的补在这里，两张表合起来 = 全部有脸的图。
-   */
-  const [orphans, setOrphans] = useState<OrphanFace[]>([])
   const [tip, setTip] = useState<{ x: number; y: number; text: string } | null>(null)
   const [menu, setMenu] = useState<{ x: number; y: number; p: PersonItem } | null>(null)
   /** 正在内联改名的人物 id */
@@ -78,12 +63,6 @@ export function PersonWall({
     managerPeople(1, libraryId)
       .then((list) => {
         if (alive) setPeople(list)
-      })
-      .catch(() => undefined)
-    /* 未归类与人物并行拉：两个请求互不依赖，串行会多等一个来回 */
-    managerOrphanFaces({ limit: 120, libraryId })
-      .then((list) => {
-        if (alive) setOrphans(list)
       })
       .catch(() => undefined)
     return () => {
@@ -138,10 +117,7 @@ export function PersonWall({
       >
         <div className="pv-pwp-head">
           <span className="pv-pwp-title">人像</span>
-          <span className="pv-pwp-sub">
-            {people.length} 人
-            {orphans.length > 0 ? ` · ${orphans.length} 张未归类` : ''}
-          </span>
+          <span className="pv-pwp-sub">{people.length} 人</span>
           <div style={{ flex: 1 }} />
           <button type="button" className="pv-pwp-x" onClick={onClose} aria-label="关闭">
             ✕
@@ -203,50 +179,6 @@ export function PersonWall({
             </div>
           ))}
           {people.length === 0 && <div className="pv-pwp-empty">还没有归纳出人物</div>}
-
-          {/*
-            未归类：有人脸但没聚进任何人物的照片（一张照片只留最大那张脸）。
-            点开 = 直接看那张原图 —— 用户 2026-11-02 要的「每张有脸的照片都能找到」。
-          */}
-          {orphans.length > 0 && (
-            <>
-              <div className="pv-pwp-sect">
-                未归类 · {orphans.length} 张照片
-                <span>有脸但没归入人物，点开即看原图</span>
-              </div>
-              {orphans.map((f) => (
-                <div
-                  key={`o${f.id}`}
-                  role="button"
-                  tabIndex={0}
-                  className="pv-pwp-card is-orphan"
-                  title={`未归类 · 源 ${Math.round(f.quality ?? 0)}px`}
-                  onClick={() => {
-                    if (!f.path) return
-                    onOpenFace(f.path)
-                    onClose()
-                  }}
-                  onKeyDown={(e) => {
-                    if (e.key !== 'Enter' || !f.path) return
-                    onOpenFace(f.path)
-                    onClose()
-                  }}
-                  onMouseEnter={(e) =>
-                    setTip({
-                      x: e.clientX,
-                      y: e.clientY,
-                      text: `未归类 · 源 ${Math.round(f.quality ?? 0)}px`,
-                    })
-                  }
-                  onMouseMove={(e) => setTip((t) => (t ? { ...t, x: e.clientX, y: e.clientY } : t))}
-                  onMouseLeave={() => setTip(null)}
-                >
-                  <FaceAvatar face={f} size={80} fallback="?" />
-                  <span className="pv-pwp-n">未</span>
-                </div>
-              ))}
-            </>
-          )}
         </div>
       </div>
 
