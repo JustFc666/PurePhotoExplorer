@@ -1200,6 +1200,8 @@ export function ManagerView(props: Props) {
                 mgr.setPersonFilter({ id, name })
                 setPersonPop(null)
               }}
+              /* 「未归类」里的照片：没有人物可筛，直接开原图 */
+              onOpenFace={(path) => onOpenImage(path, [path])}
             />
           )}
           {/*

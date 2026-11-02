@@ -23,6 +23,28 @@ export interface FaceBox {
   quality: number | null
 }
 
+/** 一张没归入任何人物的脸（人像墙「未归类」区）。 */
+export interface OrphanFace extends FaceBox {
+  /** 原图绝对路径；卷没挂上时为 `null` */
+  path: string | null
+}
+
+/**
+ * 未归类的人脸，**一张照片只留最大那张脸**。
+ *
+ * 用户 2026-11-02 要求「图库里每张有脸的照片都要能在人像里找到」：
+ * 人物只覆盖聚成簇的（约 70%），剩下这些按照片补在墙上。
+ */
+export async function managerOrphanFaces(o?: {
+  limit?: number
+  libraryId?: number
+}): Promise<OrphanFace[]> {
+  return invoke<OrphanFace[]>('manager_orphan_faces', {
+    limit: o?.limit ?? null,
+    libraryId: o?.libraryId ?? null,
+  })
+}
+
 /** 侧栏「人物」条目。 */
 export interface PersonItem {
   id: number

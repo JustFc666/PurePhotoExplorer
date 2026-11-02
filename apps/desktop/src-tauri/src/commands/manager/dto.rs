@@ -64,6 +64,8 @@ pub struct ManagerQueryDto {
     pub has_tags: Option<bool>,
     /// 只看某个人物的照片（人像专栏点进来）
     pub person_id: Option<i64>,
+    /// 只出检出过人脸的图（标签条「人像」用它，true=有脸）
+    pub has_faces: Option<bool>,
     /// 排序键：taken(默认) / name / size / mtime / rating / added / random
     pub sort: Option<String>,
     /// 是否降序（默认 true）
@@ -94,6 +96,7 @@ impl ManagerQueryDto {
             years: self.years.unwrap_or_default(),
             has_tags: self.has_tags,
             person_id: self.person_id,
+            has_faces: self.has_faces,
         }
     }
 

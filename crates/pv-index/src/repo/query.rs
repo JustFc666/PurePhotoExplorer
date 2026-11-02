@@ -99,6 +99,13 @@ pub struct ImageFilter {
     /// ⚠️ 用 `IN (SELECT …)` 而不是 JOIN `faces`：一张合影里同一个人只算一张图，
     /// JOIN 会把同一张图复制成多行。
     pub person_id: Option<i64>,
+    /// 只出**检出过人脸**的图（`Some(true)`）。
+    ///
+    /// ⭐ 2026-11-02：标签条上的「人像」改按这个口径筛 —— 用户的心智是
+    /// 「有脸就是人像」，而不是「CN-CLIP 恰好打上了人像/单人/合照」。
+    /// ⚠️ 与 `person_id` 的区别：那个要求脸已经聚进某个**人物**（约 70%），
+    /// 这里只要有 `faces` 行就算（100%）。
+    pub has_faces: Option<bool>,
 }
 
 /// 一次查询：过滤 + 排序 + 分页。
@@ -298,6 +305,14 @@ fn where_clause(f: &ImageFilter, p: &mut Vec<Value>) -> String {
     if let Some(pid) = f.person_id {
         w.push("images.id IN (SELECT image_id FROM faces WHERE person_id = ?)".into());
         p.push(Value::Integer(pid));
+    }
+    // 是否检出过人脸（标签条「人像」用它当筛选依据）
+    match f.has_faces {
+        Some(true) => w.push("EXISTS (SELECT 1 FROM faces f WHERE f.image_id = images.id)".into()),
+        Some(false) => {
+            w.push("NOT EXISTS (SELECT 1 FROM faces f WHERE f.image_id = images.id)".into())
+        }
+        None => {}
     }
     if !f.cameras.is_empty() {
         w.push(format!(

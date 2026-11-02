@@ -64,6 +64,8 @@ export interface ManagerQuery {
   libraryId?: number
   /** 只看某个人物的照片（人像专栏点进来；后端用 IN 子查询，合影不会重复） */
   personId?: number
+  /** 只看检出过人脸的图（标签条「人像」用它，和 `personId` 不同：不要求已归入人物） */
+  hasFaces?: boolean
   /** 文件名子串（大小写不敏感；`%`/`_` 由后端转义） */
   nameLike?: string
   formats?: string[]

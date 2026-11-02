@@ -70,6 +70,82 @@ pub struct FacesStatsDto {
     pub models: Vec<String>,
 }
 
+/// 一张**没归入任何人物**的脸（人像墙「未归类」区用）。
+///
+/// 2026-11-02 用户要求「图库里每张有脸的照片都要能在人像里找到」：
+/// 之前只有聚成人物（≥3 张且像真人）的脸会出现在人像里，剩下约 30% 的脸
+/// 只能靠单张看图时的框看到。这里把它们按**照片**去重后补出来。
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OrphanFaceDto {
+    pub id: i64,
+    pub image_id: i64,
+    pub x: f32,
+    pub y: f32,
+    pub w: f32,
+    pub h: f32,
+    pub quality: Option<f32>,
+    /// 原图绝对路径：点它直接开这张照片
+    pub path: Option<String>,
+}
+
+/// 未归类的人脸，**一张照片只留最大那张脸**。
+///
+/// ⚠️ 必须按图去重：一张五人合影里五张脸都没归类，不去重就会出现五个格子
+/// 指向同一张照片（用户看到的是「重复的图」）。
+#[tauri::command]
+pub async fn manager_orphan_faces(
+    state: State<'_, AppState>,
+    limit: Option<i64>,
+    library_id: Option<i64>,
+) -> Result<Vec<OrphanFaceDto>, ErrorDto> {
+    let lim = limit.unwrap_or(120).clamp(1, 1000);
+    state
+        .with_manager(|s| {
+            let sql = "SELECT f.id, f.image_id, f.x, f.y, f.w, f.h, f.quality \
+                         FROM faces f \
+                        WHERE f.person_id IS NULL \
+                          AND f.id = (SELECT f2.id FROM faces f2 \
+                                       WHERE f2.image_id = f.image_id \
+                                    ORDER BY COALESCE(f2.quality, 0) DESC, f2.id LIMIT 1) \
+                          AND (?1 IS NULL OR EXISTS ( \
+                                  SELECT 1 FROM images i \
+                                    JOIN library_folders lf ON lf.folder_id = i.dir_id \
+                                   WHERE i.id = f.image_id AND lf.library_id = ?1)) \
+                     ORDER BY COALESCE(f.quality, 0) DESC, f.id \
+                        LIMIT ?2";
+            let mut stmt = s.conn().prepare(sql).map_err(|e| e.to_string())?;
+            let rows = stmt
+                .query_map((library_id, lim), |r| {
+                    Ok(OrphanFaceDto {
+                        id: r.get(0)?,
+                        image_id: r.get(1)?,
+                        x: r.get(2)?,
+                        y: r.get(3)?,
+                        w: r.get(4)?,
+                        h: r.get(5)?,
+                        quality: r.get(6)?,
+                        path: None,
+                    })
+                })
+                .map_err(|e| e.to_string())?;
+            let mut out = Vec::new();
+            for row in rows {
+                let mut f = row.map_err(|e| e.to_string())?;
+                if let Ok(Some(img)) = pv_index::repo::images::get(s.conn(), f.image_id) {
+                    f.path = s
+                        .abs_path(&img)
+                        .ok()
+                        .flatten()
+                        .map(|p| p.to_string_lossy().into_owned());
+                }
+                out.push(f);
+            }
+            Ok(out)
+        })
+        .map_err(merr)
+}
+
 /// 人物列表。默认只返回 ≥3 张脸的（与聚类口径一致）。
 #[tauri::command]
 pub async fn manager_people(

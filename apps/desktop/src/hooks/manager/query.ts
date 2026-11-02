@@ -100,6 +100,23 @@ export type BuildQueryInput = {
 }
 
 /**
+ * 「人像」这个一级类目**按检出人脸算**，不看 AI 标签。
+ *
+ * 用户 2026-11-02：「图库里每张有脸的照片，都应该在人像里」。
+ * 背景：CN-CLIP 只给极少数图打上「人像/单人/合照」（他库里 546 张只有 10 张），
+ * 而人脸识别检出 168 张 —— 标签条上写着 10、人脸识别说 168，用户只会觉得「漏了」。
+ *
+ * ⛔ 这个特例在 `crates/pv-index/src/repo/tags.rs::group_counts` 里还有一份，
+ *    两处必须同时改，否则会出现「标签条写 168、点进去只有 10 张」。
+ */
+const FACE_GROUP = '人像'
+
+/** 这一组是不是按「检出人脸」筛（而不是按标签名）。 */
+export function isFaceGroup(label: string): boolean {
+  return label === FACE_GROUP
+}
+
+/**
  * 入库模式的**唯一取数入口**用的查询参数。
  *
  * @returns `null` = 这个范围不该查索引（`browse` 走磁盘列表、`none` 是默认空态）
@@ -123,13 +140,17 @@ export function buildManagerQuery(input: BuildQueryInput): ManagerQuery | null {
   // ⭐ 如果这个标签是**从某个图库点进去的**，图库范围要一起带上，
   //    否则「rednote → 人像」会查出全库的人像图（2026-10-29 用户报的混合）。
   if (scope.kind === 'tag') {
-    q.tagsAny = [scope.name]
+    /* 「人像」= 检出过人脸，不走标签匹配 */
+    if (isFaceGroup(scope.name)) q.hasFaces = true
+    else q.tagsAny = [scope.name]
     if (scope.libraryId != null) q.libraryId = scope.libraryId
   }
   // 地点筛选：城市名是后端离线解析好的，精确匹配
   if (scope.kind === 'place') q.places = [scope.name]
   if (scope.kind === 'tagGroup') {
-    q.tagsAny = scope.names
+    /* ⭐ 「人像」这一组按人脸筛：有脸就算，不看它下挂的「单人/合照」标签 */
+    if (isFaceGroup(scope.label)) q.hasFaces = true
+    else q.tagsAny = scope.names
     if (scope.libraryId != null) q.libraryId = scope.libraryId
   }
 

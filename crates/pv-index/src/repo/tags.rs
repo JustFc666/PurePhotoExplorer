@@ -289,7 +289,45 @@ pub fn group_counts(
     let rows = stmt.query_map(rusqlite::params_from_iter(vals.iter()), |r| {
         Ok((r.get(0)?, r.get(1)?))
     })?;
-    Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+    let mut out: Vec<(String, i64)> = rows.collect::<rusqlite::Result<Vec<_>>>()?;
+
+    /*
+     * 「人像」这个一级类目的数字改按**检出人脸**算（2026-11-02 用户要求）。
+     *
+     * 用户的原话：「图库里每张有脸的照片，都应该在人像里」。
+     * CN-CLIP 只给极少数图打上「人像/单人/合照」（用户库里 546 张图里只有 10 张），
+     * 而人脸识别检出了 168 张 —— 两个数字摆在同一条标签条上，用户只会觉得
+     * 「明明有脸，为什么人像里没有」。所以这一格改成和人脸识别对齐。
+     *
+     * ⚠️ 只有这一格是特例，别顺手把「动物」「风景」也改口径。
+     */
+    let face_n = count_face_images(conn, library_id, dir_id)?;
+    match out.iter_mut().find(|(l1, _)| l1 == "人像") {
+        Some(slot) => slot.1 = face_n,
+        /* 词表里有人像类目但一张都没命中时，SQL 不会返回这一行，补上 */
+        None if face_n > 0 => out.push(("人像".into(), face_n)),
+        None => {}
+    }
+    out.sort_by_key(|x| std::cmp::Reverse(x.1));
+    Ok(out)
+}
+
+/// 检出过人脸的图片数（**按图去重**，一张合影只算一张）。
+///
+/// 范围口径与 [`group_counts`] 一致：按图库 / 目录过滤。
+fn count_face_images(
+    conn: &Connection,
+    library_id: Option<i64>,
+    dir_id: Option<i64>,
+) -> Result<i64> {
+    let sql = "SELECT COUNT(*) FROM images i
+                WHERE EXISTS (SELECT 1 FROM faces f WHERE f.image_id = i.id)
+                  AND (?1 IS NULL OR EXISTS (
+                          SELECT 1 FROM library_folders lf
+                           WHERE lf.library_id = ?1 AND lf.folder_id = i.dir_id))
+                  AND (?2 IS NULL OR i.dir_id = ?2)";
+    let n: i64 = conn.query_row(sql, rusqlite::params![library_id, dir_id], |r| r.get(0))?;
+    Ok(n)
 }
 
 /// 一批图像**各自**已有的标签名（标签选择器要判断"全选 / 半选 / 没有"）。
@@ -376,29 +414,32 @@ mod tests {
         add_image_tag(conn, image, id, "ai", Some(0.42)).unwrap();
     }
 
-    /// 一张图同时挂「单人」「全身」时，人像类目只算 **1 张**。
+    /// 一张图同时挂「猫」「狗」时，动物类目只算 **1 张**。
     ///
     /// 这是用户 2026-10-23 报的 bug：标签条写「人像 89」，点进去只有 52 张 ——
     /// 因为前端把二级的张数直接相加，同一张图被数了两次。
+    ///
+    /// ⚠️ 2026-11-02 起「人像」这一格改按检出人脸算（见 `人像类目按检出人脸计数`），
+    /// 所以这里换个类目名来测「按图去重」这条规则本身。
     #[test]
     fn 一级类目按图片去重不按标签相加() {
         let conn = open_test_db().unwrap();
         let a = seed(&conn, "a.jpg");
         let b = seed(&conn, "b.jpg");
-        mount(&conn, a, "人像");
-        mount(&conn, a, "单人");
-        mount(&conn, a, "全身");
-        mount(&conn, b, "合照");
+        mount(&conn, a, "动物");
+        mount(&conn, a, "猫");
+        mount(&conn, a, "狗");
+        mount(&conn, b, "鸟");
 
         let pairs = vec![
-            ("人像".to_string(), "人像".to_string()),
-            ("单人".to_string(), "人像".to_string()),
-            ("全身".to_string(), "人像".to_string()),
-            ("合照".to_string(), "人像".to_string()),
+            ("动物".to_string(), "动物".to_string()),
+            ("猫".to_string(), "动物".to_string()),
+            ("狗".to_string(), "动物".to_string()),
+            ("鸟".to_string(), "动物".to_string()),
             ("日出".to_string(), "自然".to_string()),
         ];
         let got = group_counts(&conn, Some(1), None, &pairs).unwrap();
-        assert_eq!(got, vec![("人像".to_string(), 2)], "应为 2 张（不是 4 条挂载）");
+        assert_eq!(got, vec![("动物".to_string(), 2)], "应为 2 张（不是 4 条挂载）");
     }
 
     /// 只过了一级门槛、没挂上二级的图，也要算进这个一级类目。
@@ -406,14 +447,39 @@ mod tests {
     fn 只有一级标签的图也算进类目() {
         let conn = open_test_db().unwrap();
         let a = seed(&conn, "a.jpg");
-        mount(&conn, a, "人像");
+        mount(&conn, a, "动物");
 
         let pairs = vec![
-            ("人像".to_string(), "人像".to_string()),
-            ("单人".to_string(), "人像".to_string()),
+            ("动物".to_string(), "动物".to_string()),
+            ("猫".to_string(), "动物".to_string()),
         ];
         let got = group_counts(&conn, Some(1), None, &pairs).unwrap();
-        assert_eq!(got, vec![("人像".to_string(), 1)]);
+        assert_eq!(got, vec![("动物".to_string(), 1)]);
+    }
+
+    /// 「人像」这一格按**检出人脸**算，不看 AI 标签有没有打上。
+    ///
+    /// 用户 2026-11-02：「图库里每张有脸的照片，都应该在人像里」。
+    /// 他库里 546 张图只有 10 张被打了人像标签，但检出 168 张脸 ——
+    /// 标签条上写 10、人脸识别说 168，用户只会觉得「漏了」。
+    #[test]
+    fn 人像类目按检出人脸计数() {
+        let conn = open_test_db().unwrap();
+        let a = seed(&conn, "a.jpg");
+        let b = seed(&conn, "b.jpg");
+        let _c = seed(&conn, "c.jpg"); // 没有脸、也没有人像标签
+        mount(&conn, a, "人像"); // 只有 a 打了人像标签
+        for id in [a, b] {
+            conn.execute(
+                "INSERT INTO faces(image_id, x, y, w, h, model) VALUES (?1, 0.1, 0.1, 0.1, 0.1, 'm')",
+                params![id],
+            )
+            .unwrap();
+        }
+
+        let pairs = vec![("人像".to_string(), "人像".to_string())];
+        let got = group_counts(&conn, Some(1), None, &pairs).unwrap();
+        assert_eq!(got, vec![("人像".to_string(), 2)], "应等于有脸的图数 2，而不是标签数 1");
     }
 
     /// EXIF 标签（相机/地点）不属于任何一级类目，不能混进去。

@@ -68,16 +68,29 @@ describe('buildManagerQuery · 范围', () => {
 describe('buildManagerQuery · 标签', () => {
   it('标签范围带 tagsAny；从图库里点进来的要一起带 libraryId', () => {
     // 2026-10-29 用户报的「rednote → 人像」查出全库人像
-    const scoped: Scope = { kind: 'tag', name: '人像', libraryId: 9 }
+    // （用「单人」当样本：2026-11-02 起「人像」这一格改按人脸筛，见下面的用例）
+    const scoped: Scope = { kind: 'tag', name: '单人', libraryId: 9 }
     expect(buildManagerQuery(input({ scope: scoped }))).toMatchObject({
-      tagsAny: ['人像'],
+      tagsAny: ['单人'],
       libraryId: 9,
     })
   })
 
   it('标签范围没有图库上下文时保持全局', () => {
-    const scope: Scope = { kind: 'tag', name: '人像' }
+    const scope: Scope = { kind: 'tag', name: '单人' }
     expect(buildManagerQuery(input({ scope }))?.libraryId).toBeUndefined()
+  })
+
+  it('「人像」按检出人脸筛，但仍要守住图库范围', () => {
+    const scoped = buildManagerQuery(
+      input({ scope: { kind: 'tag', name: '人像', libraryId: 9 } }),
+    )
+    expect(scoped).toMatchObject({ hasFaces: true, libraryId: 9 })
+    expect(scoped?.tagsAny).toBeUndefined()
+
+    const global = buildManagerQuery(input({ scope: { kind: 'tag', name: '人像' } }))
+    expect(global?.hasFaces).toBe(true)
+    expect(global?.libraryId).toBeUndefined()
   })
 
   it('标签组：范围要从 baseScope 取（tagGroup 自己不带 id）', () => {
@@ -89,7 +102,26 @@ describe('buildManagerQuery · 标签', () => {
     const q = buildManagerQuery(
       input({ scope, baseScope: { kind: 'library', id: 4, name: '测试图库' } }),
     )
-    expect(q).toMatchObject({ tagsAny: ['单人', '全身'], libraryId: 4 })
+    /*
+     * 「人像」这一组自 2026-11-02 起**按检出人脸筛**（用户要求「有脸就是人像」），
+     * 所以不再是 tagsAny；但「图库范围必须带上」这条老规则仍然成立。
+     */
+    expect(q).toMatchObject({ hasFaces: true, libraryId: 4 })
+    expect(q?.tagsAny).toBeUndefined()
+  })
+
+  it('「人像」按人脸筛，其下的二级词仍按标签名筛', () => {
+    const group = buildManagerQuery(
+      input({ scope: { kind: 'tagGroup', label: '人像', names: ['单人', '合照'] } }),
+    )
+    expect(group?.hasFaces).toBe(true)
+    expect(group?.tagsAny).toBeUndefined()
+
+    const leaf = buildManagerQuery(
+      input({ scope: { kind: 'tagGroup', label: '单人', names: ['单人'] } }),
+    )
+    expect(leaf?.hasFaces).toBeUndefined()
+    expect(leaf?.tagsAny).toEqual(['单人'])
   })
 
   it('「无标签」+「按标签筛」不再拼出恒空集', () => {
