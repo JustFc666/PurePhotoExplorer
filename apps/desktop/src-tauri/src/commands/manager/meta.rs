@@ -144,6 +144,38 @@ pub async fn manager_tag_groups(
         .map_err(merr)
 }
 
+/// 人脸分布（标签条「人像」展开后的「单人 / 合照」两格用）。
+///
+/// 用户 2026-11-02：「单人和合照的定义，也和人像一样，和普通 tag 不一样，
+/// 使得 单人 + 合照 = 人像」。所以这两格不再看 AI 标签，而是按**一张图里有几张脸**：
+/// 恰好 1 张 = 单人，≥2 张 = 合照。
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FaceCountsDto {
+    /// 有脸的图（= 人像）
+    pub images: i64,
+    /// 恰好一张脸
+    pub single: i64,
+    /// 两张及以上
+    pub multi: i64,
+}
+
+#[tauri::command]
+pub async fn manager_face_counts(
+    state: State<'_, AppState>,
+    library_id: Option<i64>,
+    dir_id: Option<i64>,
+) -> Result<FaceCountsDto, ErrorDto> {
+    state
+        .with_manager(|s| {
+            let (images, single, multi) =
+                pv_index::repo::tags::face_counts(s.conn(), library_id, dir_id)
+                    .map_err(|e| e.to_string())?;
+            Ok(FaceCountsDto { images, single, multi })
+        })
+        .map_err(merr)
+}
+
 #[tauri::command]
 pub async fn manager_tags(
     state: State<'_, AppState>,

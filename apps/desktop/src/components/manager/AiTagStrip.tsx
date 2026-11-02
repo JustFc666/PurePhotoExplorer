@@ -15,6 +15,7 @@
  */
 
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { FACE_MULTI, FACE_SINGLE, isFaceGroup } from '../../hooks/manager/query'
 import '../../styles/aiTags.css'
 
 export interface TagSummary {
@@ -53,6 +54,13 @@ interface Props {
   noTagActive: boolean
   /** 点「无标签」chip：切换筛选 */
   onToggleNoTag: () => void
+  /**
+   * 人脸分布：单人（恰好 1 张脸）/ 合照（≥2 张脸）。
+   *
+   * ⭐ 用户 2026-11-02：「单人和合照的定义，也和人像一样，和普通 tag 不一样，
+   * 使得 单人 + 合照 = 人像」。这三格都按检出人脸算，不看标签。
+   */
+  faceCounts: { single: number; multi: number } | null
   /**
    * 一级类目 → **去重**后的图片张数（后端 SQL 算）。
    *
@@ -105,6 +113,7 @@ function aggregate(
 export function AiTagStrip({
   tags,
   vocab,
+  faceCounts,
   groupCounts,
   onPickGroup,
   termsOfL1,
@@ -179,11 +188,21 @@ export function AiTagStrip({
 
     const full = all.map((label) => {
       const g = got.get(label)
-      return { label, count: g?.count ?? 0, names: g?.names ?? [] }
+      let count = g?.count ?? 0
+      /*
+       * 「人像」下的「单人 / 合照」改按检出人脸算（用户 2026-11-02）：
+       * 恰好 1 张脸 = 单人，≥2 张脸 = 合照，两者相加正好等于「人像」。
+       * ⛔ 别把这条推广到「半身 / 全身 / 儿童」—— 那些是纯视觉标签，没有等价的人脸口径。
+       */
+      if (isFaceGroup(l1) && faceCounts) {
+        if (label === FACE_SINGLE) count = faceCounts.single
+        else if (label === FACE_MULTI) count = faceCounts.multi
+      }
+      return { label, count, names: g?.names ?? [] }
     })
     // 有图的按张数降序，0 的排后面（按名字稳定排序，避免每次刷新顺序乱跳）
     return full.sort((a, b) => b.count - a.count || a.label.localeCompare(b.label))
-  }, [tags, vocab, l1])
+  }, [tags, vocab, l1, faceCounts])
 
   if (tags.length === 0) return null
 

@@ -17,6 +17,7 @@ import type {
   PlaceItem,
   Stats,
   TagHit,
+  FaceCounts,
   TagItem,
   ThumbTier,
 } from '../../ipc/manager'
@@ -212,6 +213,8 @@ export interface ManagerApi {
   tags: TagItem[]
   /** 一级类目 → 去重后的图片张数（AI 标签条上一级chip的数字） */
   tagGroups: Record<string, number>
+  /** 人脸分布：有脸的图 / 单人（恰好 1 张脸）/ 合照（≥2 张脸）；null = 还没拉到 */
+  faceCounts: FaceCounts | null
   /** 切到某个标签：主区只显示带这个标签的图 */
   selectTag: (name: string) => void
   /** 给一批图加标签（不存在则新建）。返回建立的挂载数 */

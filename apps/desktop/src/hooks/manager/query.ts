@@ -117,6 +117,25 @@ export function isFaceGroup(label: string): boolean {
 }
 
 /**
+ * 「单人」「合照」也走人脸口径：单人 = 恰好 1 张脸，合照 = ≥2 张脸。
+ *
+ * 用户 2026-11-02：「单人和合照的定义，也和人像一样，和普通 tag 不一样，
+ * 使得 单人 + 合照 = 人像」。所以三个数字必须来自同一个来源（`faces` 表），
+ * 否则又会出现「人像 168、单人 21、合照 5，加起来对不上」。
+ *
+ * ⚠️ 这两个词在词表里只挂在「人像」下面，所以按名字判不会误伤别的类目。
+ */
+export const FACE_SINGLE = '单人'
+export const FACE_MULTI = '合照'
+
+/** 命中「单人」「合照」时给的是脸数条件，不是标签名。 */
+function faceCountOf(label: string): { eq?: number; min?: number } | null {
+  if (label === FACE_SINGLE) return { eq: 1 }
+  if (label === FACE_MULTI) return { min: 2 }
+  return null
+}
+
+/**
  * 入库模式的**唯一取数入口**用的查询参数。
  *
  * @returns `null` = 这个范围不该查索引（`browse` 走磁盘列表、`none` 是默认空态）
@@ -140,16 +159,22 @@ export function buildManagerQuery(input: BuildQueryInput): ManagerQuery | null {
   // ⭐ 如果这个标签是**从某个图库点进去的**，图库范围要一起带上，
   //    否则「rednote → 人像」会查出全库的人像图（2026-10-29 用户报的混合）。
   if (scope.kind === 'tag') {
-    /* 「人像」= 检出过人脸，不走标签匹配 */
+    /* 「人像」= 检出过人脸；「单人 / 合照」= 按脸数 —— 都不走标签匹配 */
+    const fc = faceCountOf(scope.name)
     if (isFaceGroup(scope.name)) q.hasFaces = true
+    else if (fc?.eq != null) q.faceCountEq = fc.eq
+    else if (fc?.min != null) q.faceCountMin = fc.min
     else q.tagsAny = [scope.name]
     if (scope.libraryId != null) q.libraryId = scope.libraryId
   }
   // 地点筛选：城市名是后端离线解析好的，精确匹配
   if (scope.kind === 'place') q.places = [scope.name]
   if (scope.kind === 'tagGroup') {
-    /* ⭐ 「人像」这一组按人脸筛：有脸就算，不看它下挂的「单人/合照」标签 */
+    /* ⭐ 「人像」按人脸筛：有脸就算，不看它下挂的「单人/合照」标签 */
+    const fc = faceCountOf(scope.label)
     if (isFaceGroup(scope.label)) q.hasFaces = true
+    else if (fc?.eq != null) q.faceCountEq = fc.eq
+    else if (fc?.min != null) q.faceCountMin = fc.min
     else q.tagsAny = scope.names
     if (scope.libraryId != null) q.libraryId = scope.libraryId
   }

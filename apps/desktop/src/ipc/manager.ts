@@ -66,6 +66,10 @@ export interface ManagerQuery {
   personId?: number
   /** 只看检出过人脸的图（标签条「人像」用它，和 `personId` 不同：不要求已归入人物） */
   hasFaces?: boolean
+  /** 恰好 N 张脸（「单人」= 1） */
+  faceCountEq?: number
+  /** ≥N 张脸（「合照」= 2） */
+  faceCountMin?: number
   /** 文件名子串（大小写不敏感；`%`/`_` 由后端转义） */
   nameLike?: string
   formats?: string[]
@@ -571,6 +575,28 @@ export async function managerTagGroups(
   dirId?: number,
 ): Promise<{ l1: string; count: number }[]> {
   return invoke<{ l1: string; count: number }[]>('manager_tag_groups', { libraryId, dirId })
+}
+
+/**
+ * 人脸分布：有脸的图（= 人像）/ 单人（恰好 1 张脸）/ 合照（≥2 张脸）。
+ *
+ * ⭐ 用户 2026-11-02 的口径：**单人 + 合照 = 人像**，两格都按检出人脸算，
+ * 不看 AI 标签有没有打上「单人」「合照」。
+ */
+export interface FaceCounts {
+  /** 有脸的图（= 人像） */
+  images: number
+  /** 恰好一张脸 */
+  single: number
+  /** 两张及以上 */
+  multi: number
+}
+
+export async function managerFaceCounts(
+  libraryId?: number,
+  dirId?: number,
+): Promise<FaceCounts> {
+  return invoke<FaceCounts>('manager_face_counts', { libraryId, dirId })
 }
 
 /**

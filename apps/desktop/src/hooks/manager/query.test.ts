@@ -68,16 +68,16 @@ describe('buildManagerQuery · 范围', () => {
 describe('buildManagerQuery · 标签', () => {
   it('标签范围带 tagsAny；从图库里点进来的要一起带 libraryId', () => {
     // 2026-10-29 用户报的「rednote → 人像」查出全库人像
-    // （用「单人」当样本：2026-11-02 起「人像」这一格改按人脸筛，见下面的用例）
-    const scoped: Scope = { kind: 'tag', name: '单人', libraryId: 9 }
+    // （用「半身」当样本：2026-11-02 起「人像/单人/合照」都改按人脸算，见下面的用例）
+    const scoped: Scope = { kind: 'tag', name: '半身', libraryId: 9 }
     expect(buildManagerQuery(input({ scope: scoped }))).toMatchObject({
-      tagsAny: ['单人'],
+      tagsAny: ['半身'],
       libraryId: 9,
     })
   })
 
   it('标签范围没有图库上下文时保持全局', () => {
-    const scope: Scope = { kind: 'tag', name: '单人' }
+    const scope: Scope = { kind: 'tag', name: '半身' }
     expect(buildManagerQuery(input({ scope }))?.libraryId).toBeUndefined()
   })
 
@@ -110,18 +110,33 @@ describe('buildManagerQuery · 标签', () => {
     expect(q?.tagsAny).toBeUndefined()
   })
 
-  it('「人像」按人脸筛，其下的二级词仍按标签名筛', () => {
+  it('「人像」按人脸筛；它的「单人 / 合照」按脸数筛，普通二级词照旧按标签', () => {
     const group = buildManagerQuery(
       input({ scope: { kind: 'tagGroup', label: '人像', names: ['单人', '合照'] } }),
     )
     expect(group?.hasFaces).toBe(true)
     expect(group?.tagsAny).toBeUndefined()
 
-    const leaf = buildManagerQuery(
+    /* 单人 = 恰好 1 张脸，合照 = ≥2 张脸（用户 2026-11-02：单人 + 合照 = 人像） */
+    const single = buildManagerQuery(
       input({ scope: { kind: 'tagGroup', label: '单人', names: ['单人'] } }),
     )
+    expect(single?.faceCountEq).toBe(1)
+    expect(single?.tagsAny).toBeUndefined()
+
+    const multi = buildManagerQuery(
+      input({ scope: { kind: 'tagGroup', label: '合照', names: ['合照'] } }),
+    )
+    expect(multi?.faceCountMin).toBe(2)
+    expect(multi?.tagsAny).toBeUndefined()
+
+    /* 其余二级词（半身/全身/儿童…）没有人脸口径，仍然按标签名筛 */
+    const leaf = buildManagerQuery(
+      input({ scope: { kind: 'tagGroup', label: '半身', names: ['半身'] } }),
+    )
     expect(leaf?.hasFaces).toBeUndefined()
-    expect(leaf?.tagsAny).toEqual(['单人'])
+    expect(leaf?.faceCountEq).toBeUndefined()
+    expect(leaf?.tagsAny).toEqual(['半身'])
   })
 
   it('「无标签」+「按标签筛」不再拼出恒空集', () => {

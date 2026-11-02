@@ -54,9 +54,11 @@ import {
   managerSetFlag,
   managerSetRating,
   managerStats,
+  managerFaceCounts,
   managerTagCounts,
   managerTagGroups,
   managerTags,
+  type FaceCounts,
   type FolderNode,
   type ManagerCamera,
   type ManagerYear,
@@ -146,6 +148,13 @@ export function useManager(): ManagerApi {
    * 相加会重复计数（测试图库人像组相加 89，实际只有 52 张）。
    */
   const [tagGroups, setTagGroups] = useState<Record<string, number>>({})
+  /**
+   * 人脸分布：有脸的图 / 单人（恰好 1 张脸）/ 合照（≥2 张脸）。
+   *
+   * ⭐ 用户 2026-11-02：单人 + 合照 = 人像，三者都按检出人脸算。
+   * 标签条二级里那两格用它覆盖，不再用标签张数。
+   */
+  const [faceCounts, setFaceCounts] = useState<FaceCounts | null>(null)
   /** 全部地点 + 张数（侧栏「地点」分区；由后端离线地名库解析） */
   const [placeList, setPlaceList] = useState<PlaceItem[]>([])
   const [stats, setStats] = useState<Stats | null>(null)
@@ -868,6 +877,12 @@ export function useManager(): ManagerApi {
         setTagGroups(m)
       })
       .catch(() => {})
+    /* 人脸分布（单人 / 合照 / 合计）：范围口径与上面的标签计数一致 */
+    managerFaceCounts(lib, dir)
+      .then((v) => {
+        if (alive) setFaceCounts(v)
+      })
+      .catch(() => {})
     return () => {
       alive = false
     }
@@ -1145,6 +1160,7 @@ export function useManager(): ManagerApi {
     createSmartLibrary,
     tags: tagList,
     tagGroups,
+    faceCounts,
     selectTag,
     addTags,
     removeTag,

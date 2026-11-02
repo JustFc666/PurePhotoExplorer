@@ -117,6 +117,7 @@ pub fn run() {
             commands::manager_create_library,
             commands::manager_tags,
             commands::manager_tag_groups,
+            commands::manager_face_counts,
             commands::manager_add_tags,
             commands::manager_remove_tag,
             commands::manager_tag_counts,

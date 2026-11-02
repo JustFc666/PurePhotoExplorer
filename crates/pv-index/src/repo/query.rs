@@ -106,6 +106,12 @@ pub struct ImageFilter {
     /// ⚠️ 与 `person_id` 的区别：那个要求脸已经聚进某个**人物**（约 70%），
     /// 这里只要有 `faces` 行就算（100%）。
     pub has_faces: Option<bool>,
+    /// 这张图**恰好**有 N 张脸（「单人」= 1，按检出人脸算，不按标签）。
+    ///
+    /// ⭐ 2026-11-02 用户口径：单人 + 合照 = 人像。合照 = `face_count_min = 2`。
+    pub face_count_eq: Option<i64>,
+    /// 这张图有 **≥N** 张脸（合照用它，因为三个人也是合照）。
+    pub face_count_min: Option<i64>,
 }
 
 /// 一次查询：过滤 + 排序 + 分页。
@@ -313,6 +319,15 @@ fn where_clause(f: &ImageFilter, p: &mut Vec<Value>) -> String {
             w.push("NOT EXISTS (SELECT 1 FROM faces f WHERE f.image_id = images.id)".into())
         }
         None => {}
+    }
+    // 脸的数量（单人 = 恰好 1，合照 = ≥2）。用相关子查询，别 JOIN —— 合影会复制成多行
+    if let Some(n) = f.face_count_eq {
+        w.push("(SELECT COUNT(*) FROM faces f WHERE f.image_id = images.id) = ?".into());
+        p.push(Value::Integer(n));
+    }
+    if let Some(n) = f.face_count_min {
+        w.push("(SELECT COUNT(*) FROM faces f WHERE f.image_id = images.id) >= ?".into());
+        p.push(Value::Integer(n));
     }
     if !f.cameras.is_empty() {
         w.push(format!(

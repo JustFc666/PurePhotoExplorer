@@ -312,6 +312,31 @@ pub fn group_counts(
     Ok(out)
 }
 
+/// 人脸分布：`(有脸的图数, 单人照数, 合照数)`。
+///
+/// **单人** = 恰好 1 张脸；**合照** = ≥2 张脸。两者相加 = 有脸的图数 ——
+/// 这是用户 2026-11-02 的口径：「单人 + 合照 = 人像」。
+pub fn face_counts(
+    conn: &Connection,
+    library_id: Option<i64>,
+    dir_id: Option<i64>,
+) -> Result<(i64, i64, i64)> {
+    let sql = "SELECT
+                 COALESCE(SUM(CASE WHEN t.n >= 1 THEN 1 ELSE 0 END), 0),
+                 COALESCE(SUM(CASE WHEN t.n = 1 THEN 1 ELSE 0 END), 0),
+                 COALESCE(SUM(CASE WHEN t.n >= 2 THEN 1 ELSE 0 END), 0)
+                 FROM (SELECT image_id, COUNT(*) AS n FROM faces GROUP BY image_id) t
+                 JOIN images i ON i.id = t.image_id
+                WHERE (?1 IS NULL OR EXISTS (
+                          SELECT 1 FROM library_folders lf
+                           WHERE lf.library_id = ?1 AND lf.folder_id = i.dir_id))
+                  AND (?2 IS NULL OR i.dir_id = ?2)";
+    let row = conn.query_row(sql, rusqlite::params![library_id, dir_id], |r| {
+        Ok((r.get::<_, i64>(0)?, r.get::<_, i64>(1)?, r.get::<_, i64>(2)?))
+    })?;
+    Ok(row)
+}
+
 /// 检出过人脸的图片数（**按图去重**，一张合影只算一张）。
 ///
 /// 范围口径与 [`group_counts`] 一致：按图库 / 目录过滤。
@@ -320,14 +345,7 @@ fn count_face_images(
     library_id: Option<i64>,
     dir_id: Option<i64>,
 ) -> Result<i64> {
-    let sql = "SELECT COUNT(*) FROM images i
-                WHERE EXISTS (SELECT 1 FROM faces f WHERE f.image_id = i.id)
-                  AND (?1 IS NULL OR EXISTS (
-                          SELECT 1 FROM library_folders lf
-                           WHERE lf.library_id = ?1 AND lf.folder_id = i.dir_id))
-                  AND (?2 IS NULL OR i.dir_id = ?2)";
-    let n: i64 = conn.query_row(sql, rusqlite::params![library_id, dir_id], |r| r.get(0))?;
-    Ok(n)
+    Ok(face_counts(conn, library_id, dir_id)?.0)
 }
 
 /// 一批图像**各自**已有的标签名（标签选择器要判断"全选 / 半选 / 没有"）。
@@ -480,6 +498,29 @@ mod tests {
         let pairs = vec![("人像".to_string(), "人像".to_string())];
         let got = group_counts(&conn, Some(1), None, &pairs).unwrap();
         assert_eq!(got, vec![("人像".to_string(), 2)], "应等于有脸的图数 2，而不是标签数 1");
+    }
+
+    /// 单人和合照按「一张图里有几张脸」分，两者相加 = 有脸的图数。
+    ///
+    /// 用户 2026-11-02：「单人和合照的定义，也和人像一样，和普通 tag 不一样，
+    /// 使得 单人 + 合照 = 人像」——这张表就是用来钉住这个恒等式的。
+    #[test]
+    fn 单人加合照等于人像() {
+        let conn = open_test_db().unwrap();
+        let a = seed(&conn, "a.jpg"); // 1 张脸 → 单人
+        let b = seed(&conn, "b.jpg"); // 3 张脸 → 合照
+        let _c = seed(&conn, "c.jpg"); // 没脸
+        for id in [a, b, b, b] {
+            conn.execute(
+                "INSERT INTO faces(image_id, x, y, w, h, model) VALUES (?1, 0.1, 0.1, 0.1, 0.1, 'm')",
+                params![id],
+            )
+            .unwrap();
+        }
+
+        let (images, single, multi) = face_counts(&conn, Some(1), None).unwrap();
+        assert_eq!((images, single, multi), (2, 1, 1));
+        assert_eq!(single + multi, images, "单人 + 合照 必须等于人像");
     }
 
     /// EXIF 标签（相机/地点）不属于任何一级类目，不能混进去。

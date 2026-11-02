@@ -1305,6 +1305,7 @@ export function ManagerView(props: Props) {
                 noTagActive={mgr.tagFilter === 'none'}
                 onToggleNoTag={() => mgr.setTagFilter(mgr.tagFilter === 'none' ? null : 'none')}
                 groupCounts={mgr.tagGroups}
+                faceCounts={mgr.faceCounts}
                 allActive={mgr.scope.kind === 'tagGroup'}
                 onShowAll={mgr.clearTagGroup}
                 onPickGroup={(label, names) => mgr.selectTagGroup(label, names)}

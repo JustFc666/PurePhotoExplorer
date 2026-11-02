@@ -66,6 +66,10 @@ pub struct ManagerQueryDto {
     pub person_id: Option<i64>,
     /// 只出检出过人脸的图（标签条「人像」用它，true=有脸）
     pub has_faces: Option<bool>,
+    /// 恰好 N 张脸（「单人」= 1）
+    pub face_count_eq: Option<i64>,
+    /// ≥N 张脸（「合照」= 2）
+    pub face_count_min: Option<i64>,
     /// 排序键：taken(默认) / name / size / mtime / rating / added / random
     pub sort: Option<String>,
     /// 是否降序（默认 true）
@@ -97,6 +101,8 @@ impl ManagerQueryDto {
             has_tags: self.has_tags,
             person_id: self.person_id,
             has_faces: self.has_faces,
+            face_count_eq: self.face_count_eq,
+            face_count_min: self.face_count_min,
         }
     }
 
