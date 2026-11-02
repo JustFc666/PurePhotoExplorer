@@ -747,7 +747,7 @@ export function ManagerSidebar({
             tags.map((t) => (
               <div
                 key={t.id}
-                className={`pv-mg-row${
+                className={`pv-mg-row pv-mg-tagrow${
                   scope.kind === 'tag' && scope.name === t.name ? ' is-on' : ''
                 }`}
                 style={{ paddingLeft: 4 }}

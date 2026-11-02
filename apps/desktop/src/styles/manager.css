@@ -477,6 +477,12 @@ body.is-col-resizing {
   font-size: 13.5px;
   font-variant-numeric: tabular-nums;
 }
+/* 标签行比图库行小一号（用户 2026-11-03：下面的具体标签字减小一号）。
+   ⚠️ 只缩标签行，别改 .pv-mg-row 本身 —— 图库名/地点名还要 15px。 */
+.pv-mg-tagrow {
+  font-size: 14px;
+}
+
 .pv-mg-row.is-on .pv-mg-rowcount {
   color: var(--pv-accent);
   opacity: 0.85;
@@ -1207,6 +1213,8 @@ body.is-col-resizing {
 
 .pv-mg-tagtitle {
   font-weight: 600;
+  /* 2026-11-03 用户：这两个字加大两号（11 → 13），下面的标签行反而减小一号 */
+  font-size: 13px;
 }
 
 .pv-mg-tagcount {
