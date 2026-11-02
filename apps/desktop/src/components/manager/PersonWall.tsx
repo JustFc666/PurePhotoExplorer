@@ -2,11 +2,17 @@
  * 人像墙**浮层**（2026-10-25 用户定稿：不再用整页，改成锚定浮层）。
  *
  * ## 形态
- * `人像 · 37 人` + 6 列头像网格（80×80 圆角，默认露三行）+ **只显示张数** → 点一个人即筛主区并关闭。
+ * `人像 · 392 张脸` + 6 列头像网格（80×80 圆角，默认露三行）→ 点一张即筛主区并关闭。
  * - 每行**固定 6 个**，多了用滚轮滚动；
- * - **不显示名字**（卡片太挤），鼠标悬停用浮层显示「名字 · N 张」；
- * - **右键**弹菜单：命名… / 取消命名（命名是内联输入，Enter 提交、Esc 取消）；
- * - **无搜索框**（37 人一屏基本看得完）。
+ * - **不显示名字**（卡片太挤），鼠标悬停用浮层显示「名字 · 源 N px」；
+ * - 右下角小标：未归类的脸标「未」，已归类的留「·」；
+ * - **右键**弹菜单：命名… / 取消命名（仅限已归类的脸，未归类没有人物可命名）；
+ * - **无搜索框**（一屏基本看得完）。
+ *
+ * ## 数据来源（2026-11-02 改为 `faces`）
+ * 用户要求「只要检出人脸就算人像」，所以这里铺的是**检测到的脸**而不是归纳后的人物：
+ * 覆盖 100%（含那 30% 没聚进人物的），代价是同一人会重复出现多次。
+ * 点已归类的脸 → 按那个人筛；点未归类的 → 直接开那张照片。
  *
  * ## 定位
  * 用 `position: fixed` + 调用方给的锚点（「更多面部」方块的 `getBoundingClientRect`），
@@ -14,7 +20,7 @@
  */
 
 import { useEffect, useRef, useState } from 'react'
-import { managerPeople, managerRenamePerson, type PersonItem } from '../../ipc/people'
+import { managerFaces, managerRenamePerson, type FaceItem } from '../../ipc/people'
 import { notifyPeopleChanged } from '../../lib/peopleEvents'
 import { FaceAvatar } from './FaceAvatar'
 
@@ -31,13 +37,15 @@ interface Props {
   /**
    * 限定在哪个图库。`undefined` = 全部图库。
    *
-   * ⚠️ 不传的话浮层列出的是**全库**人物 —— 在「rednote」里点开人像墙
+   * ⚠️ 不传的话浮层列出的是**全库**人脸 —— 在「rednote」里点开人像墙
    * 会看到「测试图库」的人（2026-10-29 用户报的混合问题）。
    */
   libraryId?: number
   onClose: () => void
   /** 选中某人：调用方负责按这个人筛主区并关闭浮层 */
   onSelect: (id: number, name: string) => void
+  /** 点未归类的脸：打开这张脸所在的原图 */
+  onOpenFace: (path: string) => void
 }
 
 /**
@@ -48,11 +56,18 @@ interface Props {
  */
 export const PERSON_POP_W = 494
 
-export function PersonWall({
-  libraryId, anchor, currentId, onClose, onSelect }: Props) {
-  const [people, setPeople] = useState<PersonItem[]>([])
+/**
+ * 浮层里最多铺几张脸。
+ *
+ * ⚠️ 每格都要拉一次缩略图（`FaceAvatar` 有缓存，但首屏是实打实的 N 次解码，
+ * 走 `thumbQueue` 的 4 并发）。60 格 = 十行，够看出覆盖度又不至于开面板就等两秒。
+ */
+const WALL_LIMIT = 60
+
+export function PersonWall({ libraryId, anchor, currentId, onClose, onSelect, onOpenFace }: Props) {
+  const [faces, setFaces] = useState<FaceItem[]>([])
   const [tip, setTip] = useState<{ x: number; y: number; text: string } | null>(null)
-  const [menu, setMenu] = useState<{ x: number; y: number; p: PersonItem } | null>(null)
+  const [menu, setMenu] = useState<{ x: number; y: number; f: FaceItem } | null>(null)
   /** 正在内联改名的人物 id */
   const [renaming, setRenaming] = useState<number | null>(null)
   const [draft, setDraft] = useState('')
@@ -60,9 +75,9 @@ export function PersonWall({
 
   useEffect(() => {
     let alive = true
-    managerPeople(1, libraryId)
+    managerFaces({ limit: WALL_LIMIT, libraryId })
       .then((list) => {
-        if (alive) setPeople(list)
+        if (alive) setFaces(list)
       })
       .catch(() => undefined)
     return () => {
@@ -92,24 +107,30 @@ export function PersonWall({
     return () => window.removeEventListener('keydown', onKey, true)
   }, [renaming, menu, onClose])
 
-  const commitRename = (p: PersonItem) => {
+  const commitRename = (pid: number) => {
     const name = draft.trim()
     setRenaming(null)
     if (!name) return
-    /* 本地先更新，避免等一次往返才看到新名字 */
-    setPeople((prev) => prev.map((x) => (x.id === p.id ? { ...x, name } : x)))
-    void managerRenamePerson(p.id, name)
+    void managerRenamePerson(pid, name)
       .then(notifyPeopleChanged)
       .catch(() => undefined)
   }
 
+  /** 点一张脸：归了人就按人筛并关闭，没归类就开那张照片 */
+  const openFace = (f: FaceItem) => {
+    if (f.personId != null) {
+      onSelect(f.personId, f.personName ?? '未命名')
+      return
+    }
+    if (f.path) {
+      onOpenFace(f.path)
+      onClose()
+    }
+  }
+
   return (
     <>
-      <div
-        className="pv-pop-mask"
-        onClick={onClose}
-        onContextMenu={(e) => e.preventDefault()}
-      />
+      <div className="pv-pop-mask" onClick={onClose} onContextMenu={(e) => e.preventDefault()} />
       <div
         className="pv-pwp"
         style={{ left: anchor.x, top: anchor.y }}
@@ -117,7 +138,7 @@ export function PersonWall({
       >
         <div className="pv-pwp-head">
           <span className="pv-pwp-title">人像</span>
-          <span className="pv-pwp-sub">{people.length} 人</span>
+          <span className="pv-pwp-sub">最大的 {faces.length} 张脸</span>
           <div style={{ flex: 1 }} />
           <button type="button" className="pv-pwp-x" onClick={onClose} aria-label="关闭">
             ✕
@@ -125,60 +146,60 @@ export function PersonWall({
         </div>
 
         <div className="pv-pwp-grid">
-          {people.map((p, i) => (
+          {faces.map((f, i) => (
             <div
-              key={p.id}
+              key={f.id}
               role="button"
               tabIndex={0}
-              className={`pv-pwp-card${currentId === p.id ? ' is-on' : ''}`}
+              className={`pv-pwp-card${f.personId != null && currentId === f.personId ? ' is-on' : ''}`}
               onClick={() => {
-                if (renaming === p.id) return
-                onSelect(p.id, p.name ?? '未命名')
+                if (renaming != null) return
+                openFace(f)
               }}
               onKeyDown={(e) => {
-                if (e.key === 'Enter') onSelect(p.id, p.name ?? '未命名')
+                if (e.key === 'Enter') openFace(f)
               }}
               onContextMenu={(e) => {
                 e.preventDefault()
                 e.stopPropagation()
-                setMenu({ x: e.clientX, y: e.clientY, p })
+                /* 未归类的脸没有人物可命名 */
+                if (f.personId == null) return
+                setMenu({ x: e.clientX, y: e.clientY, f })
               }}
               onMouseEnter={(e) =>
                 setTip({
                   x: e.clientX,
                   y: e.clientY,
-                  text: `${p.name ?? '未命名'} · ${p.faceCount} 张 · 源 ${Math.round(
-                    p.cover?.quality ?? 0,
-                  )}px`,
+                  text: `${f.personName ?? '未归类'} · 源 ${Math.round(f.quality ?? 0)}px`,
                 })
               }
               onMouseMove={(e) => setTip((t) => (t ? { ...t, x: e.clientX, y: e.clientY } : t))}
               onMouseLeave={() => setTip(null)}
             >
-              {renaming === p.id ? (
+              {renaming != null && renaming === f.personId ? (
                 <input
                   ref={inputRef}
                   className="pv-pwp-input"
                   value={draft}
                   onChange={(e) => setDraft(e.target.value)}
-                  onBlur={() => commitRename(p)}
+                  onBlur={() => commitRename(renaming)}
                   onKeyDown={(e) => {
-                    if (e.key === 'Enter') commitRename(p)
+                    if (e.key === 'Enter') commitRename(renaming)
                     if (e.key === 'Escape') setRenaming(null)
                   }}
                   onClick={(e) => e.stopPropagation()}
                 />
               ) : (
                 <FaceAvatar
-                  face={p.cover}
+                  face={f}
                   size={80}
-                  fallback={p.name ? p.name.slice(0, 1) : String(i + 1)}
+                  fallback={f.personName ? f.personName.slice(0, 1) : String(i + 1)}
                 />
               )}
-              <span className="pv-pwp-n">{p.faceCount}</span>
+              <span className="pv-pwp-n">{f.personId == null ? '未' : '·'}</span>
             </div>
           ))}
-          {people.length === 0 && <div className="pv-pwp-empty">还没有归纳出人物</div>}
+          {faces.length === 0 && <div className="pv-pwp-empty">还没有检测到人脸</div>}
         </div>
       </div>
 
@@ -194,8 +215,8 @@ export function PersonWall({
               type="button"
               className="pv-pop-item"
               onClick={() => {
-                setDraft(menu.p.name ?? '')
-                setRenaming(menu.p.id)
+                setDraft(menu.f.personName ?? '')
+                setRenaming(menu.f.personId)
                 setMenu(null)
               }}
             >
@@ -205,10 +226,10 @@ export function PersonWall({
               type="button"
               className="pv-pop-item"
               onClick={() => {
-                const p = menu.p
+                const pid = menu.f.personId
                 setMenu(null)
-                setPeople((prev) => prev.map((x) => (x.id === p.id ? { ...x, name: null } : x)))
-                void managerRenamePerson(p.id, null)
+                if (pid == null) return
+                void managerRenamePerson(pid, null)
                   .then(notifyPeopleChanged)
                   .catch(() => undefined)
               }}

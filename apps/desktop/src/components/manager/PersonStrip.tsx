@@ -7,17 +7,21 @@
  * ⭐ 头像是**圆角方形**不是圆形（用户明确要求）：小尺寸下圆形容器会切掉
  * 太多脸部信息，圆角方形更接近照片本身。
  *
- * ## 数据来源
- * - 计数：`manager_faces_stats`（人脸总数 / 已归属 / 人物数）
- * - 头像：`manager_people(3)` 的封面脸 —— 目前只取"谁"用于占位显示，
- *   **真正的脸裁剪还没接**（要用缩略图 + 归一化框在 canvas 里裁），
- *   所以现在显示人名首字或序号，接上后替换 `avatarOf()` 即可。
+ * ## 数据来源（2026-11-02 改为 `faces`）
+ * 用户提出「只要识别出人脸就算人像」，所以这里直接铺**检测到的脸**，
+ * 而不再是归纳后的 `persons`。差别：
+ * - `persons`：30 个身份，一人一张头像，但只覆盖 ≥3 张脸且像真人的簇（约 70%）
+ * - `faces`：392 张脸，全覆盖，但同一个人会出现多次
+ *
+ * 点了会分流：
+ * - 这张脸已归属人物 → 按那个人筛主区（和以前一致）
+ * - 未归类 → 直接打开这张脸所在的照片（`onOpenFace`）
  *
  * ⛔ 这里不放"设置/齿轮"：AI 设置唯一入口是顶栏的「设置」（用户 2026-10-24 定）。
  */
 
 import { useEffect, useMemo, useState } from 'react'
-import { managerPeople, managerRenamePerson, type PersonItem } from '../../ipc/people'
+import { managerFaces, managerRenamePerson, type FaceItem } from '../../ipc/people'
 import { notifyPeopleChanged, onPeopleChanged } from '../../lib/peopleEvents'
 import { ContextMenu, useContextMenu, type ContextMenuItem } from '../chrome/ContextMenu'
 import { PromptDialog } from '../chrome/PromptDialog'
@@ -26,27 +30,25 @@ import { FaceAvatar } from './FaceAvatar'
 interface Props {
   /** 点「更多面部」：把锚点交给调用方弹浮层（右对齐到方块右缘） */
   onOpenWall: (rect: { left: number; right: number; bottom: number }) => void
-  /** 点某个头像：**按这个人筛主区网格**（与选 tag 同一效果，不开新页面） */
+  /** 点已归类的脸：**按这个人筛主区网格**（与选 tag 同一效果，不开新页面） */
   onOpenPerson: (id: number, name: string) => void
+  /** 点未归类的脸：直接打开那张照片 */
+  onOpenFace: (path: string) => void
   /** 只有入库模式才显示（浏览模式没有 image_id，人脸挂不上） */
   visible: boolean
   /** 当前图库 id（有值就只显示"这个库里有人脸"的人物；目录/全部照片时传 undefined） */
   libraryId?: number
 }
 
-/** 未命名的显示 ①②…；命名的显示首字。 */
-function avatarText(p: PersonItem, index: number): string {
-  const n = p.name?.trim()
-  if (n) return n.slice(0, 1)
-  return String(index + 1)
-}
+/** 条上最多取几张脸（约等于「全部」；用户库里 392 张，留够余量）。 */
+const STRIP_LIMIT = 600
 
-export function PersonStrip({ onOpenWall, onOpenPerson, visible, libraryId }: Props) {
-  const [people, setPeople] = useState<PersonItem[]>([])
-  /** 右键点中的头像 → 菜单的「作用对象」（菜单项里要用它） */
-  const [ctxPerson, setCtxPerson] = useState<PersonItem | null>(null)
+export function PersonStrip({ onOpenWall, onOpenPerson, onOpenFace, visible, libraryId }: Props) {
+  const [faces, setFaces] = useState<FaceItem[]>([])
+  /** 右键点中的脸 → 菜单的「作用对象」（菜单项里要用它） */
+  const [ctxFace, setCtxFace] = useState<FaceItem | null>(null)
   /** 正在命名的人物。非 null 时弹输入框。 */
-  const [renaming, setRenaming] = useState<PersonItem | null>(null)
+  const [renaming, setRenaming] = useState<FaceItem | null>(null)
   const ctx = useContextMenu()
   /**
    * 一屏能放几个头像：按窗口宽度估（每格 80 + 8 间距）。
@@ -76,28 +78,26 @@ export function PersonStrip({ onOpenWall, onOpenPerson, visible, libraryId }: Pr
   useEffect(() => {
     if (!visible) return
     let alive = true
-    /* 两个请求并行：计数与头像互不依赖，串行会多等一个来回 */
-    void Promise.all([
-      /* 拉全部人物（≥1 张脸）：浮层里要能列出所有，只取 3 个会让「…」没内容 */
-      managerPeople(1, libraryId).catch(() => [] as PersonItem[]),
-    ]).then(([p]) => {
-      if (alive) setPeople(p)
-    })
+    void managerFaces({ limit: STRIP_LIMIT, libraryId, onePerImage: true })
+      .then((list) => {
+        if (alive) setFaces(list)
+      })
+      .catch(() => undefined)
     return () => {
       alive = false
     }
   }, [visible, libraryId])
 
   /*
-   * 人物数据变了就重拉：改名、换封面、合并/拆分/删人物，以及**删照片 / 移除目录**
+   * 人脸数据变了就重拉：改名、换封面、合并/拆分/删人物，以及**删照片 / 移除目录**
    * （脸会跟着图一起没）。2026-10-27 用户报「删除后『更多图像 共31人』没更新」——
    * 就是删目录这条路径漏了广播，数字停在旧值上。
    */
   useEffect(() => {
     if (!visible) return
     return onPeopleChanged(() => {
-      void managerPeople(1, libraryId)
-        .then(setPeople)
+      void managerFaces({ limit: STRIP_LIMIT, libraryId, onePerImage: true })
+        .then(setFaces)
         .catch(() => undefined)
     })
   }, [visible, libraryId])
@@ -113,109 +113,112 @@ export function PersonStrip({ onOpenWall, onOpenPerson, visible, libraryId }: Pr
    * hook 数量变了 → React 抛 "Rendered more hooks than during the previous render"
    * → **整个应用白屏**（2026-10-27 踩过，差点去查渲染链路）。
    */
-  const personMenuItems = useMemo<ContextMenuItem[]>(() => {
-    const p = ctxPerson
-    if (!p) return []
+  const faceMenuItems = useMemo<ContextMenuItem[]>(() => {
+    const f = ctxFace
+    /* 未归类的脸没有人物可命名 —— 菜单直接空着，右键不弹 */
+    if (!f || f.personId == null) return []
+    const pid = f.personId
     return [
       {
         id: 'rename',
         label: '命名…',
-        onSelect: () => setRenaming(p),
+        onSelect: () => setRenaming(f),
       },
       {
         id: 'unname',
         label: '取消命名',
         separatorBefore: true,
         onSelect: () => {
-          /* 本地先改，别让用户等一个来回才看到效果 */
-          setPeople((prev) => prev.map((x) => (x.id === p.id ? { ...x, name: null } : x)))
-          void managerRenamePerson(p.id, null)
+          void managerRenamePerson(pid, null)
             .then(notifyPeopleChanged)
             .catch(() => undefined)
         },
       },
     ]
-  }, [ctxPerson])
+  }, [ctxFace])
 
   if (!visible) return null
 
   /*
-   * ⚠️ 人数必须用 `people.length`（已按图库过滤），
-   * 不能用 `manager_faces_stats().persons` —— 那个是全库统计，
-   * 会在「二次元」这种没人像的图库里也显示 32 人（2026-10-25 用户报的）。
+   * ⚠️ 计数必须用 `faces.length`（已按图库过滤），
+   * 不能用 `manager_faces_stats().faces` —— 那个是全库统计，
+   * 会在「二次元」这种没人像的图库里也显示几百张脸（2026-10-25 同类问题）。
    */
-  const persons = people.length
+  const total = faces.length
   /* 留一格给「…」：放不下时少显示一个头像，避免出现"最后一个被省略号挤掉" */
-  const overflow = people.length > fit
-  const shown = people.slice(0, overflow ? fit - 1 : fit)
-  const rest = Math.max(0, persons - shown.length)
+  const overflow = total > fit
+  const shown = overflow ? faces.slice(0, fit - 1) : faces.slice(0, fit)
+  const rest = Math.max(0, total - shown.length)
 
-
-  const closePersonMenu = () => {
-    setCtxPerson(null)
+  const closeFaceMenu = () => {
+    setCtxFace(null)
     ctx.close()
   }
 
   /** 提交命名。名字没变或为空就什么都不做。 */
-  const commitName = (p: PersonItem, raw: string) => {
+  const commitName = (f: FaceItem, raw: string) => {
     const name = raw.trim()
     setRenaming(null)
-    if (!name || name === (p.name ?? '')) return
-    setPeople((prev) => prev.map((x) => (x.id === p.id ? { ...x, name } : x)))
-    void managerRenamePerson(p.id, name)
+    const pid = f.personId
+    if (!pid || !name || name === (f.personName ?? '')) return
+    void managerRenamePerson(pid, name)
       .then(notifyPeopleChanged)
       .catch(() => undefined)
   }
 
-  /* 本图库一个人物都没有 → **整块不渲染**（连"开始识别"也不要，用户 2026-10-25 定） */
-  if (persons === 0) return null
+  /** 点一张脸：归了人就按人筛，没归类就开那张照片 */
+  const openFace = (f: FaceItem) => {
+    if (f.personId != null) onOpenPerson(f.personId, f.personName ?? '未命名')
+    else if (f.path) onOpenFace(f.path)
+  }
 
+  /* 本图库一张脸都没有 → **整块不渲染**（连"开始识别"也不要，用户 2026-10-25 定） */
+  if (total === 0) return null
 
   return (
     <div className="pv-ps">
       <div className="pv-ps-faces">
-        {shown.map((p, i) => (
+        {shown.map((f, i) => (
           <button
-            key={p.id}
+            key={f.id}
             type="button"
             className="pv-ps-face"
-            title={`${p.name ?? '未命名'} · ${p.faceCount} 张脸 · 源 ${Math.round(
-              p.cover?.quality ?? 0,
-            )}px`}
-            onClick={() => onOpenPerson(p.id, p.name ?? '未命名')}
+            title={`${f.personName ?? '未归类'} · 源 ${Math.round(f.quality ?? 0)}px`}
+            onClick={() => openFace(f)}
             onContextMenu={(e) => {
-              /* 右键 = 命名 / 取消命名，与照片墙里右键头像完全一致 */
-              setCtxPerson(p)
+              /* 右键 = 命名 / 取消命名，与照片墙里右键头像完全一致（仅限已归类） */
+              if (f.personId == null) return
+              setCtxFace(f)
               ctx.open(e)
             }}
           >
-            <FaceAvatar face={p.cover} size={80} fallback={avatarText(p, i)} />
+            <FaceAvatar face={f} size={80} fallback={String(i + 1)} />
           </button>
         ))}
-        {/* 「…」点开浮层列出剩余人物（用户 2026-10-25 要求） */}
+        {/* 「…」点开浮层列出剩余人脸（用户 2026-10-25 要求） */}
         {rest > 0 && (
           <button
             type="button"
             className="pv-ps-more"
-            title={`还有 ${rest} 个人物，点击展开`}
+            title={`还有 ${rest} 张脸，点击展开`}
             onClick={(e) => {
               const r = (e.currentTarget as HTMLElement).getBoundingClientRect()
               onOpenWall({ left: r.left, right: r.right, bottom: r.bottom })
             }}
           >
             <span className="pv-ps-more-l">更多图像</span>
-            <span className="pv-ps-more-s">共{persons}人</span>
+            <span className="pv-ps-more-s">共{total}脸</span>
           </button>
         )}
       </div>
 
       {/* 右键头像的菜单（命名… / 取消命名），和照片墙那套一致 */}
-      {ctx.state && ctxPerson && (
+      {ctx.state && ctxFace && (
         <ContextMenu
           key={`${ctx.state.x},${ctx.state.y}`}
           position={{ x: ctx.state.x, y: ctx.state.y }}
-          items={personMenuItems}
-          onClose={closePersonMenu}
+          items={faceMenuItems}
+          onClose={closeFaceMenu}
         />
       )}
 
@@ -223,9 +226,9 @@ export function PersonStrip({ onOpenWall, onOpenPerson, visible, libraryId }: Pr
       {renaming && (
         <PromptDialog
           title="命名人物"
-          label={`这个人有 ${renaming.faceCount} 张脸。命名只写索引，不动任何照片。`}
+          label="这张脸属于一个人物。命名只写索引，不动任何照片。"
           placeholder="人物名称"
-          initial={renaming.name ?? ''}
+          initial={renaming.personName ?? ''}
           okLabel="保存"
           onOk={(name) => commitName(renaming, name)}
           onCancel={() => setRenaming(null)}

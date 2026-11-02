@@ -1200,6 +1200,7 @@ export function ManagerView(props: Props) {
                 mgr.setPersonFilter({ id, name })
                 setPersonPop(null)
               }}
+              onOpenFace={(path) => onOpenImage(path, [path])}
             />
           )}
           {/*
@@ -1401,6 +1402,8 @@ export function ManagerView(props: Props) {
               }
               onOpenWall={(r) => setPersonPop({ x: Math.max(12, r.right - PERSON_POP_W), y: r.bottom + 6 })}
               onOpenPerson={(id, name) => mgr.setPersonFilter({ id, name })}
+              /* 未归类的脸：没有人物可筛，直接开那张原图 */
+              onOpenFace={(path) => onOpenImage(path, [path])}
             />
           </div>
 

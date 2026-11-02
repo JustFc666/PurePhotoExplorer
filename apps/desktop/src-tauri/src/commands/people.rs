@@ -57,6 +57,107 @@ impl From<&pv_index::models::Face> for FaceBoxDto {
     }
 }
 
+/// 一张「脸」条目：比 `FaceBoxDto` 多带人物归属与所属图片路径。
+///
+/// 人像条 / 人像墙改用 `faces` 后的数据源（2026-11 用户提出：只要检出脸就算人像）。
+/// ⚠️ `person_id` 为 `None` = 这张脸没被聚进任何人物（项目里约 30%）。
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FaceItemDto {
+    pub id: i64,
+    pub image_id: i64,
+    /// `None` = 未归类
+    pub person_id: Option<i64>,
+    pub person_name: Option<String>,
+    pub x: f32,
+    pub y: f32,
+    pub w: f32,
+    pub h: f32,
+    pub quality: Option<f32>,
+    pub score: Option<f32>,
+    /// 原图绝对路径：点未归类的脸时直接开大图（`None` = 卷没挂上）
+    pub path: Option<String>,
+}
+
+/// 全部人脸，按脸的大小倒序（大脸当头像更清楚）。
+///
+/// - `library_id`：只取脸落在该图库成员目录里的
+/// - `orphans_only`：只要没归人物的（人像墙的「未归类」区）
+/// - `one_per_image`：同一张照片只留最大那张脸 —— 人像条必须开，
+///   否则一张六人合影就能把整条塞满（同一张照片里的脸质量接近，排序后必然挨在一起）
+///
+/// ⚠️ 一张图可能属于多个图库，用 `EXISTS` 而不是 JOIN，否则同一张脸会出现多行。
+#[tauri::command]
+pub async fn manager_faces(
+    state: State<'_, AppState>,
+    limit: Option<i64>,
+    library_id: Option<i64>,
+    orphans_only: Option<bool>,
+    one_per_image: Option<bool>,
+) -> Result<Vec<FaceItemDto>, ErrorDto> {
+    let lim = limit.unwrap_or(200).clamp(1, 2000);
+    let orphans = orphans_only.unwrap_or(false);
+    let dedup = one_per_image.unwrap_or(false);
+    state
+        .with_manager(|s| {
+            let sql = "SELECT f.id, f.image_id, f.person_id, p.name, f.x, f.y, f.w, f.h, \
+                              f.quality, f.score \
+                         FROM faces f \
+                    LEFT JOIN persons p ON p.id = f.person_id \
+                        WHERE (?1 IS NULL OR EXISTS ( \
+                                  SELECT 1 FROM images i \
+                                    JOIN library_folders lf ON lf.folder_id = i.dir_id \
+                                   WHERE i.id = f.image_id AND lf.library_id = ?1)) \
+                          AND (?2 = 0 OR f.person_id IS NULL) \
+                          AND (?3 = 0 OR f.id = ( \
+                                  SELECT f2.id FROM faces f2 \
+                                   WHERE f2.image_id = f.image_id \
+                                ORDER BY COALESCE(f2.quality, 0) DESC, f2.id LIMIT 1)) \
+                     ORDER BY COALESCE(f.quality, 0) DESC, f.id \
+                        LIMIT ?4";
+            let mut stmt = s.conn().prepare(sql).map_err(|e| e.to_string())?;
+            let rows = stmt
+                .query_map(
+                    (
+                        library_id,
+                        if orphans { 1i64 } else { 0 },
+                        if dedup { 1i64 } else { 0 },
+                        lim,
+                    ),
+                    |r| {
+                        Ok(FaceItemDto {
+                            id: r.get(0)?,
+                            image_id: r.get(1)?,
+                            person_id: r.get(2)?,
+                            person_name: r.get(3)?,
+                            x: r.get(4)?,
+                            y: r.get(5)?,
+                            w: r.get(6)?,
+                            h: r.get(7)?,
+                            quality: r.get(8)?,
+                            score: r.get(9)?,
+                            path: None,
+                        })
+                    },
+                )
+                .map_err(|e| e.to_string())?;
+            let mut out = Vec::new();
+            for row in rows {
+                let mut f = row.map_err(|e| e.to_string())?;
+                if let Ok(Some(img)) = pv_index::repo::images::get(s.conn(), f.image_id) {
+                    f.path = s
+                        .abs_path(&img)
+                        .ok()
+                        .flatten()
+                        .map(|p| p.to_string_lossy().into_owned());
+                }
+                out.push(f);
+            }
+            Ok(out)
+        })
+        .map_err(merr)
+}
+
 /// 人脸库概览（设置面板显示"已分析多少脸 / 几个人物"）。
 #[derive(Debug, Clone, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
