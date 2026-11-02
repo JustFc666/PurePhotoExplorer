@@ -128,10 +128,17 @@ export function isFaceGroup(label: string): boolean {
 export const FACE_SINGLE = '单人'
 export const FACE_MULTI = '合照'
 
-/** 命中「单人」「合照」时给的是脸数条件，不是标签名。 */
+/**
+ * 命中「单人」「合照」时给的是脸数条件，不是标签名。
+ *
+ * ⚠️ 二级 chip 传进来的 `label` 是**组合名**（`人像 · 合照`），不是裸的「合照」——
+ * 2026-11-02 就是栽在这上面：数字写着 52，主区却只有 5 张（退回了标签口径）。
+ * 所以先取「·」后面那一段再判断。
+ */
 function faceCountOf(label: string): { eq?: number; min?: number } | null {
-  if (label === FACE_SINGLE) return { eq: 1 }
-  if (label === FACE_MULTI) return { min: 2 }
+  const leaf = (label.split('·').pop() ?? label).trim()
+  if (leaf === FACE_SINGLE) return { eq: 1 }
+  if (leaf === FACE_MULTI) return { min: 2 }
   return null
 }
 

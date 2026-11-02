@@ -117,22 +117,26 @@ describe('buildManagerQuery · 标签', () => {
     expect(group?.hasFaces).toBe(true)
     expect(group?.tagsAny).toBeUndefined()
 
-    /* 单人 = 恰好 1 张脸，合照 = ≥2 张脸（用户 2026-11-02：单人 + 合照 = 人像） */
+    /*
+     * ⚠️ 二级 chip 传的是**组合名**（`人像 · 合照`），不是裸的「合照」。
+     * 2026-11-02 就是只判裸名，导致数字写 52、主区只筛出 5 张（退回了标签口径）。
+     * 这几条用真实形态钉住，别再改回去。
+     */
     const single = buildManagerQuery(
-      input({ scope: { kind: 'tagGroup', label: '单人', names: ['单人'] } }),
+      input({ scope: { kind: 'tagGroup', label: '人像 · 单人', names: ['单人'] } }),
     )
     expect(single?.faceCountEq).toBe(1)
     expect(single?.tagsAny).toBeUndefined()
 
     const multi = buildManagerQuery(
-      input({ scope: { kind: 'tagGroup', label: '合照', names: ['合照'] } }),
+      input({ scope: { kind: 'tagGroup', label: '人像 · 合照', names: ['合照'] } }),
     )
     expect(multi?.faceCountMin).toBe(2)
     expect(multi?.tagsAny).toBeUndefined()
 
     /* 其余二级词（半身/全身/儿童…）没有人脸口径，仍然按标签名筛 */
     const leaf = buildManagerQuery(
-      input({ scope: { kind: 'tagGroup', label: '半身', names: ['半身'] } }),
+      input({ scope: { kind: 'tagGroup', label: '人像 · 半身', names: ['半身'] } }),
     )
     expect(leaf?.hasFaces).toBeUndefined()
     expect(leaf?.faceCountEq).toBeUndefined()

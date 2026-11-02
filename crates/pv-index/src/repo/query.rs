@@ -487,6 +487,62 @@ mod tests {
         assert_eq!(repo::places::list_counts(&c).unwrap().len(), 2);
     }
 
+    /// 「单人」= 恰好 1 张脸，「合照」= ≥2 张脸（用户 2026-11-02 的口径）。
+    ///
+    /// 这两个条件必须真的下推到 SQL：一张合影可能挂着 4 张脸，
+    /// 用 JOIN 会让同一张图出 4 行，所以用相关子查询。
+    #[test]
+    fn 按脸数筛图() {
+        let (c, _d1, _d2) = setup();
+        let ids: Vec<i64> = {
+            let mut s = c.prepare("SELECT id FROM images ORDER BY id").unwrap();
+            let it = s.query_map([], |r| r.get::<_, i64>(0)).unwrap();
+            it.map(|x| x.unwrap()).collect()
+        };
+        // 第 1 张 1 个脸、第 2 张 3 个脸、其余 0 个
+        for (img, n) in [(ids[0], 1), (ids[1], 3)] {
+            for _ in 0..n {
+                c.execute(
+                    "INSERT INTO faces(image_id, x, y, w, h, model) VALUES (?1, 0.1, 0.1, 0.1, 0.1, 'm')",
+                    rusqlite::params![img],
+                )
+                .unwrap();
+            }
+        }
+        let run = |flt: ImageFilter| {
+            let q = ImageQuery {
+                filter: flt,
+                ..Default::default()
+            };
+            list(&c, &q).unwrap().len()
+        };
+        assert_eq!(run(ImageFilter::default()), 4, "不筛时 4 张");
+        assert_eq!(
+            run(ImageFilter {
+                face_count_eq: Some(1),
+                ..Default::default()
+            }),
+            1,
+            "单人"
+        );
+        assert_eq!(
+            run(ImageFilter {
+                face_count_min: Some(2),
+                ..Default::default()
+            }),
+            1,
+            "合照"
+        );
+        assert_eq!(
+            run(ImageFilter {
+                has_faces: Some(true),
+                ..Default::default()
+            }),
+            2,
+            "人像 = 有脸的图"
+        );
+    }
+
     fn setup() -> (rusqlite::Connection, i64, i64) {
         let c = open_test_db().unwrap();
         let v = repo::volumes::insert(&c, &Volume::new("v")).unwrap();
