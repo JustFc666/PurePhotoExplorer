@@ -28,47 +28,56 @@
   --pv-ramp-900: #1c1c23;
   --pv-ramp-950: #141419;
 
-  /* ── 强调色：同色相提高饱和度，用于选中/焦点 ──
-     刻意不用高饱和蓝紫，避免在长时间看图时产生视觉疲劳 */
-  --pv-accent:        #6e6ec4;
-  --pv-accent-hover:  #7d7dd4;
-  --pv-accent-press:  #5f5fb0;
-  --pv-accent-soft:   rgba(110, 110, 196, 0.16);
-  --pv-accent-ring:   rgba(110, 110, 196, 0.42);
+  /*
+   * 强调色**跟着主题走**（2026-11-03）：
+   * 亮色底上 #6e6ec4 只有 3.9:1，小字不达标，所以亮色用更深一档的 #5B5BD6（5.37:1）；
+   * 暗色底上深色反而糊，保持原来的 #6e6ec4。
+   * ⛔ 不要再把 accent 写在 `:root` 里 —— 那样亮色永远拿不到自己的值。
+   */
 }
 
 /* ═══════════════════════════════════════════════════════════
-   浅色主题 —— 用于设置页、文件选择对话框等系统级场景
+   浅色主题（2026-11-03 重新定稿）
+   ─────────────────────────────────────────────────────────
+   原则：白底为主，层次靠 1px 边框 + 极浅阴影，**不用灰块堆叠**
+   （亮色界面最容易糊成一团的就是三档灰堆在一起）。
+   对比度实测：主文字 15.7:1 / 次要 7.2:1 / 三级 5.0:1 / 主色 5.37:1，全部过 WCAG AA。
    ═══════════════════════════════════════════════════════════ */
 :root,
 [data-theme="light"] {
   color-scheme: light;
 
-  --pv-bg-app:        var(--pv-ramp-50);
+  --pv-accent:        #5b5bd6;
+  --pv-accent-hover:  #4f4fc7;
+  --pv-accent-press:  #4545b4;
+  --pv-accent-soft:   rgba(91, 91, 214, 0.10);
+  --pv-accent-ring:   rgba(91, 91, 214, 0.28);
+
+  --pv-bg-app:        #f4f4f7;
   --pv-bg-surface:    #ffffff;
-  --pv-bg-elevated:   var(--pv-ramp-100);
+  --pv-bg-elevated:   #f8f8fb;
   --pv-bg-input:      #ffffff;
 
-  /* 看图画布用中性浅灰，不带蓝紫倾向 */
-  --pv-bg-canvas:     #f4f4f6;
+  /* 看图画布用中性浅灰，**不带蓝紫倾向** —— 底色偏色会影响对照片的判断 */
+  --pv-bg-canvas:     #efeff3;
 
-  --pv-border-subtle: rgba(90, 90, 110, 0.14);
-  --pv-border:        rgba(90, 90, 110, 0.24);
-  --pv-border-strong: rgba(90, 90, 110, 0.42);
+  --pv-border-subtle: rgba(30, 30, 50, 0.07);
+  --pv-border:        rgba(30, 30, 50, 0.14);
+  --pv-border-strong: rgba(30, 30, 50, 0.28);
 
-  --pv-text-primary:   var(--pv-ramp-600);
-  --pv-text-secondary: var(--pv-ramp-500);
-  --pv-text-tertiary:  var(--pv-ramp-400);
-  --pv-text-disabled:  #a8a8b8;
-  --pv-text-inverse:   var(--pv-ramp-50);
+  --pv-text-primary:   #22222e;
+  --pv-text-secondary: #56566a;
+  --pv-text-tertiary:  #6e6e80;
+  --pv-text-disabled:  #a5a5b4;
+  --pv-text-inverse:   #ffffff;
 
-  --pv-hover:     rgba(90, 90, 110, 0.07);
-  --pv-active:    rgba(90, 90, 110, 0.12);
+  --pv-hover:     rgba(30, 30, 50, 0.045);
+  --pv-active:    rgba(30, 30, 50, 0.08);
   --pv-selected:  var(--pv-accent-soft);
 
-  --pv-shadow-sm: 0 1px 2px rgba(36, 36, 60, 0.08);
-  --pv-shadow-md: 0 4px 12px rgba(36, 36, 60, 0.12);
-  --pv-shadow-lg: 0 12px 32px rgba(36, 36, 60, 0.16);
+  --pv-shadow-sm: 0 1px 2px rgba(20, 20, 43, 0.06);
+  --pv-shadow-md: 0 6px 20px rgba(20, 20, 43, 0.10);
+  --pv-shadow-lg: 0 18px 48px rgba(20, 20, 43, 0.16);
 }
 
 /* ═══════════════════════════════════════════════════════════
@@ -76,6 +85,13 @@
    ═══════════════════════════════════════════════════════════ */
 [data-theme="dark"] {
   color-scheme: dark;
+
+  /* 深色底上保持原来的紫灰强调色（提亮反而失去沉静感） */
+  --pv-accent:        #6e6ec4;
+  --pv-accent-hover:  #7d7dd4;
+  --pv-accent-press:  #5f5fb0;
+  --pv-accent-soft:   rgba(110, 110, 196, 0.16);
+  --pv-accent-ring:   rgba(110, 110, 196, 0.42);
 
   --pv-bg-app:        var(--pv-ramp-950);
   --pv-bg-surface:    var(--pv-ramp-900);

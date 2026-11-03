@@ -209,7 +209,7 @@
   flex: 0 0 auto;
 }
 .pv-mg-sortlabel {
-  font-size: 15px;
+  font-size: 14px;
   color: var(--pv-text-secondary);
   user-select: none;
 }
@@ -223,7 +223,7 @@
   border: 1px solid var(--pv-border-subtle);
   background: var(--pv-bg-input);
   color: var(--pv-text-primary);
-  font-size: 15px;
+  font-size: 13px;
   font-family: inherit;
   cursor: pointer;
 }

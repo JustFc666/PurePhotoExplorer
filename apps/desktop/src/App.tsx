@@ -12,6 +12,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { open as openDialog, save as saveDialog } from '@tauri-apps/plugin-dialog'
 import { ManagerView } from './components/manager/ManagerView'
+import { applyTheme, watchSystemTheme } from './lib/theme'
 import { getCurrentWindow } from '@tauri-apps/api/window'
 import {
   decodeError,
@@ -173,6 +174,16 @@ export function App() {
    * 这里只留一个「打开设置时才查」的开关 —— 见 `useFileAssociations`。
    */
   const fileAssoc = useFileAssociations(showSettings)
+
+  /*
+   * 主题：`index.html` 的内联脚本已经在首帧前设好属性，这里只做两件事 ——
+   * ① 兜底重放一次（防存储被清、或页面从 dev server 热重载进来时属性丢了）
+   * ② 「跟随系统」时监听系统深浅切换
+   */
+  useEffect(() => {
+    applyTheme()
+    return watchSystemTheme()
+  }, [])
 
   // 加载应用信息（版本、能力）
   useEffect(() => {

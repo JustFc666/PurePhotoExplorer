@@ -1,9 +1,31 @@
 <!DOCTYPE html>
-<html lang="zh-CN" data-theme="dark">
+<html lang="zh-CN">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>PurePhotoExplorer</title>
+    <!--
+      主题必须在这里定，不能等 React 起来（2026-11-03）。
+      放进 bundle 的话首帧会先按默认色渲染再跳色 —— 亮色用户会看到一下黑屏闪。
+      逻辑与 src/lib/theme.ts 保持一致：system 解析成 light/dark 再写属性。
+    -->
+    <script>
+      (function () {
+        var pref = 'system'
+        try {
+          var v = localStorage.getItem('pv.theme')
+          if (v === 'light' || v === 'dark' || v === 'system') pref = v
+        } catch (e) {
+          /* 存储不可用就按系统走 */
+        }
+        var dark =
+          pref === 'dark' ||
+          (pref === 'system' &&
+            window.matchMedia &&
+            window.matchMedia('(prefers-color-scheme: dark)').matches)
+        document.documentElement.dataset.theme = dark ? 'dark' : 'light'
+      })()
+    </script>
   </head>
   <body>
     <div id="root"></div>

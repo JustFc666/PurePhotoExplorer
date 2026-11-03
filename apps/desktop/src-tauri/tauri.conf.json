@@ -20,7 +20,6 @@
         "resizable": true,
         "fullscreen": false,
         "center": true,
-        "theme": "Dark",
         "backgroundColor": "#121216",
         "dragDropEnabled": true,
         "decorations": false

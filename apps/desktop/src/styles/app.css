@@ -1711,7 +1711,7 @@ button.pv-about-mail:hover {
   font: inherit;
   font-size: 12px;
   color: var(--pv-text-primary);
-  background: var(--pv-surface);
+  background: var(--pv-surface, var(--pv-bg-surface));
   border: 1px solid var(--pv-border-strong);
   border-radius: 6px;
 }
@@ -1732,7 +1732,7 @@ button.pv-about-mail:hover {
   font: inherit;
   font-size: 12px;
   color: var(--pv-text-primary);
-  background: var(--pv-surface)
+  background: var(--pv-surface, var(--pv-bg-surface))
     url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23b0b8c7' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E")
     right 6px center / 12px no-repeat;
   border: 1px solid var(--pv-border-strong);
@@ -1803,7 +1803,7 @@ button.pv-about-mail:hover {
   padding: 6px 8px;
   font-size: 12px;
   color: var(--pv-text-secondary);
-  background: var(--pv-surface);
+  background: var(--pv-surface, var(--pv-bg-surface));
   border: 1px solid var(--pv-border-strong);
   border-radius: 6px;
   cursor: pointer;

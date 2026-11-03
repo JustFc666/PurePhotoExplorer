@@ -51,6 +51,7 @@ import {
   type VocabTerm,
 } from '../../ipc/manager'
 import { managerFacesClear, managerFacesStats, type FacesStats } from '../../ipc/people'
+import { readThemePref, setThemePref, type ThemePref } from '../../lib/theme'
 import {
   FX_MS_MAX,
   FX_MS_MIN,
@@ -106,6 +107,7 @@ function readWinSize(): { w: number; h: number } {
 
 const PAGES = [
   { id: 'data', group: '常规', label: '数据位置' },
+  { id: 'theme', group: '外观', label: '主题' },
   { id: 'thumb', group: '外观', label: '缩略图' },
   { id: 'sort', group: '浏览', label: '排序' },
   { id: 'slide', group: '浏览', label: '幻灯片' },
@@ -264,6 +266,7 @@ export function SettingsWindow({
 
           <div className="pv-set-main">
             {page === 'data' && <DataPage />}
+            {page === 'theme' && <ThemePage />}
             {page === 'thumb' && <ThumbPage />}
             {page === 'sort' && <SortPage />}
             {page === 'slide' && <SlidePage />}
@@ -442,6 +445,45 @@ function DataPage() {
       >
         <div className="pv-set-info">warn（默认）</div>
       </Row>
+    </>
+  )
+}
+
+/**
+ * 主题（2026-11-03）。
+ *
+ * 三选一：跟随系统 / 亮色 / 深色。改完**立刻**落到 `<html data-theme>`，
+ * 不用重启 —— 这个偏好存在 localStorage（见 `lib/theme.ts` 里的取舍说明）。
+ *
+ * ⛔ 别做成「开关」两态：桌面软件常见诉求是「跟着系统走」，
+ * 只有黑白两个选项时，用户白天想亮、晚上想暗就得手动来回点。
+ */
+function ThemePage() {
+  const [pref, setPref] = useState<ThemePref>(readThemePref)
+  const pick = (p: ThemePref) => {
+    setPref(p)
+    setThemePref(p)
+  }
+  return (
+    <>
+      <h2 className="pv-set-h1">主题</h2>
+      <Row
+        label="配色"
+        hint="「跟随系统」会随 Windows 的浅色/深色设置自动切换；改完立即生效，不用重启"
+      >
+        {(
+          [
+            { v: 'system', l: '跟随系统' },
+            { v: 'light', l: '亮色' },
+            { v: 'dark', l: '深色' },
+          ] as const
+        ).map((o) => (
+          <Choice key={o.v} on={pref === o.v} label={o.l} onClick={() => pick(o.v)} />
+        ))}
+      </Row>
+      <div className="pv-set-hint" style={{ marginTop: 10 }}>
+        亮色主题按 WCAG AA 校准过对比度：正文 15.7:1、次要 7.2:1、三级 5.0:1、主色 5.37:1。
+      </div>
     </>
   )
 }
